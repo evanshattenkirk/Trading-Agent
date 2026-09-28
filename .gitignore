@@ -6,3 +6,4 @@ __pycache__/
 *.db
 research/data/
 .DS_Store
+rh_tools.json
