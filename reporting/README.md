@@ -7,6 +7,17 @@ python -m reporting.weekly_quant --journal ~/.agentdesk/journal.db --out ~/.agen
 python -m reporting.weekly_quant --week-ending 2026-10-02      # a specific week (Friday)
 ```
 
+Book A (free IEX feed) is judged by a SIP replay of the same week. Run it first, then point the report at it:
+
+```
+python research/iex_vs_sip.py --days 5 --end 2026-10-02 --no-diag --out ~/.agentdesk/reports/sip/2026-10-02
+python -m reporting.weekly_quant --journal ~/.agentdesk/journal.db --out ~/.agentdesk/reports --sip-dir ~/.agentdesk/reports/sip
+```
+
+The report pools every run under `--sip-dir` (the latest run wins for a repeated day). Until the SIP and IEX
+replays agree (entry-signal Jaccard >= 0.80, same-sign net, 5+ sessions), book A's IEX paper results are marked
+"not evidence" in the tables and the promotion gates.
+
 Writes `quant-<friday>.md` and `quant-<friday>.json` and prints the markdown. Standard library only, and it opens
 the journal read-only, so it is safe to run while the engine and the recorder are writing.
 
