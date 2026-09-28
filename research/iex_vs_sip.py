@@ -151,6 +151,53 @@ def compare_entries(ref: list[dict], alt: list[dict], tol: float = ENTRY_TOL) ->
     return out
 
 
+# Sale conditions that do not set the consolidated last price (CTA/UTDF): average price, cash, next day,
+# seller, prior reference, form T, out of sequence, derivatively priced, contingent, official open/close
+# reports, corrected close. Odd lots (I) are kept so tick counts match a raw print count.
+EXCLUDE_CONDITIONS = frozenset("B C G H M N P Q R T U V W Z 4 7 9".split())
+
+
+def clean_trades(ts, px, sz, conds=None, exclude=EXCLUDE_CONDITIONS, max_dev: float = 0.005,
+                 window: int = 50, confirm: int = 3):
+    """Drop prints that don't set the last price, then isolated prints more than max_dev from the median of
+    recent accepted prints. A move that holds for `confirm` prints in a row is accepted (a real gap)."""
+    from statistics import median
+    keep_t, keep_p, keep_s = [], [], []
+    recent: list[float] = []
+    ref = None
+    pending: list[tuple] = []
+    st = {"kept": 0, "dropped_condition": 0, "dropped_outlier": 0}
+    for i in range(len(px)):
+        if conds is not None and conds[i] and exclude.intersection(str(conds[i]).split()):
+            st["dropped_condition"] += 1
+            continue
+        t, p, z = float(ts[i]), float(px[i]), float(sz[i])
+        if ref is not None and abs(p / ref - 1) > max_dev:
+            if pending and abs(p / pending[0][1] - 1) > max_dev:
+                st["dropped_outlier"] += len(pending)
+                pending = []
+            pending.append((t, p, z))
+            if len(pending) < confirm:
+                continue
+            batch, pending = pending, []
+            recent = [b[1] for b in batch]
+            ref = median(recent)
+        else:
+            if pending:
+                st["dropped_outlier"] += len(pending)
+                pending = []
+            batch = [(t, p, z)]
+        for bt, bp, bz in batch:
+            keep_t.append(bt); keep_p.append(bp); keep_s.append(bz)
+            recent.append(bp)
+            if ref is None or len(keep_p) % 10 == 0:
+                recent = recent[-window:]
+                ref = median(recent)
+    st["dropped_outlier"] += len(pending)
+    st["kept"] = len(keep_p)
+    return (keep_t, keep_p, keep_s), st
+
+
 # ---------------------------------------------------------------- engine replay
 class RecBus(Bus):
     """Keeps the events this comparison needs; drops the dashboard stream."""
@@ -293,7 +340,7 @@ async def fetch_trades_retry(symbol: str, start: datetime, end: datetime, feed: 
                 raise SystemExit(f"Alpaca trades {feed} {start.date()}: gave up after retries")
             j = r.json()
             for t in j.get("trades") or []:
-                yield _ts(t["t"]), float(t["p"]), float(t["s"])
+                yield _ts(t["t"]), float(t["p"]), float(t["s"]), " ".join(t.get("c") or [])
             pages += 1
             if pages % 25 == 0:
                 print(f"  {start.date()} {feed}: {pages} pages", flush=True)
@@ -303,17 +350,18 @@ async def fetch_trades_retry(symbol: str, start: datetime, end: datetime, feed: 
 
 
 async def load_trades(day: date, feed: str, cache: Path):
+    """(ts, px, sz, conditions) for one RTH session; cached with the sale conditions (v2 files)."""
     import numpy as np
-    f = cache / f"SPY_trades_{feed}_{day}.npz"
+    f = cache / f"SPY_trades_v2_{feed}_{day}.npz"
     if not f.exists():
         start = datetime.fromtimestamp(at_ct(day, time(8, 30)), timezone.utc)
         end = datetime.fromtimestamp(at_ct(day, time(15, 0)), timezone.utc)
-        ts, px, sz = [], [], []
-        async for a, b, c in fetch_trades_retry("SPY", start, end, feed):
-            ts.append(a); px.append(b); sz.append(c)
-        np.savez_compressed(f, ts=np.array(ts), px=np.array(px), sz=np.array(sz))
+        ts, px, sz, cs = [], [], [], []
+        async for a, b, c, k in fetch_trades_retry("SPY", start, end, feed):
+            ts.append(a); px.append(b); sz.append(c); cs.append(k)
+        np.savez_compressed(f, ts=np.array(ts), px=np.array(px), sz=np.array(sz), c=np.array(cs, dtype=str))
     d = np.load(f)
-    return d["ts"], d["px"], d["sz"]
+    return d["ts"], d["px"], d["sz"], d["c"]
 
 
 async def load_bars(feed: str, start: datetime, end: datetime, cache: Path) -> list[Bar]:
@@ -351,8 +399,15 @@ async def main(args) -> None:
         t0 = _time.time()
         i = days.index(d)
         hist = {f: [b for dd in days[max(0, i - warm):i] for b in by_day[f].get(dd, [])] for f in bars}
-        tr = {f: await load_trades(d, f, cache) for f in ("iex", "sip")}
+        raw = {f: await load_trades(d, f, cache) for f in ("iex", "sip")}
+        tr, cleaning = {}, {}
+        for f, (a, b, c, k) in raw.items():
+            if args.raw:
+                tr[f], cleaning[f] = (a, b, c), {"kept": len(a), "dropped_condition": 0, "dropped_outlier": 0}
+            else:
+                tr[f], cleaning[f] = clean_trades(a, b, c, k, max_dev=args.max_dev)
         share = print_share(list(tr["iex"][0]), list(tr["sip"][0]), d)
+        share["cleaning"] = cleaning
         n_eq = max(1, round(share["implied_tick"] or iex_ticks[0]))
         runs = {"sip144": await replay(cfg, d, hist["sip"], tr["sip"], cfg["strategy"]["tick_bar_size"], args.iv)}
         for k in iex_ticks:
@@ -375,7 +430,9 @@ async def main(args) -> None:
             line += f"  | iex{k} {x['trades']:2d} tr {x['net']:+8.2f} 144t recall {x['cross_up']['144t']['recall']}"
         print(line + f"  ({_time.time() - t0:.0f}s)", flush=True)
     total = roll_up(per_day, trades)
-    total["run"] = {"days": [str(d) for d in test_days], "iv": args.iv, "iex_ticks": iex_ticks,
+    total["cleaning"] = {f: {k: sum(d["print_share"]["cleaning"][f][k] for d in per_day)
+                             for k in ("kept", "dropped_condition", "dropped_outlier")} for f in ("iex", "sip")}
+    total["run"] = {"days": [str(d) for d in test_days], "iv": args.iv, "iex_ticks": iex_ticks, "clean": not args.raw, "max_dev": args.max_dev,
                     "options": "Black-Scholes model (same for every variant)", "generated": datetime.now(timezone.utc).isoformat()}
     (out / "per_day.json").write_text(json.dumps(per_day, indent=1))
     (out / "summary.json").write_text(json.dumps(total, indent=1))
@@ -400,6 +457,8 @@ def cli(argv=None):
     p.add_argument("--end", default=None, help="last session YYYY-MM-DD (default: now - 20 min)")
     p.add_argument("--iv", type=float, default=0.16)
     p.add_argument("--iex-ticks", default="8,5", help="comma list of prints per '144t' bar on IEX, one run each")
+    p.add_argument("--raw", action="store_true", help="skip the bad-print filter (sale conditions + outliers)")
+    p.add_argument("--max-dev", type=float, default=0.005, help="outlier filter: max move vs recent median")
     p.add_argument("--no-diag", action="store_true", help="skip the re-calibrated iexN diagnostic run")
     p.add_argument("--cache", default="~/.agentdesk/cache-iex-vs-sip")
     p.add_argument("--out", default="research/iex_vs_sip_out")
