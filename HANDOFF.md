@@ -57,7 +57,7 @@ This is the complete record of what was built, verified, tested and decided in t
 
 | Need | Source | Notes |
 |---|---|---|
-| SPY trade stream → 144t/1m/5m/15m bars, VWAP | Alpaca Basic, **IEX** websocket (free) | 1 connection, 30 symbols, 200 REST calls/min. IEX is an estimated **4–6% of SPY volume**, so the engine builds the "144t" series from **8 IEX prints** (`strategy.tick_bar_size_iex`), roughly equivalent in time. That's an approximation; time bars are unaffected |
+| SPY trade stream → 144t/1m/5m/15m bars, VWAP | Alpaca Basic, **IEX** websocket (free) | 1 connection, 30 symbols, 200 REST calls/min. IEX carries about **3.7% of SPY prints** (measured; see the note below), so the engine builds the "144t" series from **5 IEX prints** (`strategy.tick_bar_size_iex`), roughly equivalent in time. That's an approximation; time bars are unaffected |
 | SPY 1m history for warm-up and backtests | Alpaca (SIP history older than 15 min is free) or `--source robinhood` | Robinhood history needs no data key |
 | Option quotes (all books) | Robinhood `get_option_quotes` | Real NBBO-like bid/ask plus IV and greeks. Alpaca's free option feed is indicative only; don't use it for fills |
 | Level 2 | Robinhood `get_equity_price_book` | Polled every second, observe mode |
@@ -75,7 +75,7 @@ Books B–E don't need the upgrade.
 - The 8-print "144t" approximation caught **55%** of the real 144t MACD crosses.
 - Book A's P&L **flipped sign** between feeds: SIP −$690 (PF 0.42) vs IEX +$521. About a third of the SIP trades never happen on IEX.
 
-So IEX paper results for book A are **not evidence** for or against A. Judge A with a weekly after-close replay on free SIP history instead, and buy Algo Trader Plus only when A is promoted to shadow or live. Two changes are left for Evan to decide, not applied here: `tick_bar_size_iex` 8 → 5 (raises cross capture to about 75%), and a 60-day rerun of the comparison.
+So IEX paper results for book A are **not evidence** for or against A. Judge A with a weekly after-close replay on free SIP history instead, and buy Algo Trader Plus only when A is promoted to shadow or live. Evan approved both follow-ups on 2026-09-28: `tick_bar_size_iex` is now 5 (was 8; raises cross capture to about 75%), and the comparison is being rerun over 60 days.
 
 ---
 

@@ -144,7 +144,7 @@ Books B (iron fly), C (ORB bull-put) and D (iron condor) run next to book A in e
 - **Stops live in this process, not at Robinhood.** If your Mac sleeps or loses its connection, open positions are unmanaged. Run it on a machine that stays awake (`caffeinate -dims python -m agentdesk run --mode live`). On startup, the engine refuses to trade if the Agentic account already holds option positions.
 - **Robinhood hasn't published rate limits.** The engine's order arguments match the tool schemas the MCP server reported on 2026-09-27. Load: Level 2 is polled every second, the quote recorder every 10 seconds, and each open contract once per second. Entries and exits are marketable limit orders with up to 2 reprices. Each `place_option_order` carries an idempotency `ref_id`, so a retry can't double-fill.
 - **Robinhood frames Agentic Trading around AI agents.** Here, a Python process places the orders, with Claude supervising. Confirm that fits their terms before running live.
-- **Tick charts depend on the feed.** 144 prints on a consolidated SIP feed form in seconds. On the free IEX feed (about 4–6% of SPY volume) the engine uses 8 IEX prints as the 144t approximation (`strategy.tick_bar_size_iex`), so SCALP is only approximate until you upgrade to SIP.
+- **Tick charts depend on the feed.** 144 prints on a consolidated SIP feed form in seconds. On the free IEX feed (about 3.7% of SPY prints) the engine uses 5 IEX prints as the 144t approximation (`strategy.tick_bar_size_iex`), so SCALP is only approximate until you upgrade to SIP.
 
 ## Layout
 

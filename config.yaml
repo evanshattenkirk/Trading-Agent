@@ -20,7 +20,7 @@ strategy:
   macd: {fast: 12, slow: 26, signal: 9}
   rsi: {period: 14, lower: 30, upper: 70}
   tick_bar_size: 144
-  tick_bar_size_iex: 8                # free Alpaca IEX sees ~4-6% of SPY prints: 8 IEX ticks ~ 144 consolidated ticks in time (approximation)
+  tick_bar_size_iex: 5                # free Alpaca IEX sees ~3.7% of SPY prints (measured 2026-09-28); 5 IEX ticks catch ~75% of real 144t crosses vs 55% at 8 (approximation)
   filter_timeframes: [15m, 5m]      # MACD must be above signal (live/forming bar)
   trigger_timeframes: [1m, 144t]    # both above signal + a fresh cross-up on either
   rsi_check_timeframes: [15m, 5m, 1m]  # RSI must sit inside [lower, upper]
