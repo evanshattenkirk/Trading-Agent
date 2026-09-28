@@ -70,6 +70,13 @@ This is the complete record of what was built, verified, tested and decided in t
 
 Books B–E don't need the upgrade.
 
+**Correction (2026-09-28): IEX vs SIP measured.** The "Check book A IEX vs SIP data" thread replayed Sept 14–25, 2026 on both feeds:
+- IEX carried **3.7%** of SPY prints, not 4–6%.
+- The 8-print "144t" approximation caught **55%** of the real 144t MACD crosses.
+- Book A's P&L **flipped sign** between feeds: SIP −$690 (PF 0.42) vs IEX +$521. About a third of the SIP trades never happen on IEX.
+
+So IEX paper results for book A are **not evidence** for or against A. Judge A with a weekly after-close replay on free SIP history instead, and buy Algo Trader Plus only when A is promoted to shadow or live. Two changes are left for Evan to decide, not applied here: `tick_bar_size_iex` 8 → 5 (raises cross capture to about 75%), and a 60-day rerun of the comparison.
+
 ---
 
 ## 4. System architecture (what exists)
@@ -121,7 +128,7 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 - **Reactions:**
   - The agent types on orders, jumps with $ particles on wins, and slumps under a rain cloud on losses.
   - An alarm light flashes on the kill switch.
-  - Lights dim after the close, with "Zzz / BACK AT 7:30" overnight.
+  - Lights dim after the close, with "Zzz / BACK AT 8:15" overnight.
   - Tape reads live depth on its monitor.
 
 ---
@@ -130,14 +137,15 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 
 | Desk | Huddles | Brings |
 |---|---|---|
-| Macro | 07:45, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE |
-| Rates | 07:45, 11:30 | 2Y/10Y moves, curve, auctions |
-| Fed Watch | 07:45, 13:15 | FOMC, Fed speakers |
-| Vol | 07:45, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; **also runs book E's IV screen** (section 7E) |
+| Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE |
+| Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y/10Y moves, curve, auctions |
+| Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC, Fed speakers |
+| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; **also runs book E's IV screen** (section 7E) |
 | Quant | loss reviews, 15:05 | Our stats; per-day and permanent tweak proposals |
 | Risk | loss reviews, halts | Deterministic risk manager's view |
 | Tape | loss reviews, big walls | Level 2 read; comments on walls of at least 25k shares near price (at most once every 20 min) |
 
+- **Premarket (Evan, 2026-09-28).** At 08:15 CT (`crew.schedule.arrive`) Macro, Rates, Fed and Vol arrive and research at their own desks, in parallel. At 08:25 CT (`crew.schedule.premarket`) they huddle with the agent using those briefs, so the meeting ends before the 08:30 open. A desk still researching at 08:25 attends with its offline read and says so; the huddle never waits. If the engine starts after 08:25, the premarket huddle briefs in full as before.
 - **Research.** With an Anthropic key, Macro/Rates/Fed/Vol research with Claude plus web search, returning JSON briefs: headline, bias, confidence, events, vote, notes, proposals. Without a key, everything runs offline from config events and the data.
 - **Roundtable.** After the briefs, desks talk **to each other**: Rates checks Macro against bonds, Vol prices Fed risk, Risk grills Quant after losses. Any desk can revise its vote. With a key this is one extra LLM call per huddle; otherwise it's templated.
 - **Size votes (0.5–1.25×).**
@@ -324,7 +332,7 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 - Evidence for the calendar version is practitioner-only.
 
 **Rules (paper):**
-- **Universe:** about 30 liquid large caps with weekly options and an ATM spread no wider than 5% of mid. Not SPY. Screen daily with `get_earnings_calendar` (31-day window) at the 07:45 CT huddle; the Vol desk owns it.
+- **Universe:** about 30 liquid large caps with weekly options and an ATM spread no wider than 5% of mid. Not SPY. Screen daily with `get_earnings_calendar` (31-day window) at the 08:15 CT catch-up; the Vol desk owns it.
 - **E1, short-dated straddle:** buy the ATM straddle in the first expiry **after** earnings with 4–10 DTE, at the close **3 trading days before** the announcement. Sell at the close before the announcement: the day before for pre-market reporters, the same day for after-close reporters. Take profit +20%, stop −30%.
 - **E2, calendar (the spread combo):** at **T−10 to T−8** trading days, sell the ATM weekly expiring before earnings and buy the same-strike weekly expiring after, as one 2-leg debit order. Exit at T−1 (T−0 for after-close reporters). Take profit +15%, stop −30%.
 - **Both:**
@@ -409,6 +417,7 @@ The directional edges decayed after publication. The only effect that is modeled
    - Run `python -m agentdesk rh-inspect`: it signs in, confirms ••••6452 is Level 3, and runs the review simulation.
    - Done when `rh-inspect` prints a review with no errors and the IEX stream shows SPY prints.
 3. **Book A paper.** `python -m agentdesk run --mode paper` during market hours. Done after 1 full session with bars, signals, L2 logs and `option_quotes` recorded, and no errors in the log.
+   - *Note (2026-09-28):* this gate proves the plumbing only. Book A's results on the IEX feed don't count toward promotion (see section 3). Its evidence is the weekly SIP replay.
 4. **Multi-book framework plus B, C, D** (section 9). Done when all required tests pass and a sim day runs all books without cross-contamination.
 5. **Book E and the IV recorder.** Done when the earnings screen lists candidates daily and `iv_history` grows.
 6. **Four or more weeks of paper, all books.** Weekly, the Quant desk writes a report per book: trades, net after taker costs, PF, t, worst day, L2 split.
