@@ -254,3 +254,112 @@ def test_cli_writes_files(db, tmp_path):
     out = tmp_path / "reports"
     assert wq.main(["--journal", str(p), "--week-ending", "2026-10-02", "--out", str(out)]) == 0
     assert (out / "quant-2026-10-02.md").exists() and (out / "quant-2026-10-02.json").exists()
+
+
+# ---------------------------------------------------------------- book A: SIP replay vs IEX (research/iex_vs_sip.py output)
+
+def _agree(ref, alt, m):
+    return {"ref": ref, "alt": alt, "matched": m}
+
+
+def write_sip_run(root, name, days, sip_nets, iex_nets, sig=(10, 10, 9), x144=(100, 60, 55)):
+    d = root / name
+    d.mkdir(parents=True)
+    per_day = []
+    for day in days:
+        per_day.append({"day": day, "variants": {
+            "sip144": {"net": sum(sip_nets.get(day, []))},
+            "iex8": {"net": sum(iex_nets.get(day, [])),
+                     "cross_up": {"144t": _agree(*x144)},
+                     "signals_vs_sip": {**_agree(*sig), "same_setup": sig[2]},
+                     "taken_vs_sip": {**_agree(*sig), "same_setup": sig[2]}}}})
+    (d / "per_day.json").write_text(json.dumps(per_day))
+    rows = ["day,setup,net,variant"]
+    for variant, nets in (("sip144", sip_nets), ("iex8", iex_nets), ("iexN", iex_nets)):
+        for day, xs in nets.items():
+            rows += [f"{day},SWING,{x},{variant}" for x in xs]
+    (d / "trades.csv").write_text("\n".join(rows) + "\n")
+
+
+def test_sip_replay_pools_week_and_cumulative(tmp_path):
+    root = tmp_path / "sip"
+    write_sip_run(root, "2026-09-25", ["2026-09-24", "2026-09-25"], {"2026-09-24": [-50], "2026-09-25": [-30, 10]},
+                  {"2026-09-24": [40], "2026-09-25": [20]})
+    write_sip_run(root, "2026-10-02", ["2026-10-01", "2026-10-02"], {"2026-10-01": [-20], "2026-10-02": [5]},
+                  {"2026-10-01": [30], "2026-10-02": [-5]})
+    days = wq.load_sip_replays(root)
+    w = wq.sip_replay_block(days, "2026-09-28", "2026-10-02")
+    c = wq.sip_replay_block(days, "2000-01-01", "2026-10-02")
+    assert w["days"] == 2 and c["days"] == 4
+    assert w["sip"]["net"] == -15 and w["iex"]["net"] == 25
+    assert c["sip"]["n"] == 5 and c["sip"]["net"] == -85
+    assert c["signals"]["jaccard"] == pytest.approx(18 / (20 + 20 - 18))
+    assert c["x144"]["recall"] == pytest.approx(0.55)
+    assert c["agree"] is False                      # nets have opposite signs and Jaccard < 0.8
+
+
+def test_sip_replay_later_run_wins_for_a_repeated_day(tmp_path):
+    root = tmp_path / "sip"
+    write_sip_run(root, "a", ["2026-10-01"], {"2026-10-01": [-99]}, {"2026-10-01": [1]})
+    write_sip_run(root, "b", ["2026-10-01"], {"2026-10-01": [7]}, {"2026-10-01": [1]})
+    (root / "b" / "per_day.json").touch()           # newer
+    import os
+    os.utime(root / "a" / "per_day.json", (1, 1))
+    c = wq.sip_replay_block(wq.load_sip_replays(root), "2000-01-01", "2026-10-02")
+    assert c["days"] == 1 and c["sip"]["net"] == 7
+
+
+def test_sip_agreement_rule():
+    good = {"days": 5, "signals": {"jaccard": 0.85}, "sip": {"net": 10.0}, "iex": {"net": 30.0}}
+    assert wq.feeds_agree(good) is True
+    assert wq.feeds_agree({**good, "days": 4}) is None                 # too few days to judge
+    assert wq.feeds_agree({**good, "signals": {"jaccard": 0.79}}) is False
+    assert wq.feeds_agree({**good, "iex": {"net": -1.0}}) is False
+
+
+def test_book_a_gates_marked_not_evidence_until_feeds_agree(db, tmp_path):
+    p, c = db
+    for day in ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"]:
+        add(c, "A", day, 40, max_loss=None, pct=0.05)
+    c.commit()
+    root = tmp_path / "sip"
+    days = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"]
+    write_sip_run(root, "w", days, {d: [-20] for d in days}, {d: [30] for d in days})
+    rep = wq.build_report(p, date(2026, 10, 2), sip_dir=root)
+    a = rep["books"]["A"]
+    by = {g["name"]: g for g in a["gates"]}
+    assert by["feed_fidelity"]["ok"] is False
+    assert a["sip_week"]["sip"]["net"] == -100 and a["sip_cumulative"]["days"] == 5
+    md = wq.render_markdown(rep)
+    assert "SIP replay" in md and "not evidence" in md
+
+
+def test_book_a_without_replay_is_not_evidence(db):
+    p, c = db
+    add(c, "A", "2026-10-01", 40, max_loss=None, pct=0.05)
+    c.commit()
+    rep = wq.build_report(p, date(2026, 10, 2))
+    by = {g["name"]: g for g in rep["books"]["A"]["gates"]}
+    assert by["feed_fidelity"]["ok"] is None
+    assert "not evidence" in wq.render_markdown(rep)
+
+
+def test_cli_accepts_sip_dir(db, tmp_path):
+    p, c = db
+    add(c, "A", "2026-10-01", 12, max_loss=None, pct=0.05)
+    c.commit()
+    root = tmp_path / "sip"
+    write_sip_run(root, "w", ["2026-10-01"], {"2026-10-01": [5]}, {"2026-10-01": [6]})
+    out = tmp_path / "reports"
+    assert wq.main(["--journal", str(p), "--week-ending", "2026-10-02", "--out", str(out), "--sip-dir", str(root)]) == 0
+    assert "SIP replay" in (out / "quant-2026-10-02.md").read_text()
+
+
+def test_sip_replay_shows_even_before_book_a_paper_trades(db, tmp_path):
+    p, _ = db
+    root = tmp_path / "sip"
+    write_sip_run(root, "w", ["2026-10-01"], {"2026-10-01": [-5]}, {"2026-10-01": [6]})
+    rep = wq.build_report(p, date(2026, 10, 2), sip_dir=root)
+    assert rep["books"]["A"]["cumulative"]["n"] == 0
+    md = wq.render_markdown(rep)
+    assert "SIP replay" in md and "-$5" in md

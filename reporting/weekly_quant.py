@@ -14,14 +14,19 @@ there. Single-leg fills (book A) log only the price, so the natural (ask to buy,
 nearest recorded quote in journal.option_quotes within 15 s; fills with no nearby quote stay as filled and are
 counted as unpriced.
 
+Book A trades on the free IEX feed, which carries about 4% of SPY prints, so its paper results are shown as
+"not evidence" until a SIP replay (research/iex_vs_sip.py output, --sip-dir) agrees with them: entry-signal
+Jaccard >= 0.80 and same-sign net over at least 5 sessions. The SIP replay P&L sits next to the IEX paper P&L.
+
 Journal schema: trades as written by the multi-book framework (PR #6: book, legs, max_loss columns). An older
 journal with no book column is read as all book A. Only paper and shadow trades count; sim never does.
 
-    python -m reporting.weekly_quant --journal ~/.agentdesk/journal.db --out reports
+    python -m reporting.weekly_quant --journal ~/.agentdesk/journal.db --out reports [--sip-dir DIR]
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import random
@@ -417,6 +422,80 @@ def straddle_vs_realized(path, start: str, end: str, entry_ct: str = "08:45", ex
             "entry_ct": entry_ct, "exit_ct": exit_ct}
 
 
+# ---------------------------------------------------------------- book A: SIP replay vs IEX paper
+
+SIP_MIN_DAYS = 5            # agreement needs at least a week of replayed sessions
+SIP_MIN_JACCARD = 0.80      # entry signals IEX and SIP both produce, over all signals either produces
+
+
+def load_sip_replays(root) -> dict:
+    """{day: {"per_day": ..., "sip": [nets], "iex": [nets]}} from research/iex_vs_sip.py output dirs under root
+    (per_day.json + trades.csv). A day replayed by more than one run takes the most recent run."""
+    root = Path(root).expanduser()
+    runs = sorted(root.rglob("per_day.json"), key=lambda f: f.stat().st_mtime) if root.exists() else []
+    days: dict = {}
+    for f in runs:
+        try:
+            per_day = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        nets: dict = {}
+        tf = f.parent / "trades.csv"
+        if tf.exists():
+            with open(tf, newline="") as fh:
+                for row in csv.DictReader(fh):
+                    if row.get("variant") in ("sip144", "iex8"):
+                        nets.setdefault((row["day"], row["variant"]), []).append(float(row["net"]))
+        for d in per_day:
+            day = d["day"]
+            days[day] = {"per_day": d, "sip": nets.get((day, "sip144"), []), "iex": nets.get((day, "iex8"), [])}
+    return days
+
+
+def _pool(parts: list) -> dict:
+    ref, alt, m = (sum(p[k] for p in parts) for k in ("ref", "alt", "matched"))
+    union = ref + alt - m
+    return {"ref": ref, "alt": alt, "matched": m, "recall": m / ref if ref else None,
+            "precision": m / alt if alt else None, "jaccard": m / union if union else None}
+
+
+def feeds_agree(blk: dict):
+    """True once IEX paper can count as evidence for book A: entry-signal Jaccard >= 0.80 vs the SIP tape and
+    the two replays' nets have the same sign, over at least 5 sessions. False on any disagreement; None when
+    there is too little to judge."""
+    if not blk or not blk.get("days"):
+        return None
+    j = (blk.get("signals") or {}).get("jaccard")
+    s, i = blk["sip"].get("net", 0.0), blk["iex"].get("net", 0.0)
+    if (j is not None and j < SIP_MIN_JACCARD) or (s * i < 0):
+        return False
+    if blk["days"] < SIP_MIN_DAYS or j is None:
+        return None
+    return True
+
+
+def sip_replay_block(days: dict, start: str, end: str) -> dict:
+    sel = [days[d] for d in sorted(days) if start <= d <= end]
+    if not sel:
+        return {"days": 0}
+    iex8 = [x["per_day"]["variants"]["iex8"] for x in sel]
+    blk = {
+        "days": len(sel), "first": min(d for d in days if start <= d <= end), "last": max(d for d in days if start <= d <= end),
+        "sip": trade_stats([n for x in sel for n in x["sip"]]),
+        "iex": trade_stats([n for x in sel for n in x["iex"]]),
+        "signals": _pool([v["signals_vs_sip"] for v in iex8]),
+        "taken": _pool([v["taken_vs_sip"] for v in iex8]),
+        "x144": _pool([v["cross_up"]["144t"] for v in iex8]),
+    }
+    blk["agree"] = feeds_agree(blk)
+    return blk
+
+
+def feed_gate(blk: dict | None) -> dict:
+    return {"name": "feed_fidelity", "value": blk, "need": f"SIP replay agrees (signal Jaccard >= {SIP_MIN_JACCARD:.2f}, "
+            f"same-sign net, >= {SIP_MIN_DAYS} days)", "ok": feeds_agree(blk) if blk else None}
+
+
 # ---------------------------------------------------------------- report
 
 def last_friday(today: date) -> date:
@@ -452,11 +531,12 @@ def _counts(it) -> dict:
     return dict(sorted(d.items(), key=lambda kv: -kv[1]))
 
 
-def build_report(journal, week_ending: date, modes=("paper", "shadow")) -> dict:
+def build_report(journal, week_ending: date, modes=("paper", "shadow"), sip_dir=None) -> dict:
     ws, we = week_bounds(week_ending)
+    sip_days = load_sip_replays(sip_dir) if sip_dir else {}
     trades = enrich([t for t in load_trades(journal, modes) if t["session"] and t["session"] <= we], QuoteBook(journal))
     books = {}
-    for b in sorted({t["book"] for t in trades}):
+    for b in sorted({t["book"] for t in trades} | ({"A"} if sip_days else set())):
         cum = [t for t in trades if t["book"] == b]
         week = [t for t in cum if t["session"] >= ws]
         wb, cb = _book_block(week), _book_block(cum)
@@ -467,6 +547,10 @@ def build_report(journal, week_ending: date, modes=("paper", "shadow")) -> dict:
             "gates": promotion_gates(b, cum),
             "backtest": BACKTEST_RANGE.get(b),
         }
+        if b == "A":
+            sw, sc = sip_replay_block(sip_days, ws, we), sip_replay_block(sip_days, "2000-01-01", we)
+            books[b].update(sip_week=sw, sip_cumulative=sc)
+            books[b]["gates"].append(feed_gate(sc if sc["days"] else None))
     return {
         "week_start": ws, "week_ending": we, "modes": list(modes),
         "generated": datetime.now(CT).isoformat(timespec="minutes"),
@@ -497,6 +581,8 @@ def _gate_value(g) -> str:
     v = g["value"]
     if g["name"] == "in_backtest_range":
         return "n/a" if not v or v[0] is None else f"{v[0] * 100:+.1f}% to {v[1] * 100:+.1f}%"
+    if g["name"] == "feed_fidelity":
+        return "no replay" if not v else f"{v['days']} days, Jaccard {_m(v['signals']['jaccard'], pct=True, sign=False)}"
     if g["name"] == "month_share":
         return _m(v, pct=True, sign=False)
     if isinstance(v, float):
@@ -528,7 +614,7 @@ def render_markdown(rep: dict) -> str:
                 L.append(f"| {b} {r['name']} | 0 | | | | | | |")
                 continue
             wd = d["worst_day"]
-            L.append(f"| {b} {r['name']} | {w['n']} | {_usd(w['net'])} | {_usd(wt['net'])} | "
+            L.append(f"| {b} {r['name']}{_iex_tag(b, r)} | {w['n']} | {_usd(w['net'])} | {_usd(wt['net'])} | "
                      f"{_m(w['win_rate'], pct=True, sign=False)} | {_m(wt['pf'], 2, sign=False)} | "
                      f"{_usd(wd[1]) if wd else 'n/a'} | {_usd(d['max_drawdown'])} |")
         L += ["", "## Since the start (promotion basis)", "",
@@ -540,7 +626,7 @@ def render_markdown(rep: dict) -> str:
             ci = pt.get("mean_ci") if pt["n"] else None
             ci_s = "n/a" if not ci or ci[0] is None else f"{_m(pt['mean'], pct=True)} ({ci[0] * 100:+.1f}% to {ci[1] * 100:+.1f}%)"
             tp = "n/a" if ct_.get("t") is None else f"{ct_['t']:+.2f} ({_p(ct_['p'])})"
-            L.append(f"| {b} | {cd['daily']['sessions']} | {c['n']} | {_usd(ct_['net'])} | "
+            L.append(f"| {b}{_iex_tag(b, r)} | {cd['daily']['sessions']} | {c['n']} | {_usd(ct_['net'])} | "
                      f"{_usd(ct_.get('mean'))} / {_usd(ct_.get('median'))} | {tp} | {ci_s} | {_usd(cd['daily']['max_drawdown'])} |")
         L += ["", f"Five books are tested at once, so a result counts as significant only at p < "
                   f"{rep['bonferroni_alpha']:.2f} (Bonferroni, {ALPHA:.2f} / {BOOK_COUNT}), not 0.05. "
@@ -560,11 +646,17 @@ def render_markdown(rep: dict) -> str:
     return "\n".join(L)
 
 
+def _iex_tag(b: str, r: dict) -> str:
+    if b != "A" or any(g["name"] == "feed_fidelity" and g["ok"] is True for g in r["gates"]):
+        return ""
+    return " (IEX, not evidence)"
+
+
 def _book_section(b: str, r: dict) -> list:
     cd, c, ct_ = r["cumulative_detail"], r["cumulative"], r["cumulative_taker"]
     L = [f"## Book {b}: {r['name']}", ""]
     if not c["n"]:
-        return L + ["No trades yet.", ""]
+        return L + ["No paper trades yet."] + (_sip_section(r) if b == "A" else [""])
     wl, wh = c["win_ci"]
     L += [f"- Win rate {_m(c['win_rate'], pct=True, sign=False)} (95% CI {_m(wl, pct=True, sign=False)} to "
           f"{_m(wh, pct=True, sign=False)}); PF {_m(c['pf'], 2, sign=False)} as filled, "
@@ -582,15 +674,44 @@ def _book_section(b: str, r: dict) -> list:
                  f"would block {l2['would_block']['n']}, mean {_usd(l2['would_block']['mean'])}; "
                  f"Welch t {_m(l2['welch_t'], 2)}. Enforce only if this separates winners from losers after ~50 trades.")
     L.append("- Exits: " + ", ".join(f"{k} {v}" for k, v in list(cd["exit_reasons"].items())[:6]) + ".")
+    evidence = True
+    if b == "A":
+        L += _sip_section(r)
+        evidence = any(g["name"] == "feed_fidelity" and g["ok"] is True for g in r["gates"])
     L += ["", "Promotion gates:", "", "| Gate | Now | Needs | |", "|---|---|---|---|"]
     for g in r["gates"]:
         mark = {True: "pass", False: "not yet", None: "n/a"}[g["ok"]]
         if g["name"] == "order_state" and g["ok"] is False:
             mark = "review"
+        if not evidence and g["name"] in ("pf_taker", "in_backtest_range"):
+            mark = "not evidence (IEX)"
+        if g["name"] == "feed_fidelity" and g["ok"] is not True:
+            mark = "not evidence (IEX)"
         L.append(f"| {g['name'].replace('_', ' ')} | {_gate_value(g)} | {_need(g)} | {mark} |")
     if r.get("backtest"):
         L.append(f"\nBacktest reference: {r['backtest']['src']}.")
     return L + [""]
+
+
+def _sip_section(r: dict) -> list:
+    L = ["", "SIP replay vs IEX paper (research/iex_vs_sip.py, after-close replay on the full tape):", ""]
+    sc = r.get("sip_cumulative") or {}
+    if not sc.get("days"):
+        return L + ["No SIP replay yet, so book A's IEX paper results are not evidence. IEX sees about 4% of SPY "
+                    "prints and its 8-print \"144t\" bars miss about half the real 144t crosses.", ""]
+    L += ["| Window | Days | SIP replay net (PF) | IEX replay net (PF) | IEX paper net | Signal agreement | 144t crosses caught |",
+          "|---|---|---|---|---|---|---|"]
+    for name, blk, paper in (("This week", r.get("sip_week") or {}, r["week"]), ("Since start", sc, r["cumulative"])):
+        if not blk.get("days"):
+            L.append(f"| {name} | 0 | | | {_usd(paper.get('net'))} | | |")
+            continue
+        L.append(f"| {name} | {blk['days']} | {_usd(blk['sip'].get('net'))} ({_m(blk['sip'].get('pf'), 2, sign=False)}) | "
+                 f"{_usd(blk['iex'].get('net'))} ({_m(blk['iex'].get('pf'), 2, sign=False)}) | {_usd(paper.get('net'))} | "
+                 f"{_m(blk['signals']['jaccard'], pct=True, sign=False)} | {_m(blk['x144']['recall'], pct=True, sign=False)} |")
+    verdict = {True: "The feeds agree, so IEX paper counts as evidence.",
+               False: "The feeds disagree, so book A's IEX paper results are not evidence; judge A on the SIP replay.",
+               None: "Too few replayed sessions to judge; book A's IEX paper results are not evidence yet."}[sc.get("agree")]
+    return L + ["", f"Signal agreement is the Jaccard overlap of entry signals (matched within 2 min). {verdict}", ""]
 
 
 def _straddle_section(rep: dict) -> list:
@@ -625,13 +746,14 @@ def main(argv=None) -> int:
     ap.add_argument("--week-ending", help="Friday YYYY-MM-DD (default: the latest Friday in Central time)")
     ap.add_argument("--out", default="reports", help="directory for quant-<date>.md and .json")
     ap.add_argument("--modes", default="paper,shadow", help="journal modes to include (sim never belongs here)")
+    ap.add_argument("--sip-dir", help="directory holding research/iex_vs_sip.py output runs (book A SIP replay)")
     a = ap.parse_args(argv)
     path = Path(a.journal).expanduser()
     if not path.exists():
         print(f"journal not found: {path}", file=sys.stderr)
         return 2
     we = date.fromisoformat(a.week_ending) if a.week_ending else last_friday(datetime.now(CT).date())
-    rep = build_report(path, we, tuple(m.strip() for m in a.modes.split(",") if m.strip()))
+    rep = build_report(path, we, tuple(m.strip() for m in a.modes.split(",") if m.strip()), sip_dir=a.sip_dir)
     md = render_markdown(rep)
     out = Path(a.out).expanduser()
     out.mkdir(parents=True, exist_ok=True)
