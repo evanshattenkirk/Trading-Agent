@@ -2,7 +2,7 @@
 
 > Start with **HANDOFF.md** (v3: status, all five strategy books A–E with backtests, team operations, build spec, phased plan) and **CLAUDE.md**.
 >
-> Strategy books, all paper-only and run side by side: **A** Evan's MACD 0DTE calls (built), **B** 0DTE iron fly, **C** 30-min ORB bull-put spread (bearish-puts variant disabled), **D** 10:00 ET iron condor, **E** pre-earnings IV run-up (straddle T−3 / calendar T−10, never held through earnings). B–E are specified in HANDOFF section 7 and scaffolded under `books:` in `config.yaml`.
+> Strategy books, all paper-only and run side by side: **A** Evan's MACD 0DTE calls (built), **B** 0DTE iron fly, **C** 30-min ORB bull-put spread (bearish-puts variant disabled), **D** 10:00 ET iron condor, **E** pre-earnings IV run-up (straddle T−3 / calendar T−10, never held through earnings). B–E are specified in HANDOFF section 7 and scaffolded under `books:` in `config.yaml`. **F** large-cap stocks in play (long whole shares, 5-minute opening-range breakout on high relative volume; brief in `docs/BOOK_F_HANDOFF.md`) runs in `agentdesk/books/f_host.py`; `python -m agentdesk f-report` shows its paper record and `research/strategy_f_intraday.py` is its replication backtest.
 
 Automated 0DTE SPY call trading on Robinhood's Agentic Trading MCP. The engine that decides entries and exits is fixed-rule Python. A research crew of Claude "desks" briefs it, argues in roundtables, votes on size (50–125%, with a size-up only when every conviction check passes), and pitches tweaks or new strategies. Anything beyond today's bounded tweaks waits for your approval. The dashboard shows every decision, and the office in the bottom-right acts it out.
 

@@ -140,8 +140,7 @@ class FHost:
         except Exception as ex:
             self._log(now, "warn", f"book F: could not read equity positions ({ex})")
             return
-        mine = {p.symbol for p in self.book.open}
-        extra = [p for p in held if str(p.get("symbol") or "") not in mine]
+        extra = held                        # F is paper only: any real equity position is unexpected
         if not extra:
             return
         names = ", ".join(str(p.get("symbol") or "?") for p in extra)
@@ -447,7 +446,8 @@ class FHost:
     async def _bars(self, syms: list[str], now: float) -> None:
         cur = F.et(now)
         cur_min = cur.hour * 60 + cur.minute
-        got = await self.data.minute_bars(syms, self.day, 575, cur_min)
+        start = min(self.seen.get(s, 574) for s in syms) + 1      # only bars not processed yet
+        got = await self.data.minute_bars(syms, self.day, start, cur_min)
         cutoff = _mins(hhmm(self.c["entry_cutoff_et"]))
         half = self.half_day(now)
         exit_m = _mins(F.exit_time_et(self.c, half))

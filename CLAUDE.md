@@ -7,12 +7,13 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 - CLI: `python -m agentdesk run | record-demo | rh-inspect | backtest | l2-report`.
 - Book A (Evan's MACD 0DTE calls) is fully built. Books B–E exist only as the `books:` scaffold in `config.yaml`; build them per HANDOFF section 9.
 
-## The five books (all paper-only; Evan decided 2026-09-27: run them side by side)
+## The books (all paper-only; Evan decided 2026-09-27: run them side by side; F added 2026-09-28)
 - **A, Evan's MACD calls (built, unchanged):** 15m + 5m MACD(12,26,9) above signal = filter; 1m + 144-tick cross-up = trigger (fresh 1m cross -> SWING, 144t-only -> SCALP); RSI(14) 30–70 on 15m/5m/1m. Strikes by time of day + nearest resistance. $500 / max 5 contracts. Exits: −20% stop, scale-outs, breakeven, runner trail, cross-back, "ripping" hold, flatten 14:40 CT.
 - **B, iron fly (keep exactly as specified; Evan said don't change it):** 08:45 CT, $5 wings, TP 50%, stop 1× credit, close 14:30 CT.
 - **C, ChatGPT's bullish 30-min ORB -> $2 bull-put spread:** built as requested, but the backtest is negative (underlying −3 bp/trade, t −5.75 in-sample; spread −3.5% on risk). Expect paper to confirm that.
 - **C_bear_puts (disabled):** long puts on the bearish mirror; failed its backtest; stays off until a pre-registered filter set passes out-of-sample.
 - **D, 10:00 ET iron condor (new):** short strikes at 0.9× expected move, $2 wings, TP 50%, stop 2× credit, close 14:25 CT, quiet-day filter. Modeled +8.4% / +7.3% / +12.6% on risk with the filter (+4.0% / +3.5% / +10.1% at taker fills; roughly flat at IV multiplier 0.60).
+- **F, large-cap stocks in play (Evan, 2026-09-28; brief `docs/BOOK_F_HANDOFF.md`, rules frozen):** top 5 green first 5-min candles by RVOL5 >= 2 among the top 130 S&P names + 18 AI/memory extras; buy-stop at the OR high until 10:30 ET; stop fill - 0.10 x ATR14; exit 15:55 ET. $25 risk / $1,000 notional / 5 open / -$75 day. Long whole shares, paper only; red candles are logged as shadow shorts; the news tag is observe-only. Code: `books/f_*.py`, `brokers/*_equity.py`, `feeds/f_data.py`, `web/book_f.js`. `f-report`, `f-clear-stale`. Replication: `research/strategy_f_intraday.py`.
 - **E, pre-earnings IV run-up (new, experiment):** E1 = ATM straddle in the first post-earnings expiry (4–10 DTE), bought at T−3, sold before the announcement. E2 = calendar (short pre-earnings weekly / long post-earnings weekly) entered T−10..T−8, exited T−1. Never held through the announcement. About 30 liquid large caps; the Vol desk runs the screen. No quote backtest yet (ThetaData later).
 
 ## The crew (`crew.py`, `proposals.py`)

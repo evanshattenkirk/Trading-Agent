@@ -11,3 +11,7 @@ Reproduce the numbers quoted in the chat:
 Data: S&P 500 CFD 1-minute bars (Oanda, via github.com/FutureSharks/financial-data), VIX daily
 (github.com/datasets/finance-vix), SPY 5-minute bars 2025-04..2026-03 (github.com/vivek-v-rao/Intraday-Vol).
 Option prices in vrp_spreads.py / vrp2.py are Black-Scholes with VIX-implied vol; they are a model, not quotes.
+
+Book F replication (docs/BOOK_F_HANDOFF.md section 5; Alpaca SIP 1-minute bars, 2016-2026, resumable, a few hours the first time):
+
+    python research/strategy_f_intraday.py      # writes strategy_f_intraday.md / _results.json / strategy_f_equity.png

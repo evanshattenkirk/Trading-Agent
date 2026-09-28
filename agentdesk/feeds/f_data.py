@@ -71,6 +71,9 @@ class RobinhoodEquityData:
         self.throttle = Throttle(int(cfg.get("max_calls_per_s", 20)))
 
     async def _call(self, tool: str, args: dict, retry: bool = True):
+        start = getattr(self.rh, "start", None)
+        if start is not None:
+            await start()                                   # idempotent: the engine usually connected already
         await self.throttle.wait()
         try:
             return await self.rh.call(tool, args)
