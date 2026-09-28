@@ -463,8 +463,8 @@ class RobinhoodBroker(Broker):
         if not self.rh.account:
             raise SystemExit("No agent-tradable Robinhood account found.")
         if self.rh.option_level in ("", "option_level_0"):
-            raise SystemExit("Options are not approved on the Agentic account. Apply at "
-                             f"https://applink.robinhood.com/upgrade_options?account_number={self.rh.account}")
+            raise SystemExit("Options are not approved on the Agentic account "
+                             f"••••{self.rh.account[-4:]}. Apply in the Robinhood app: Account > Investing > Options.")
         if self.live and not self.rh.cfg.get("account_number"):
             raise SystemExit("Live mode: set robinhood.account_number in config.yaml to your Agentic account number.")
 
@@ -576,6 +576,11 @@ def _short(d, n=600):
 
 
 # --------------------------------------------------------------------------- rh-inspect (read-only)
+def redact_account(text: str, acct: str) -> str:
+    """Anything rh-inspect prints shows only the account's last 4 digits (Robinhood echoes it in responses)."""
+    return text.replace(acct, "••••" + acct[-4:]) if acct else text
+
+
 async def inspect_main(cfg, out: str) -> None:
     from datetime import datetime
     from ..clock import CT
@@ -587,10 +592,10 @@ async def inspect_main(cfg, out: str) -> None:
     print(f"\nConnected. {len(rh.tools)} tools. Schemas written to {out}")
     acct = rh.account or ""
     print(f"Agentic account: ...{acct[-4:] if acct else 'NOT FOUND'}  type={rh.account_info.get('type')}  "
-          f"option_level={rh.option_level or 'NONE (apply: https://applink.robinhood.com/upgrade_options?account_number=' + acct + ')'}")
+          f"option_level={rh.option_level or 'NONE (apply in the Robinhood app: Account > Investing > Options)'}")
     try:
         bp = find_key(await rh.call("get_portfolio", {"account_number": acct}), ["option_buying_power", "buying_power"])
-        print(f"Buying power: {bp}")
+        print(redact_account(f"Buying power: {bp}", acct))
     except Exception as ex:
         print(f"portfolio failed: {ex}")
     q = await rh.call("get_equity_quotes", {"symbols": ["SPY"]})
@@ -610,7 +615,7 @@ async def inspect_main(cfg, out: str) -> None:
             legs = [{"option_id": oid, "side": "buy", "position_effect": "open"}]
             print("review_option_order (simulation, nothing placed):")
             rev = await rh.call("review_option_order", order_args(acct, legs, 1, max(0.01, qt.bid), True))
-            print(json.dumps(rev, indent=2, default=str)[:3000])
+            print(redact_account(json.dumps(rev, indent=2, default=str), acct)[:3000])
     from .robinhood_equity import inspect_equity
     await inspect_equity(rh, acct)
     await rh.close()

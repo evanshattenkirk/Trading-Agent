@@ -119,10 +119,11 @@ class RobinhoodEquityBroker:
 
 async def inspect_equity(rh, acct: str) -> None:
     """rh-inspect's equity section (read-only): tradability for 3 names and a review of 1 share of SPY."""
+    from .robinhood import redact_account
     print("\nEquity (book F):")
     try:
         t = await rh.call("get_equity_tradability", {"symbols": ["NVDA", "AAPL", "MU"]})
-        print("get_equity_tradability:", json.dumps(t, default=str)[:1200])
+        print("get_equity_tradability:", redact_account(json.dumps(t, default=str), acct)[:1200])
     except Exception as ex:
         print(f"get_equity_tradability failed: {ex}")
     try:
@@ -130,7 +131,7 @@ async def inspect_equity(rh, acct: str) -> None:
         px = float(find_key(q, ["bid_price", "last_trade_price"]) or 0)
         args = equity_order_args(acct, "SPY", "buy", 1, max(0.01, round(px * 0.98, 2)))
         print("review_equity_order (simulation, nothing placed):")
-        print(json.dumps(await rh.call("review_equity_order", args), indent=2, default=str)[:3000])
+        print(redact_account(json.dumps(await rh.call("review_equity_order", args), indent=2, default=str), acct)[:3000])
     except Exception as ex:
         print(f"review_equity_order failed: {ex}")
     for tool in ("review_equity_order", "place_equity_order", "get_equity_orders", "cancel_equity_order",
