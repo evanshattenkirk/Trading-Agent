@@ -13,6 +13,7 @@ class HostGroup:
     def __init__(self, bookhost=None, fhost=None):
         self.bookhost, self.fhost = bookhost, fhost
         self.hosts = [h for h in (bookhost, fhost) if h is not None]
+        self._inline = True
         if bookhost is not None and fhost is not None:
             fhost.account = bookhost.account
             base = bookhost.open_risk
@@ -41,15 +42,25 @@ class HostGroup:
         if errs:
             raise errs[0]
 
+    async def run(self, coro, inline: bool) -> None:
+        """The engine's hook runner. on_bar/on_second hand each host's hook to that host's own run(), so an F error
+        never counts toward B/C/D's error halt (and the reverse)."""
+        self._inline = inline
+        await coro
+
+    async def _each(self, fn: str, *args) -> None:
+        for h in self.hosts:
+            await h.run(getattr(h, fn)(*args), self._inline)
+
     async def start(self) -> None:
         for h in self.hosts:
             await h.start()
 
     async def on_bar(self, bar) -> None:
-        await self._all("on_bar", bar)
+        await self._each("on_bar", bar)
 
     async def on_second(self, now: float) -> None:
-        await self._all("on_second", now)
+        await self._each("on_second", now)
 
     def halt_all(self, reason: str, flatten: bool = False) -> None:
         for h in self.hosts:

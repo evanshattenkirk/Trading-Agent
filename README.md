@@ -2,7 +2,7 @@
 
 > Start with **HANDOFF.md** (v3: status, all five strategy books A–E with backtests, team operations, build spec, phased plan) and **CLAUDE.md**.
 >
-> Strategy books, all paper-only and run side by side: **A** Evan's MACD 0DTE calls (built), **B** 0DTE iron fly, **C** 30-min ORB bull-put spread (bearish-puts variant disabled), **D** 10:00 ET iron condor, **E** pre-earnings IV run-up (straddle T−3 / calendar T−10, never held through earnings). B–E are specified in HANDOFF section 7 and scaffolded under `books:` in `config.yaml`. **F** large-cap stocks in play (long whole shares, 5-minute opening-range breakout on high relative volume; brief in `docs/BOOK_F_HANDOFF.md`) runs in `agentdesk/books/f_host.py`; `python -m agentdesk f-report` shows its paper record and `research/strategy_f_intraday.py` is its replication backtest.
+> Strategy books, all paper-only and run side by side: **A** Evan's MACD 0DTE calls (built), **B** 0DTE iron fly, **C** 30-min ORB bull-put spread (bearish-puts variant disabled), **D** 10:00 ET iron condor, **E** pre-earnings IV run-up (straddle T−3 / calendar T−10, never held through earnings). B, C and D run as paper books in `agentdesk/books/`; E is specified in HANDOFF section 7 and not built yet. **F** large-cap stocks in play (long whole shares, 5-minute opening-range breakout on high relative volume; brief in `docs/BOOK_F_HANDOFF.md`) runs in `agentdesk/books/f_host.py`; `python -m agentdesk f-report` shows its paper record and `research/strategy_f_intraday.py` is its replication backtest.
 
 Automated 0DTE SPY call trading on Robinhood's Agentic Trading MCP. The engine that decides entries and exits is fixed-rule Python. A research crew of Claude "desks" briefs it, argues in roundtables, votes on size (50–125%, with a size-up only when every conviction check passes), and pitches tweaks or new strategies. Anything beyond today's bounded tweaks waits for your approval. The dashboard shows every decision, and the office in the bottom-right acts it out.
 
@@ -81,10 +81,10 @@ Robinhood auth is OAuth. Tokens are cached at `~/.agentdesk/rh_oauth.json` with 
 
 | Desk | Huddles | Brings |
 |---|---|---|
-| Macro | 07:45, 11:30 | Econ calendar, data surprises, blackouts around CPI / NFP / ISM |
-| Rates | 07:45, 11:30 | 2Y / 10Y moves, curve, auctions |
-| Fed Watch | 07:45, 13:15 | FOMC timing, Fed speakers |
-| Vol | 07:45, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop |
+| Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar, data surprises, blackouts around CPI / NFP / ISM |
+| Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y / 10Y moves, curve, auctions |
+| Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC timing, Fed speakers |
+| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop |
 | Quant | after 2 straight losses, 15:05 | Our own stats; per-day and standing tweaks |
 | Risk | loss reviews, halts | Reports the deterministic risk manager |
 | Tape | loss reviews, big walls | Level 2 book read |
@@ -126,6 +126,15 @@ The engine polls Robinhood's `get_equity_price_book` for SPY every second. On ea
 
 Robinhood's intraday history for past 0DTE contracts comes back gap-filled, so it can't be used for option P&L. In paper, shadow and live modes the engine therefore records real 0DTE quotes (calls and puts, ATM−10 through ATM+10) every 10 seconds into `journal.option_quotes`. A few weeks of that settles naked calls vs debit spreads, and the iron fly / condor credits, on real prices.
 
+## Paper books B, C, D
+
+Books B (iron fly), C (ORB bull-put) and D (iron condor) run next to book A in every mode, always on paper: fills are simulated at mid minus 1¢ per leg (never worse than the natural price) and each fill logs both. In shadow mode the first price of each B/C/D order also goes to `review_option_order`; nothing is ever placed. Settings live under `books:` in `config.yaml` (`paper_only: true` is required).
+
+- Account: $10,000 paper balance, $1,500 cap on the sum of open max losses (book A's open debit counts), $300 max loss per B/C/D position, C sized from a $400 budget (the lower wins).
+- Each book has its own trades, P&L and halt. A book that keeps erroring halts and flattens itself; the kill switch, safety halts and the 14:40 CT flatten cover every book.
+- The journal's `trades` table has a `book` column (A, B, C, D) plus `legs` and `max_loss`.
+- Dashboard: the chips next to the header stats switch between ALL and each book. The Day P&L, the position card (legs, credit, mark, take profit, stop, max loss) and the trades table follow the selection.
+
 ## Things to know before real money
 
 - **Stops live in this process, not at Robinhood.** If your Mac sleeps or loses its connection, open positions are unmanaged. Run it on a machine that stays awake (`caffeinate -dims python -m agentdesk run --mode live`). On startup, the engine refuses to trade if the Agentic account already holds option positions.
@@ -138,6 +147,7 @@ Robinhood's intraday history for past 0DTE contracts comes back gap-filled, so i
 ```
 agentdesk/  engine.py strategy.py indicators.py bars.py strikes.py levels.py exits.py risk.py crew.py
             brokers/{paper,robinhood}.py  feeds/{sim,alpaca,massive}.py  backtest.py server.py web/
+            books/  host.py account.py combo.py fills.py iron_fly.py orb_bull_put.py iron_condor.py vol.py
 tests/      test_core.py
 research/   strategy study + spread/VRP modeling scripts (see research/README.md)
 tools/      build_demo.py  (records a sim day into the single-file demo page)

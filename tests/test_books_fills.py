@@ -129,3 +129,9 @@ def test_fetch_quotes_accepts_flat_items_and_missing_legs():
     src = RHQ(lambda ids: {"quotes": [{"instrument_id": i, "bid_price": "1.00", "ask_price": "1.02"} for i in ids[:3]]})
     qs = run(fetch_quotes(src, contracts(FLY)))
     assert [q is None for q in qs] == [False, False, False, True]    # a missing leg is None, never a stale guess
+
+
+def test_fetch_quotes_treats_a_missing_bid_as_zero():                 # review #11
+    src = RHQ(lambda ids: {"results": [{"instrument_id": i, "quote": {"bid_price": None, "ask_price": "0.01"}} for i in ids]})
+    qs = run(fetch_quotes(src, contracts(FLY)))
+    assert all(q is not None and q.bid == 0.0 and q.ask == 0.01 for q in qs)

@@ -77,3 +77,24 @@ def test_b_trades_one_fly_through_the_host_and_no_duplicate():
         asyncio.run(host.on_second(ct_ts(8, 45, s)))
     assert len(host.positions()) == 1 and host.books[0].trades == 1
     assert host.positions()[0].stop == pytest.approx(6.26) and host.positions()[0].target == pytest.approx(1.56)
+
+
+def test_a_raising_quote_call_at_0845_retries_next_second():         # review #2
+    fq = FakeQuotes(now=ct_ts(8, 45))
+    for right, k, b, a in (("call", 765, 2.00, 2.02), ("put", 765, 1.90, 1.92), ("call", 770, 0.40, 0.41), ("put", 760, 0.35, 0.36)):
+        fq.set(right, k, b, a)
+    real, calls = fq.quote, {"n": 0}
+
+    async def flaky(c):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("robinhood 503")
+        return await real(c)
+    fq.quote = flaky
+    eng = FakeEngine(fq)
+    eng.price = 765.3
+    host = BookHost(eng, eng.cfg, books=[Book("B_iron_fly", C, IronFly(C))])
+    for s in range(0, 3):
+        fq.now = ct_ts(8, 45, s)
+        asyncio.run(host.on_second(ct_ts(8, 45, s)))
+    assert len(host.positions()) == 1 and host.books[0].trades == 1

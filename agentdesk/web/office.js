@@ -403,7 +403,7 @@
       this.cx.font = FONT; this.cx.fillStyle = '#9aa3b2';
       const z = Math.floor(this.t) % 3;
       this.cx.fillText('Z'.repeat(z + 1), 104 * S, 64 * S);
-      this.cx.fillText('BACK AT 7:30', 72 * S, 86 * S);
+      this.cx.fillText('BACK AT 8:15', 72 * S, 86 * S);
     }
 
     drawBubble(a) {

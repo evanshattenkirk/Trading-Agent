@@ -372,3 +372,60 @@ def test_open_risk_is_shared_between_f_and_the_other_books():
     assert host.account is bh.account
     assert bh.open_risk() == pytest.approx(p.risk)
     assert g.positions() == [p]
+
+
+class Boom:
+    """A host whose hooks raise: stands in for an F failure outside FHost's own guard."""
+    book = None
+
+    async def on_second(self, now):
+        raise RuntimeError("boom")
+
+    async def run(self, coro, inline):
+        try:
+            await coro
+        except RuntimeError:
+            self.failed = True
+
+
+def test_group_runs_each_host_under_its_own_guard():
+    from agentdesk.books.group import HostGroup
+    from agentdesk.books.host import BookHost
+    eng, data, host = make()
+    bh = BookHost(eng, eng.cfg, books=[])
+    g = HostGroup(bh, host)
+    g.hosts[1] = boom = Boom()                # F's slot raises; B/C/D's error count must not move
+    run(g.run(g.on_second(et(9, 40)), True))
+    assert boom.failed and bh._errors == 0 and not bh.account.halted
+
+
+def test_fhost_run_counts_its_own_errors_and_runs_in_the_background():
+    eng, data, host = make()
+
+    async def fail():
+        raise RuntimeError("boom")
+
+    run(host.run(fail(), True))
+    assert host.book.errors == 1
+
+    async def bg():
+        seen = []
+
+        async def slow():
+            await asyncio.sleep(0)
+            seen.append(1)
+        await host.run(slow(), False)
+        assert not seen                       # returned before the hook ran
+        await asyncio.gather(*host._tasks)
+        return seen
+    assert run(bg()) == [1]
+
+
+def test_group_with_f_alone_runs_hooks():
+    from agentdesk.books.group import HostGroup
+    eng, data, host = make()
+    g = HostGroup.of(None, host)
+    eng.feed.t = et(8, 30, 1)
+    run(g.start())
+    run(g.run(g.on_second(et(8, 30, 1)), True))
+    assert host.prepared

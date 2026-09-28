@@ -181,3 +181,67 @@ def test_snapshot_lists_book_a_first():
     eng, fq, host = setup()
     snap = host.snapshot()
     assert [b["book"] for b in snap["books"]] == ["A", "B"] and "open_risk" in snap["account"]
+
+
+def test_start_announces_the_books_so_a_replay_shows_the_strip():
+    eng, fq, host = setup()
+    run(host.start())
+    (ev,) = eng.bus.of("books")
+    assert [b["book"] for b in ev["books"]] == ["A", "B"] and "open_risk" in ev["account"]
+
+
+def test_position_updates_carry_only_the_live_fields():
+    eng, fq, host = setup()
+    tick(host, fq, ct_ts(8, 45))
+    tick(host, fq, ct_ts(8, 45, 3))
+    up = [d for d in eng.bus.of("book_position") if d["event"] == "update"][0]["pos"]
+    assert "legs" not in up and "fills" not in up and {"id", "book", "mark", "total_pnl"} <= set(up)
+
+
+def test_safety_flatten_does_not_wait_for_a_clean_quote():            # review #3
+    eng, fq, host = setup()
+    tick(host, fq, ct_ts(8, 45))
+    host.halt_all("SAFETY: stale quote", flatten=True)
+    fq.set("put", 760, 0.40, 0.35)                                   # crossed wing
+    tick(host, fq, ct_ts(8, 46))
+    assert not host.positions() and "SAFETY" in eng.journal.trades()[0]["exit_reason"]
+
+
+def test_flatten_with_a_missing_leg_closes_at_the_last_mark():
+    eng, fq, host = setup()
+    tick(host, fq, ct_ts(8, 45))
+    mark = host.positions()[0].mark
+    del fq.book[("put", 760.0)]
+    tick(host, fq, ct_ts(14, 40))
+    row = eng.journal.trades()[0]
+    assert not host.positions() and "last mark" in row["exit_reason"]
+    assert row["pnl"] == pytest.approx((3.13 - mark) * 100 - 0.32)
+
+
+def test_a_hanging_vix_fetch_never_stalls_position_management():     # review #6
+    eng, fq, host = setup()
+    tick(host, fq, ct_ts(8, 45))
+    pos = host.positions()[0]
+
+    class Hang:
+        async def prior_close(self, day):
+            await asyncio.Event().wait()
+    host.vix = Hang()
+
+    async def go():
+        for s in (1, 2):
+            fq.now = ct_ts(8, 46, s)
+            await host.run(host.on_second(ct_ts(8, 46, s)), inline=False)
+            await asyncio.sleep(0.01)
+    run(go())
+    assert pos.last_quote_ts == ct_ts(8, 46, 2)
+
+
+@pytest.mark.parametrize("raw,want", [(True, True), (False, False), ("false", False), ("True", True), ("n/a", None)])
+def test_vix1d_flag_is_parsed_strictly(raw, want):                    # review #8
+    eng, fq, host = setup()
+
+    class Crew:
+        briefs = {"vol": {"ts": ct_ts(8, 25), "vix1d_flag": raw}}
+    eng.crew = Crew()
+    assert host._ctx(ct_ts(8, 45), host.books[0]).vix1d_flag is want

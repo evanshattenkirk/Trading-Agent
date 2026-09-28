@@ -4,6 +4,7 @@
   python -m agentdesk rh-inspect                                         connect to Robinhood MCP, dump tool schemas (read-only)
   python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
+  python -m agentdesk record-quotes [--once|--status|--report|--probe]   standalone 0DTE quote recorder (read-only)
   python -m agentdesk f-report [--since YYYY-MM-DD]                      book F paper record
 """
 from __future__ import annotations
@@ -47,8 +48,6 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         from .feeds.alpaca import AlpacaFeed, AlpacaQuotes
         if cfg["data"]["alpaca"]["feed"] == "iex" and cfg["strategy"].get("tick_bar_size_iex"):
             cfg["strategy"]["tick_bar_effective"] = cfg["strategy"]["tick_bar_size_iex"]
-            if isinstance(cfg.get("books", {}).get("C_orb_bull_put"), dict):
-                cfg["books"]["C_orb_bull_put"]["reset_volume_on_live"] = True
             logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)",
                                                    cfg["strategy"]["tick_bar_size_iex"])
         feed = AlpacaFeed(cfg)
@@ -132,7 +131,8 @@ def cmd_record(args) -> None:
     with open(args.out, "w") as f:
         bus.recorder = f
         bus.record_filter = {"bar", "cross", "signal", "order", "fill", "position", "trade_closed", "risk", "skip",
-                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal"}
+                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal",
+                             "books", "book_order", "book_position", "book_closed", "book_skip"}
 
         async def main():
             await engine.run()
@@ -169,6 +169,28 @@ def cmd_l2_report(args) -> None:
     for lo, hi in ((-1, -0.25), (-0.25, 0), (0, 0.25), (0.25, 1.01)):
         show(f"imbalance {lo:+.2f}..{hi:+.2f}", [r for r in rows if lo <= r["_l2"].get("imb", 0) < hi])
     show("ask wall within $0.30", [r for r in rows if r["_l2"].get("ask_wall")])
+
+
+def cmd_record_quotes(args) -> None:
+    from . import recorder
+    cfg = load_config(args.config)
+    if args.status:
+        print(recorder.status(cfg))
+        return
+    if args.report:
+        print(recorder.rate_report(expand(cfg["journal_path"]), days=args.days, tag=args.tag))
+        return
+    if args.probe:
+        print(asyncio.run(recorder.probe(cfg, rates=tuple(int(x) for x in args.rates.split(",")))))
+        return
+    from logging.handlers import RotatingFileHandler
+    recorder.RECORDER_DIR.mkdir(parents=True, exist_ok=True)
+    fh = RotatingFileHandler(recorder.RECORDER_DIR / "recorder.log", maxBytes=5_000_000, backupCount=5)
+    fh.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(fh)
+    for noisy in ("httpx", "httpcore", "mcp"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    asyncio.run(recorder.RecorderDaemon(cfg).run(once=args.once))
 
 
 def cmd_f_report(args) -> None:
@@ -225,6 +247,16 @@ def main() -> None:
 
     l2r = sub.add_parser("l2-report", help="win rate / avg P&L by Level 2 state at entry")
     l2r.set_defaults(fn=cmd_l2_report)
+
+    rq = sub.add_parser("record-quotes", help="standalone 0DTE quote recorder (launchd runs this; read-only)")
+    rq.add_argument("--once", action="store_true", help="sign in if needed, take one snapshot now, exit")
+    rq.add_argument("--status", action="store_true", help="is it recording? today's rows and call stats")
+    rq.add_argument("--report", action="store_true", help="Robinhood call rates, latency and errors")
+    rq.add_argument("--days", type=int, default=5)
+    rq.add_argument("--tag", default=None, help="report only recorder or probe calls")
+    rq.add_argument("--probe", action="store_true", help="bounded read-only rate ramp; run outside market hours")
+    rq.add_argument("--rates", default="1,2,4,8", help="probe steps, calls per second")
+    rq.set_defaults(fn=cmd_record_quotes)
 
     fr = sub.add_parser("f-report", help="book F paper record: win rate, mean R, PF, t, splits, shadow shorts")
     fr.add_argument("--since", default=None, help="YYYY-MM-DD")

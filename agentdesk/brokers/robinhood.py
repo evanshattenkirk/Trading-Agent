@@ -295,34 +295,86 @@ class OptionQuoteRecorder:
     """Records real 0DTE SPY quotes into the journal: calls and puts ATM-10..ATM+10 (covers B's +-$5 wings and D's
     +-0.9 EM shorts + $2 wings).
     Calls settle naked-vs-debit-spread on real prices; the ATM call+put pair measures what the straddle
-    really costs vs the move that follows (the variance-risk-premium check behind the iron-fly idea)."""
+    really costs vs the move that follows (the variance-risk-premium check behind the iron-fly idea).
 
-    def __init__(self, rh: RobinhoodMCP, journal, every: float = 10.0):
-        self.rh, self.journal, self.every = rh, journal, every
+    The day's 0DTE chain is listed once (paged get_option_instruments) and cached, so each poll is one
+    get_option_quotes call. The engine's copy stands down while the standalone recorder
+    (python -m agentdesk record-quotes) is recording, so rows aren't written twice."""
+
+    CHAIN_RETRY_SEC = 300          # an empty chain (holiday, listing error) is retried at most this often
+    CHAIN_REFRESH_SEC = 900        # missing strikes near the money trigger a re-list at most this often
+
+    def __init__(self, rh: RobinhoodMCP, journal, every: float = 10.0, width: int = 10, symbol: str = "SPY",
+                 standalone: bool = False):
+        self.rh, self.journal, self.every, self.width, self.symbol = rh, journal, every, width, symbol
+        self.standalone = standalone
+        self.chain: dict[tuple[float, str], str] = {}
+        self.chain_day: str | None = None
+        self.chain_ts = 0.0
+
+    async def load_chain(self, exp: str) -> int:
+        chain: dict[tuple[float, str], str] = {}
+        cursor = None
+        for _ in range(40):
+            args = {"chain_symbol": self.symbol, "expiration_dates": exp, "state": "active"}
+            if cursor:
+                args["cursor"] = cursor
+            data = await self.rh.call("get_option_instruments", args)
+            for it in dict_items(data):
+                if str(it.get("expiration_date") or exp) != exp or not it.get("id"):
+                    continue
+                try:
+                    chain[(float(it["strike_price"]), str(it["type"]).lower())] = str(it["id"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+            cursor = data.get("next") if isinstance(data, dict) else None
+            if not cursor:
+                break
+        self.chain, self.chain_day, self.chain_ts = chain, exp, time.time()
+        log.info("quote recorder: %s 0DTE chain for %s has %d contracts", self.symbol, exp, len(chain))
+        return len(chain)
+
+    def wanted(self, px: float) -> dict[str, tuple[float, str]]:
+        atm = round(px)
+        ids = {}
+        for r in ("call", "put"):
+            for k in range(-self.width, self.width + 1):
+                oid = self.chain.get((float(atm + k), r))
+                if oid:
+                    ids[oid] = (float(atm + k), r)
+        return ids
+
+    async def poll_once(self, px: float, now: float) -> int:
+        """One snapshot: quotes for ATM-width..ATM+width calls and puts at spot px. Returns rows written."""
+        from ..clock import session_date
+        exp = str(session_date(now))
+        age = time.time() - self.chain_ts
+        if self.chain_day != exp or (not self.chain and age > self.CHAIN_RETRY_SEC):
+            await self.load_chain(exp)
+        ids = self.wanted(px)
+        if len(ids) < 2 * (2 * self.width + 1) and self.chain and age > self.CHAIN_REFRESH_SEC:
+            await self.load_chain(exp)
+            ids = self.wanted(px)
+        if not ids:
+            return 0
+        data = await self.rh.call("get_option_quotes", {"instrument_ids": list(ids)})
+        rows = []
+        for q in dict_items(data.get("quotes", data) if isinstance(data, dict) else data):
+            q = q.get("quote", q) if isinstance(q.get("quote"), dict) else q
+            oid = str(q.get("instrument_id") or find_key(q, ["instrument_id", "id"]) or "")
+            if oid in ids and q.get("bid_price") is not None and q.get("ask_price") is not None:
+                rows.append((now, exp, ids[oid][0], ids[oid][1], float(q["bid_price"]), float(q["ask_price"]), px))
+        self.journal.record_quotes(rows)
+        return len(rows)
 
     async def run(self, price_fn, now_fn) -> None:
-        from ..clock import is_rth, session_date
-        from ..exits import Contract
+        from ..clock import is_rth
+        from ..recorder import standalone_active
         while True:
             try:
                 now, px = now_fn(), price_fn()
-                if px and is_rth(now):
-                    exp = str(session_date(now))
-                    atm = round(px)
-                    cs = [Contract("SPY", exp, float(atm + k), r) for r in ("call", "put") for k in range(-10, 11)]
-                    ids = {}
-                    for c in cs:
-                        oid = await self.rh.instrument_id(c)
-                        if oid:
-                            ids[oid] = (c.strike, c.right)
-                    if ids:
-                        data = await self.rh.call("get_option_quotes", {"instrument_ids": list(ids)})
-                        rows = []
-                        for q in dict_items(data.get("quotes", data) if isinstance(data, dict) else data):
-                            oid = str(q.get("instrument_id") or find_key(q, ["instrument_id", "id"]) or "")
-                            if oid in ids and q.get("bid_price") is not None:
-                                rows.append((now, exp, ids[oid][0], ids[oid][1], float(q["bid_price"]), float(q["ask_price"]), px))
-                        self.journal.record_quotes(rows)
+                if px and is_rth(now) and (self.standalone or not standalone_active()):
+                    await self.poll_once(px, now)
             except Exception as ex:
                 log.debug("quote recorder: %s", ex)
             await asyncio.sleep(self.every)

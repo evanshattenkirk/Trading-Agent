@@ -70,6 +70,7 @@ class FHost:
         self.q: dict[str, F.Q] = {}
         self.day = None
         self._busy = False
+        self._tasks: set = set()
         self._reset_day(None)
 
     # ------------------------------------------------------------ state
@@ -165,6 +166,15 @@ class FHost:
             await self._safe(self._tick(now), now)
         finally:
             self._busy = False
+
+    async def run(self, coro, inline: bool) -> None:
+        """Run a hook inline (sim) or as a background task, under F's own error count (like BookHost.run)."""
+        if inline:
+            await self._safe(coro, self.e.feed.now())
+        else:
+            t = asyncio.create_task(self._safe(coro, self.e.feed.now()))
+            self._tasks.add(t)
+            t.add_done_callback(self._tasks.discard)
 
     async def _safe(self, coro, now: float) -> None:
         b = self.book
