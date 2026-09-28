@@ -15,3 +15,9 @@ Option prices in vrp_spreads.py / vrp2.py are Black-Scholes with VIX-implied vol
 Book F replication (docs/BOOK_F_HANDOFF.md section 5; Alpaca SIP 1-minute bars, 2016-2026, resumable, a few hours the first time):
 
     python research/strategy_f_intraday.py      # writes strategy_f_intraday.md / _results.json / strategy_f_equity.png
+
+Book F daily study (HANDOFF v3.1 section 7F), rebuilt because the original strategy_f.py isn't in the repo; checked
+against 7F's 2013-2018 table in strategy_f_daily.md. Any folder of per-symbol daily CSVs:
+
+    python research/strategy_f_daily.py <folder> <out.json>
+    python research/strategy_f_daily.py research/data/f_intraday/daily research/strategy_f_daily_results_2016_2026.json
