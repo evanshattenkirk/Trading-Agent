@@ -56,6 +56,7 @@ class Engine:
         self._managing = False
         self.l2 = None              # L2Monitor
         self.l2_rh = None           # RobinhoodMCP for live books
+        self.closers: list = []     # async close() callables run on shutdown (data feed, Robinhood session)
         self.simbook = None         # SimBook in the simulator
         self._last_l2_emit = 0.0
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
@@ -75,14 +76,18 @@ class Engine:
         await self.broker.start()
         await self.quotes.start()
         await self._warmup()
+        restored = self.risk.restore(str(self.day))      # a restart keeps today's P&L, counts, cooldown and halts
+        if restored:
+            self.bus.emit("log", self.feed.now(), level="warn" if self.risk.st.halted else "info", msg=restored)
         try:
             stale = await self.broker.open_positions()
         except Exception as ex:
             stale = None
-            self.risk.halt(f"could not read account positions at startup ({ex}); fix the connection, then restart")
+            self.risk.halt(f"could not read account positions at startup ({ex}); fix the connection, then restart", sticky=False)
             self.bus.emit("log", self.feed.now(), level="error", msg=self.risk.st.halt_reason)
         if stale:
-            self.risk.halt(f"{len(stale)} option position(s) already open in the account at startup; close them in the app, then restart")
+            self.risk.halt(f"{len(stale)} option position(s) already open in the account at startup; close them in the app, then restart",
+                           sticky=False)
             self.bus.emit("log", self.feed.now(), level="warn", msg=self.risk.st.halt_reason)
         if self.books:
             if self.risk.st.halted:
@@ -215,7 +220,7 @@ class Engine:
         self.levels.reset_session()
         self.vwap.reset()
         self.tick.reset()
-        self.risk.reset_day()
+        self.risk.reset_day(str(d))
         self.closed.clear()
         for q in self.bars.values():
             q.clear()
@@ -361,7 +366,7 @@ class Engine:
             return
         async with self._busy:
             now = es.ts
-            ok, why = self.risk.can_enter(now, len(self.open))
+            ok, why = self.risk.can_enter(now, len(self.open), self.risk.open_pnl([p for p, _ in self.open]))
             self.sig.consume(es)
             if not ok:
                 self._skip(now, es, why)
@@ -501,6 +506,10 @@ class Engine:
             if q is None or (q.bid <= 0 and q.ask <= 0) or (not self.inline and now - q.ts > self.wd["quote_stale_sec"]):
                 continue            # the watchdog halts if this lasts longer than quote_stale_sec
             pos.last_quote_ts = now
+            pos.bid = q.bid
+            if not flat and self.risk.check_open_loss([p for p, _ in self.open]):
+                flat = self.risk.st.halt_reason
+                self.bus.emit("log", now, level="error", msg=f"{flat}. Flattening.")
             so = getattr(pos.contract, "sellout_ts", None)
             if not flat and so and now >= so - 300:
                 flat = "5 min before Robinhood's sellout time"
@@ -624,7 +633,7 @@ class Engine:
                 await self.books.flatten(reason, now)
 
     def pause(self, on: bool) -> None:
-        self.risk.st.paused = on
+        self.risk.set_paused(on)
         now = self.feed.now()
         self.set_agent(now, "paused" if on else "watching", "Paused: no new entries" if on else "Back on it.")
         self.bus.emit("risk", now, risk=self.risk.to_dict())

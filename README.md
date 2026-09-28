@@ -21,7 +21,7 @@ Automated 0DTE SPY call trading on Robinhood's Agentic Trading MCP. The engine t
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m agentdesk run --mode sim      # opens http://127.0.0.1:8765, synthetic day at 30x speed (config default is paper)
+python -m agentdesk run --mode sim      # opens http://127.0.0.1:8765/#token=..., synthetic day at 30x speed (config default is paper)
 python -m agentdesk run --mode sim --speed 120
 python -m pytest -q tests               # 25 tests
 ```
@@ -41,7 +41,11 @@ python -m pytest -q tests               # 25 tests
 | "When it's ripping" | If the 5m histogram is rising and price is above VWAP, the runner ignores the 1m cross back and waits for a 5m cross back (the trail still protects it) | `ripping_hold` |
 | Not held overnight | No entries after 14:30. Everything is flattened at 14:40 CT, and 5 minutes before each contract's Robinhood sellout time (14:45 CT for SPY 0DTE). Half-days: entries stop 11:20, flatten 11:40 | `strategy.entry_window`, `exits.flatten_at`, `calendar.early_close` |
 
-Risk limits: −$400 daily loss halts trading. After +$600, giving back 40% of the peak halts trading. 12 trades a day max, one position at a time. Two straight losses start a 15-minute cooldown. No entries from 10 minutes before to 20 minutes after a high-impact event, and positions go flat 5 minutes before one. You can also pause, flatten, or kill from the dashboard.
+Risk limits: −$400 daily loss halts trading. After +$600, giving back 40% of the peak halts trading. 12 trades a day max, one position at a time. Two straight losses start a 15-minute cooldown. No entries from 10 minutes before to 20 minutes after a high-impact event, and positions go flat 5 minutes before one. You can also pause, flatten, or kill from the dashboard. The loss limit counts open positions at the bid: once realized plus open P&L reaches −$400 the engine halts and flattens.
+
+The day's P&L, trade count, cooldown, pause and any halt (kill switch, safety halt, loss limit) are saved in `~/.agentdesk/risk_state_<mode>.json`, so restarting the engine the same day doesn't reset them. `run --clear-halt` lifts a saved halt; the P&L and limits still apply.
+
+The dashboard controls (pause, flatten, kill, approve) need the link printed in the terminal, which carries a new token each run (or set `AGENTDESK_TOKEN` in `.env`). Ctrl-C or SIGTERM stops the engine within a few seconds and sends no orders; in live mode open positions are left in the account and logged.
 
 ## Robinhood account prerequisites
 

@@ -97,6 +97,7 @@ risk:
     quote_stale_sec: 10           # an open position with no usable option quote for this long
     max_consecutive_errors: 3     # broker/API calls failing in a row
     reconcile_sec: 30             # live only: account positions vs engine positions; 2 mismatches in a row halt
+  state_path: ~/.agentdesk/risk_state_{mode}.json   # today's P&L, trades, cooldown and halts survive a restart
 
 crew:
   enabled: true
@@ -141,7 +142,8 @@ calendar:
   early_close: [2026-11-27, 2026-12-24, 2027-07-02, 2027-11-26, 2027-12-24]
 
 server:
-  host: 127.0.0.1
+  host: 127.0.0.1         # localhost only; the dashboard controls also need the token in the printed link
   port: 8765
+  token: null             # null = new random token each run (or set AGENTDESK_TOKEN in .env)
 
 journal_path: ~/.agentdesk/journal.db
