@@ -1,19 +1,62 @@
-"""FastAPI app: serves the dashboard, streams engine events over a websocket, exposes controls."""
+"""FastAPI app: serves the dashboard, streams engine events over a websocket, exposes controls.
+
+Controls (kill, flatten, pause, resume, proposal decisions) need the per-run token in an X-AgentDesk-Token
+header. The token reaches the page only through the link printed in the terminal (#token=...), never from a
+URL the server serves, so another site can't read it. Requests from another site's pages (Origin) or through
+a hostname other than this machine's (DNS rebinding) are refused outright.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import secrets
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 WEB = Path(__file__).parent / "web"
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
-def create_app(engine, bus) -> FastAPI:
+def resolve_token(server_cfg) -> str:
+    """AGENTDESK_TOKEN env var, else server.token in config, else a fresh random token for this run."""
+    return os.environ.get("AGENTDESK_TOKEN") or (server_cfg or {}).get("token") or secrets.token_urlsafe(24)
+
+
+def _hostname(value: str | None) -> str | None:
+    if not value:
+        return None
+    return urlsplit(value if "://" in value else f"//{value}").hostname
+
+
+def create_app(engine, bus, token: str | None = None, allowed_hosts=()) -> FastAPI:
     app = FastAPI(title="AgentDesk")
+    token = token or resolve_token({})
+    hosts = LOCAL_HOSTS | {h for h in allowed_hosts if h and h not in ("0.0.0.0", "::")}
+
+    def host_ok(headers) -> bool:
+        return _hostname(headers.get("host")) in hosts
+
+    def origin_ok(headers) -> bool:          # browsers send Origin on cross-site POSTs and on every websocket
+        o = headers.get("origin")
+        return o is None or _hostname(o) in hosts
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        if not host_ok(request.headers):
+            return JSONResponse({"ok": False, "error": "unknown host"}, 403)
+        if request.method not in SAFE_METHODS:
+            if not origin_ok(request.headers):
+                return JSONResponse({"ok": False, "error": "cross-site request refused"}, 403)
+            if not secrets.compare_digest(request.headers.get("x-agentdesk-token", ""), token):
+                return JSONResponse({"ok": False, "error": "Controls need the dashboard link printed in the terminal "
+                                                           "(it carries this run's control token)."}, 401)
+        return await call_next(request)
 
     @app.get("/")
     async def index():
@@ -71,6 +114,9 @@ def create_app(engine, bus) -> FastAPI:
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
+        if not (host_ok(sock.headers) and origin_ok(sock.headers)):
+            await sock.close(code=1008)
+            return
         await sock.accept()
         q = bus.subscribe()
         gone = asyncio.create_task(_until_disconnect(sock))    # a quiet bus must not keep a closed socket alive

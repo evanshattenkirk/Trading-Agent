@@ -87,21 +87,27 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
 def cmd_run(args) -> None:
     import uvicorn
     from . import lifecycle
-    from .server import create_app
+    from .server import LOCAL_HOSTS, create_app, resolve_token
 
     cfg = load_config(args.config)
     mode = args.mode or cfg["mode"]
     engine, bus = build(cfg, mode, args.speed, args.seed, args.day)
     engine.risk.clear_halt_on_restore = args.clear_halt
-    app = create_app(engine, bus)
     host, port = cfg["server"]["host"], cfg["server"]["port"]
+    token = resolve_token(cfg["server"])
+    app = create_app(engine, bus, token=token, allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])])
+    if host not in LOCAL_HOSTS:
+        logging.getLogger("agentdesk").warning("dashboard bound to %s: reachable from the network (controls still need "
+                                               "the token)", host)
+    link = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/#token={token}"
 
     async def main():
         server = lifecycle.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
                                                  timeout_graceful_shutdown=2))
-        print(f"\n  AgentDesk [{mode.upper()}] -> http://{host}:{port}   (Ctrl-C to stop)\n", flush=True)
+        print(f"\n  AgentDesk [{mode.upper()}] -> {link}\n  (open this link for the controls; Ctrl-C to stop)\n",
+              flush=True)
         if not args.no_browser:
-            webbrowser.open(f"http://{host}:{port}")
+            webbrowser.open(link)
         return await lifecycle.serve(engine, server, engine.closers)
 
     timer = asyncio.run(main())
