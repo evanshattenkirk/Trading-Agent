@@ -632,8 +632,18 @@
     $('confirm-no').onclick = () => { $('confirm').hidden = true; };
     $('confirm-no').focus();
   }
+  // control token: arrives once in the terminal link (#token=...), then kept for this dashboard origin only
+  function token() {
+    try {
+      const m = location.hash.match(/token=([\w-]+)/);
+      if (m) { localStorage.setItem('agentdesk-token', m[1]); history.replaceState(null, '', location.pathname + location.search); return m[1]; }
+      return localStorage.getItem('agentdesk-token') || '';
+    } catch (e) { return ''; }
+  }
+  token();
+  window.addEventListener('hashchange', token);
   async function post(path) {
-    try { const r = await fetch(path, { method: 'POST' }); const j = await r.json(); if (!j.ok) banner(`<b>${esc(j.error || 'Request failed')}</b>`); }
+    try { const r = await fetch(path, { method: 'POST', headers: { 'X-AgentDesk-Token': token() } }); const j = await r.json(); if (!j.ok) banner(`<b>${esc(j.error || 'Request failed')}</b>`); }
     catch (e) { banner('<b>Could not reach the engine.</b>'); }
   }
   function wireControls() {

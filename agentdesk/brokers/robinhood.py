@@ -187,19 +187,50 @@ class RobinhoodMCP:
                 token_endpoint_auth_method="none"),
             storage=FileTokenStorage(Path(os.path.expanduser(self.cfg["token_dir"])) / "rh_oauth.json"),
             redirect_handler=redirect, callback_handler=cb.wait)
-        self.stack = AsyncExitStack()
-        read, write, _ = await self.stack.enter_async_context(streamablehttp_client(self.url, auth=provider, timeout=30))
-        self.session = await self.stack.enter_async_context(ClientSession(read, write))
-        await self.session.initialize()
-        listed = await self.session.list_tools()
-        self.tools = {t.name: (t.inputSchema or {}) for t in listed.tools}
+        # The MCP client's anyio task groups must be entered and exited by the same task, so one task owns the
+        # session for its whole life. Closing it from anywhere else (shutdown, a finished engine) is then safe,
+        # and a dropped connection can't cancel whichever task happened to open it.
+        ready = asyncio.get_running_loop().create_future()
+        self._closing = asyncio.Event()
+        self._owner = asyncio.create_task(self._own_session(
+            lambda: streamablehttp_client(self.url, auth=provider, timeout=30), ClientSession, ready), name="robinhood-mcp")
+        await ready
         self._started = True
         log.info("Robinhood MCP connected: %d tools", len(self.tools))
         await self._load_accounts()
 
-    async def close(self) -> None:
-        if self.stack:
-            await self.stack.aclose()
+    async def _own_session(self, transport, session_cls, ready: asyncio.Future) -> None:
+        try:
+            async with AsyncExitStack() as stack:
+                self.stack = stack
+                read, write, _ = await stack.enter_async_context(transport())
+                self.session = await stack.enter_async_context(session_cls(read, write))
+                await self.session.initialize()
+                listed = await self.session.list_tools()
+                self.tools = {t.name: (t.inputSchema or {}) for t in listed.tools}
+                ready.set_result(None)
+                await self._closing.wait()
+        except BaseException as ex:
+            if not ready.done():
+                ready.set_exception(ex if isinstance(ex, Exception) else RuntimeError(f"Robinhood MCP: {ex!r}"))
+            elif not isinstance(ex, asyncio.CancelledError):
+                log.warning("Robinhood MCP session ended: %r", ex)
+            if isinstance(ex, (KeyboardInterrupt, SystemExit)):
+                raise
+        finally:
+            self.stack, self._started = None, False
+
+    async def close(self, timeout: float = 3.0) -> None:
+        owner = getattr(self, "_owner", None)
+        if owner is None or owner.done():
+            return
+        self._closing.set()
+        try:
+            await asyncio.wait_for(asyncio.shield(owner), timeout)
+        except asyncio.TimeoutError:
+            log.warning("Robinhood MCP session did not close within %.0fs; cancelling it", timeout)
+            owner.cancel()
+            await asyncio.wait({owner}, timeout=1.0)
 
     async def call(self, tool: str, args: dict):
         if tool not in self.tools:
