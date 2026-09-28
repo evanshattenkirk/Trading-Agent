@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: tools/install_paper.sh fills in __APP__ and __HOME__ and loads it as a per-user LaunchAgent.
+     Starts one paper session at 08:10 local time (the Mac is on CT) Monday-Friday. If the Mac is asleep then,
+     launchd runs it on wake and the script skips the day when it is already past 15:00 CT. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agentdesk.paper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__APP__/src/tools/paper_session.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>10</integer></dict>
+  </array>
+  <key>RunAtLoad</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>ProcessType</key><string>Standard</string>
+  <key>StandardOutPath</key><string>__HOME__/.agentdesk/paper/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.agentdesk/paper/launchd.err.log</string>
+</dict>
+</plist>
