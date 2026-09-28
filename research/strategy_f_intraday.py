@@ -41,6 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from agentdesk.books import f_stocks_in_play as F  # noqa: E402
+from agentdesk.books.f_report import clustered_t  # noqa: E402,F401
 
 DATA_URL = "https://data.alpaca.markets/v2/stocks/bars"
 CONSTITUENTS_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
@@ -321,21 +322,6 @@ def simulate_day(picks: list, bars_by_sym: dict, cfg, slip_bp: float = 2.0, half
 
 
 # ------------------------------------------------------------------ stats
-def clustered_t(xs: list[float], groups: list) -> float | None:
-    n = len(xs)
-    g = defaultdict(float)
-    if n < 2:
-        return None
-    m = sum(xs) / n
-    for x, k in zip(xs, groups):
-        g[k] += x - m
-    G = len(g)
-    if G < 2:
-        return None
-    var = G / (G - 1) * sum(v * v for v in g.values()) / (n * n)
-    return m / math.sqrt(var) if var > 0 else None
-
-
 def summarize(trades: list[dict], all_days: list[date], balance: float = BALANCE) -> dict:
     n = len(trades)
     if not n:

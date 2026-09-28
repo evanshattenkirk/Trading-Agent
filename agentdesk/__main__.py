@@ -4,6 +4,7 @@
   python -m agentdesk rh-inspect                                         connect to Robinhood MCP, dump tool schemas (read-only)
   python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
+  python -m agentdesk f-report [--since YYYY-MM-DD]                      book F paper record
 """
 from __future__ import annotations
 
@@ -170,6 +171,29 @@ def cmd_l2_report(args) -> None:
     show("ask wall within $0.30", [r for r in rows if r["_l2"].get("ask_wall")])
 
 
+def cmd_f_report(args) -> None:
+    import sqlite3
+    from .books.f_journal import FJournal
+    from .books.f_report import build_report, format_report
+    cfg = load_config(args.config)
+    print(format_report(build_report(FJournal(sqlite3.connect(str(expand(cfg["journal_path"])))), args.since)))
+
+
+def cmd_f_clear_stale(args) -> None:
+    import sqlite3
+    from .books.f_journal import FJournal
+    cfg = load_config(args.config)
+    fj = FJournal(sqlite3.connect(str(expand(cfg["journal_path"]))))
+    rows = fj.open_rows()
+    if not rows:
+        print("No open F paper positions in the journal.")
+        return
+    for r in rows:
+        print(f"  {r['session']}  {r['symbol']}  {r['qty']} @ {r['entry']:.2f}")
+    n = fj.clear_stale(date.today().isoformat() if not args.all else "9999")
+    print(f"Marked {n} F paper position(s) from earlier sessions as cleared (no P&L). Book F starts clean next run.")
+
+
 def cmd_backtest(args) -> None:
     from .backtest import main as bt_main
     asyncio.run(bt_main(load_config(args.config), args))
@@ -201,6 +225,14 @@ def main() -> None:
 
     l2r = sub.add_parser("l2-report", help="win rate / avg P&L by Level 2 state at entry")
     l2r.set_defaults(fn=cmd_l2_report)
+
+    fr = sub.add_parser("f-report", help="book F paper record: win rate, mean R, PF, t, splits, shadow shorts")
+    fr.add_argument("--since", default=None, help="YYYY-MM-DD")
+    fr.set_defaults(fn=cmd_f_report)
+
+    fc = sub.add_parser("f-clear-stale", help="after checking the account: clear F paper positions left open by a crash")
+    fc.add_argument("--all", action="store_true", help="also clear today's open rows")
+    fc.set_defaults(fn=cmd_f_clear_stale)
 
     bt = sub.add_parser("backtest")
     bt.add_argument("--days", type=int, default=20)
