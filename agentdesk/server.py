@@ -73,17 +73,31 @@ def create_app(engine, bus) -> FastAPI:
     async def ws(sock: WebSocket):
         await sock.accept()
         q = bus.subscribe()
+        gone = asyncio.create_task(_until_disconnect(sock))    # a quiet bus must not keep a closed socket alive
         try:
             await sock.send_text(json.dumps(engine.snapshot(), default=str))
             while True:
-                msg = await q.get()
-                batch = [msg]
+                nxt = asyncio.ensure_future(q.get())
+                await asyncio.wait({nxt, gone}, return_when=asyncio.FIRST_COMPLETED)
+                if not nxt.done():
+                    nxt.cancel()
+                    break
+                batch = [nxt.result()]
                 while not q.empty() and len(batch) < 200:
                     batch.append(q.get_nowait())
                 await sock.send_text(json.dumps({"type": "batch", "events": batch}, default=str))
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
+            gone.cancel()
             bus.unsubscribe(q)
 
     return app
+
+
+async def _until_disconnect(sock: WebSocket) -> None:
+    """Returns when the client (or the shutting-down server) closes the socket. Clients never send data."""
+    while True:
+        msg = await sock.receive()
+        if msg["type"] == "websocket.disconnect":
+            return

@@ -80,11 +80,13 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         engine.simbook = SimBook(seed)
     elif rh is not None:
         engine.l2_rh = rh
+    engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
     return engine, bus
 
 
 def cmd_run(args) -> None:
     import uvicorn
+    from . import lifecycle
     from .server import create_app
 
     cfg = load_config(args.config)
@@ -95,16 +97,16 @@ def cmd_run(args) -> None:
     host, port = cfg["server"]["host"], cfg["server"]["port"]
 
     async def main():
-        server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
-        eng = asyncio.create_task(engine.run())
-        print(f"\n  AgentDesk [{mode.upper()}] -> http://{host}:{port}\n")
+        server = lifecycle.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
+                                                 timeout_graceful_shutdown=2))
+        print(f"\n  AgentDesk [{mode.upper()}] -> http://{host}:{port}   (Ctrl-C to stop)\n", flush=True)
         if not args.no_browser:
             webbrowser.open(f"http://{host}:{port}")
-        await server.serve()
-        engine.stop()
-        eng.cancel()
+        return await lifecycle.serve(engine, server, engine.closers)
 
-    asyncio.run(main())
+    timer = asyncio.run(main())
+    if timer:
+        timer.cancel()
 
 
 def cmd_record(args) -> None:

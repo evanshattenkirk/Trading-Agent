@@ -56,6 +56,7 @@ class Engine:
         self._managing = False
         self.l2 = None              # L2Monitor
         self.l2_rh = None           # RobinhoodMCP for live books
+        self.closers: list = []     # async close() callables run on shutdown (data feed, Robinhood session)
         self.simbook = None         # SimBook in the simulator
         self._last_l2_emit = 0.0
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
