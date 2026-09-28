@@ -227,3 +227,29 @@ def test_last_minute_ignores_stale_rows_after_a_half_day_close():
         rows.append({"minute": t, "right": "C", "strike": 500.0, "bid": px - 0.01, "ask": px + 0.01})
     p = bd.QuotePanel(pd.DataFrame(rows))
     assert p.last_minute <= m("13:01")
+
+
+def test_replay_without_tp_or_stop_holds_to_the_close():
+    # value collapses (TP would fire), then blows out (stop would fire), then settles back by the close
+    p = flat_legs_panel({m("09:30"): 1.00, m("11:00"): 0.30, m("12:00"): 3.00, m("15:25"): 0.80})
+    r = bd.replay(p, [("C", 500.0, -1)], m("10:00"), m("15:25"), "mid", width=2, tp=None, stop_mult=None)
+    assert r["why"] == "time" and r["exit_minute"] == m("15:25")
+    assert r["pnl"] == pytest.approx((1.00 - bd.FEE) - (0.80 + bd.FEE))
+
+
+def test_run_reports_the_d_variant_without_tp_or_stop(tmp_path):
+    qdir = tmp_path / "spy_0dte"; qdir.mkdir()
+    for d, drift in (("2025-03-19", 0.0), ("2025-03-20", 4.0)):
+        p = make_panel({m("09:30"): 570.0, m("13:00"): 570.0 + drift}, range(555, 586))
+        rows = []
+        for (r, k), (b, a) in p.q.items():
+            for i, t in enumerate(p.minutes):
+                rows.append({"timestamp": f"{d}T{t // 60:02d}:{t % 60:02d}:00.000", "strike": k,
+                             "right": "CALL" if r == "C" else "PUT", "bid": b[i], "ask": a[i]})
+        pd.DataFrame(rows).to_parquet(qdir / f"{d}.parquet")
+    vix = tmp_path / "vix.csv"
+    vix.write_text("DATE,OPEN,HIGH,LOW,CLOSE\n2025-03-18,20,20,20,20\n2025-03-19,20,20,20,20\n")
+    res = bd.run(qdir, tmp_path / "out", None, vix)
+    key = f"{bd.D_HOLD}|mid|all"
+    assert res[key]["n"] == 2
+    assert res[key]["exits"] == {"time": 2}
