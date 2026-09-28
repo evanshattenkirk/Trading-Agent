@@ -123,3 +123,54 @@ def test_replay_does_not_touch_the_callers_config():
     asyncio.run(ivs.replay(cfg, day, hist, (ts[:2000], ps[:2000], ss[:2000]), 8, 0.16))
     assert "tick_bar_effective" not in cfg["strategy"]
     assert cfg["crew"]["enabled"] == load_config()["crew"]["enabled"]
+
+
+def test_main_runs_one_variant_per_iex_tick_size(tmp_path, monkeypatch):
+    days = [date(2026, 9, d) for d in (17, 18, 21, 22, 23, 24, 25)]
+    hist = _synthetic_history(days)
+
+    async def fake_bars(feed, start, end, cache):
+        return hist
+
+    async def fake_trades(day, feed, cache):
+        ts, ps, ss = _synthetic_day(day, day.day)
+        c = ["@"] * len(ts)
+        return (ts, ps, ss, c) if feed == "sip" else (ts[::25], ps[::25], ss[::25], c[::25])
+
+    monkeypatch.setattr(ivs, "load_bars", fake_bars)
+    monkeypatch.setattr(ivs, "load_trades", fake_trades)
+    ivs.cli(["--days", "2", "--end", "2026-09-25", "--iex-ticks", "8,5", "--no-diag", "--env", "",
+             "--out", str(tmp_path), "--cache", str(tmp_path / "cache")])
+    import json
+    s = json.loads((tmp_path / "summary.json").read_text())
+    assert set(s["variants"]) == {"sip144", "iex8", "iex5"}
+    assert s["run"]["iex_ticks"] == [8, 5]
+    assert "cross_up" in s["variants"]["iex5"]
+    assert s["cleaning"]["sip"]["dropped_condition"] == 0 and s["cleaning"]["sip"]["kept"] > 0
+
+
+def test_clean_trades_drops_excluded_conditions():
+    ts = [1, 2, 3, 4]
+    px = [700.0, 700.1, 690.0, 700.2]
+    sz = [100, 100, 100, 100]
+    conds = ["@", "@ I", "@ Z", "@ F"]           # Z = sold out of sequence; I (odd lot) and F stay
+    (t2, p2, s2), st = ivs.clean_trades(ts, px, sz, conds)
+    assert p2 == [700.0, 700.1, 700.2]
+    assert st == {"kept": 3, "dropped_condition": 1, "dropped_outlier": 0}
+
+
+def test_clean_trades_drops_isolated_spike():
+    px = [770.0 + 0.01 * (i % 3) for i in range(60)]
+    px[30] = 829.0                                # a single +7% print, like SIP on 2026-08-11
+    ts = list(range(60))
+    (t2, p2, _), st = ivs.clean_trades(ts, px, [100] * 60, None, max_dev=0.005)
+    assert 829.0 not in p2
+    assert st["dropped_outlier"] == 1 and st["kept"] == 59
+
+
+def test_clean_trades_follows_a_real_gap():
+    px = [770.0] * 30 + [775.0] * 30             # a genuine 0.65% jump that holds
+    (_, p2, _), st = ivs.clean_trades(list(range(60)), px, [100] * 60, None, max_dev=0.005)
+    assert p2[-1] == 775.0
+    assert st["dropped_outlier"] <= 3              # only the confirmation prints are held back
+    assert p2.count(775.0) >= 27

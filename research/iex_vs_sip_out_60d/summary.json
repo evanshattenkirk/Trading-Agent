@@ -1,0 +1,782 @@
+{
+ "days": 60,
+ "variants": {
+  "sip144": {
+   "summary": {
+    "trades": 300,
+    "days": 51,
+    "net": 8849.78,
+    "win_rate": 0.31,
+    "avg_win": 191.86,
+    "avg_loss": -43.45,
+    "expectancy": 29.5,
+    "profit_factor": 1.98,
+    "max_drawdown": -2806.66,
+    "green_days": 11,
+    "red_days": 40,
+    "best_day": 10647.96,
+    "worst_day": -344.92,
+    "by_setup": {
+     "SCALP": {
+      "n": 210,
+      "net": -1526.16,
+      "win_rate": 0.305
+     },
+     "SWING": {
+      "n": 90,
+      "net": 10375.94,
+      "win_rate": 0.322
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 46,
+      "net": 95.92,
+      "win_rate": 0.522
+     },
+     "09:00": {
+      "n": 66,
+      "net": 9966.82,
+      "win_rate": 0.364
+     },
+     "10:00": {
+      "n": 45,
+      "net": -449.74,
+      "win_rate": 0.311
+     },
+     "11:00": {
+      "n": 52,
+      "net": -1444.58,
+      "win_rate": 0.231
+     },
+     "12:00": {
+      "n": 34,
+      "net": 1457.86,
+      "win_rate": 0.176
+     },
+     "13:00": {
+      "n": 40,
+      "net": -451.7,
+      "win_rate": 0.225
+     },
+     "14:00": {
+      "n": 17,
+      "net": -324.8,
+      "win_rate": 0.235
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 164,
+      "net": -3971.58,
+      "win_rate": 0.159
+     },
+     "1m MACD cross back": {
+      "n": 38,
+      "net": -1185.26,
+      "win_rate": 0.079
+     },
+     "breakeven stop": {
+      "n": 15,
+      "net": 327.98,
+      "win_rate": 0.867
+     },
+     "flatten 14": {
+      "n": 1,
+      "net": 117.7,
+      "win_rate": 1.0
+     },
+     "runner out": {
+      "n": 29,
+      "net": 2081.28,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 31,
+      "net": -3322.52,
+      "win_rate": 0.0
+     },
+     "time stop 20m": {
+      "n": 2,
+      "net": 24.4,
+      "win_rate": 0.5
+     },
+     "trailing stop": {
+      "n": 20,
+      "net": 14777.78,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 126,
+      "net": -464.96,
+      "win_rate": 0.349
+     },
+     "+1": {
+      "n": 138,
+      "net": 10080.94,
+      "win_rate": 0.297
+     },
+     "+2": {
+      "n": 5,
+      "net": -120.5,
+      "win_rate": 0.2
+     },
+     "-1": {
+      "n": 31,
+      "net": -645.7,
+      "win_rate": 0.226
+     }
+    }
+   }
+  },
+  "iex8": {
+   "summary": {
+    "trades": 241,
+    "days": 49,
+    "net": 37.6,
+    "win_rate": 0.344,
+    "avg_win": 84.19,
+    "avg_loss": -43.99,
+    "expectancy": 0.16,
+    "profit_factor": 1.01,
+    "max_drawdown": -1435.0,
+    "green_days": 20,
+    "red_days": 29,
+    "best_day": 469.32,
+    "worst_day": -338.44,
+    "by_setup": {
+     "SCALP": {
+      "n": 128,
+      "net": -586.82,
+      "win_rate": 0.328
+     },
+     "SWING": {
+      "n": 113,
+      "net": 624.42,
+      "win_rate": 0.363
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 38,
+      "net": 7.02,
+      "win_rate": 0.395
+     },
+     "09:00": {
+      "n": 54,
+      "net": 175.28,
+      "win_rate": 0.37
+     },
+     "10:00": {
+      "n": 25,
+      "net": 490.12,
+      "win_rate": 0.48
+     },
+     "11:00": {
+      "n": 42,
+      "net": -104.12,
+      "win_rate": 0.31
+     },
+     "12:00": {
+      "n": 29,
+      "net": -416.4,
+      "win_rate": 0.241
+     },
+     "13:00": {
+      "n": 32,
+      "net": 464.7,
+      "win_rate": 0.344
+     },
+     "14:00": {
+      "n": 21,
+      "net": -579.0,
+      "win_rate": 0.238
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 91,
+      "net": -2577.28,
+      "win_rate": 0.088
+     },
+     "1m MACD cross back": {
+      "n": 51,
+      "net": -1778.38,
+      "win_rate": 0.098
+     },
+     "breakeven stop": {
+      "n": 14,
+      "net": 449.52,
+      "win_rate": 0.929
+     },
+     "runner out": {
+      "n": 35,
+      "net": 3662.3,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 27,
+      "net": -2375.38,
+      "win_rate": 0.0
+     },
+     "time stop 20m": {
+      "n": 2,
+      "net": 15.52,
+      "win_rate": 0.5
+     },
+     "trailing stop": {
+      "n": 21,
+      "net": 2641.3,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 112,
+      "net": 200.28,
+      "win_rate": 0.304
+     },
+     "+1": {
+      "n": 96,
+      "net": 189.62,
+      "win_rate": 0.385
+     },
+     "+2": {
+      "n": 6,
+      "net": 23.2,
+      "win_rate": 0.5
+     },
+     "-1": {
+      "n": 27,
+      "net": -375.5,
+      "win_rate": 0.333
+     }
+    }
+   },
+   "cross_up": {
+    "1m": {
+     "ref": 939,
+     "alt": 936,
+     "matched": 865,
+     "recall": 0.921,
+     "precision": 0.924,
+     "jaccard": 0.856
+    },
+    "5m": {
+     "ref": 172,
+     "alt": 173,
+     "matched": 166,
+     "recall": 0.965,
+     "precision": 0.96,
+     "jaccard": 0.927
+    },
+    "15m": {
+     "ref": 52,
+     "alt": 55,
+     "matched": 52,
+     "recall": 1.0,
+     "precision": 0.945,
+     "jaccard": 0.945
+    },
+    "144t": {
+     "ref": 9785,
+     "alt": 6064,
+     "matched": 5249,
+     "recall": 0.536,
+     "precision": 0.866,
+     "jaccard": 0.495
+    }
+   },
+   "state_agree_mean": {
+    "1m": 0.9753,
+    "5m": 0.9921,
+    "15m": 0.9921,
+    "144t": 0.7576
+   },
+   "signals_vs_sip": {
+    "ref": 875,
+    "alt": 589,
+    "matched": 525,
+    "same_setup": 513,
+    "recall": 0.6,
+    "precision": 0.891,
+    "jaccard": 0.559
+   },
+   "taken_vs_sip": {
+    "ref": 300,
+    "alt": 241,
+    "matched": 160,
+    "same_setup": 156,
+    "recall": 0.533,
+    "precision": 0.664,
+    "jaccard": 0.42
+   },
+   "daily_net_delta_vs_sip": {
+    "total": -8812.18,
+    "mean": -146.8697,
+    "sd": 1417.45,
+    "t": -0.8,
+    "days_worse": 23
+   }
+  },
+  "iex5": {
+   "summary": {
+    "trades": 294,
+    "days": 50,
+    "net": -209.72,
+    "win_rate": 0.337,
+    "avg_win": 69.21,
+    "avg_loss": -36.21,
+    "expectancy": -0.71,
+    "profit_factor": 0.97,
+    "max_drawdown": -1767.62,
+    "green_days": 19,
+    "red_days": 31,
+    "best_day": 458.6,
+    "worst_day": -260.4,
+    "by_setup": {
+     "SCALP": {
+      "n": 204,
+      "net": 440.62,
+      "win_rate": 0.343
+     },
+     "SWING": {
+      "n": 90,
+      "net": -650.34,
+      "win_rate": 0.322
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 49,
+      "net": 557.44,
+      "win_rate": 0.469
+     },
+     "09:00": {
+      "n": 55,
+      "net": -86.96,
+      "win_rate": 0.327
+     },
+     "10:00": {
+      "n": 43,
+      "net": 314.1,
+      "win_rate": 0.442
+     },
+     "11:00": {
+      "n": 47,
+      "net": -197.32,
+      "win_rate": 0.255
+     },
+     "12:00": {
+      "n": 36,
+      "net": -155.56,
+      "win_rate": 0.222
+     },
+     "13:00": {
+      "n": 40,
+      "net": -218.58,
+      "win_rate": 0.325
+     },
+     "14:00": {
+      "n": 24,
+      "net": -422.84,
+      "win_rate": 0.25
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 159,
+      "net": -3217.8,
+      "win_rate": 0.157
+     },
+     "1m MACD cross back": {
+      "n": 43,
+      "net": -1526.22,
+      "win_rate": 0.093
+     },
+     "breakeven stop": {
+      "n": 11,
+      "net": 394.36,
+      "win_rate": 0.909
+     },
+     "runner out": {
+      "n": 41,
+      "net": 3843.68,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 20,
+      "net": -1737.46,
+      "win_rate": 0.0
+     },
+     "time stop 20m": {
+      "n": 2,
+      "net": 20.52,
+      "win_rate": 0.5
+     },
+     "trailing stop": {
+      "n": 18,
+      "net": 2013.2,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 133,
+      "net": 160.24,
+      "win_rate": 0.316
+     },
+     "+1": {
+      "n": 119,
+      "net": 175.86,
+      "win_rate": 0.361
+     },
+     "+2": {
+      "n": 8,
+      "net": 2.6,
+      "win_rate": 0.5
+     },
+     "-1": {
+      "n": 34,
+      "net": -548.42,
+      "win_rate": 0.294
+     }
+    }
+   },
+   "cross_up": {
+    "1m": {
+     "ref": 939,
+     "alt": 936,
+     "matched": 865,
+     "recall": 0.921,
+     "precision": 0.924,
+     "jaccard": 0.856
+    },
+    "5m": {
+     "ref": 172,
+     "alt": 173,
+     "matched": 166,
+     "recall": 0.965,
+     "precision": 0.96,
+     "jaccard": 0.927
+    },
+    "15m": {
+     "ref": 52,
+     "alt": 55,
+     "matched": 52,
+     "recall": 1.0,
+     "precision": 0.945,
+     "jaccard": 0.945
+    },
+    "144t": {
+     "ref": 9785,
+     "alt": 9632,
+     "matched": 7541,
+     "recall": 0.771,
+     "precision": 0.783,
+     "jaccard": 0.635
+    }
+   },
+   "state_agree_mean": {
+    "1m": 0.9753,
+    "5m": 0.9921,
+    "15m": 0.9921,
+    "144t": 0.8417
+   },
+   "signals_vs_sip": {
+    "ref": 875,
+    "alt": 886,
+    "matched": 678,
+    "same_setup": 666,
+    "recall": 0.775,
+    "precision": 0.765,
+    "jaccard": 0.626
+   },
+   "taken_vs_sip": {
+    "ref": 300,
+    "alt": 294,
+    "matched": 208,
+    "same_setup": 202,
+    "recall": 0.693,
+    "precision": 0.707,
+    "jaccard": 0.539
+   },
+   "daily_net_delta_vs_sip": {
+    "total": -9059.5,
+    "mean": -150.9917,
+    "sd": 1412.41,
+    "t": -0.83,
+    "days_worse": 20
+   }
+  },
+  "iexN": {
+   "summary": {
+    "trades": 286,
+    "days": 50,
+    "net": -583.74,
+    "win_rate": 0.318,
+    "avg_win": 72.26,
+    "avg_loss": -36.71,
+    "expectancy": -2.04,
+    "profit_factor": 0.92,
+    "max_drawdown": -1965.22,
+    "green_days": 20,
+    "red_days": 30,
+    "best_day": 417.12,
+    "worst_day": -384.04,
+    "by_setup": {
+     "SCALP": {
+      "n": 197,
+      "net": 21.3,
+      "win_rate": 0.315
+     },
+     "SWING": {
+      "n": 89,
+      "net": -605.04,
+      "win_rate": 0.326
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 51,
+      "net": 376.14,
+      "win_rate": 0.392
+     },
+     "09:00": {
+      "n": 55,
+      "net": -37.08,
+      "win_rate": 0.345
+     },
+     "10:00": {
+      "n": 35,
+      "net": 133.96,
+      "win_rate": 0.4
+     },
+     "11:00": {
+      "n": 47,
+      "net": -425.32,
+      "win_rate": 0.234
+     },
+     "12:00": {
+      "n": 33,
+      "net": -17.72,
+      "win_rate": 0.242
+     },
+     "13:00": {
+      "n": 42,
+      "net": -184.18,
+      "win_rate": 0.333
+     },
+     "14:00": {
+      "n": 23,
+      "net": -429.54,
+      "win_rate": 0.217
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 155,
+      "net": -3217.84,
+      "win_rate": 0.142
+     },
+     "1m MACD cross back": {
+      "n": 42,
+      "net": -1485.98,
+      "win_rate": 0.095
+     },
+     "breakeven stop": {
+      "n": 9,
+      "net": 349.84,
+      "win_rate": 0.889
+     },
+     "runner out": {
+      "n": 40,
+      "net": 3907.98,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 22,
+      "net": -1918.06,
+      "win_rate": 0.0
+     },
+     "time stop 20m": {
+      "n": 2,
+      "net": 20.52,
+      "win_rate": 0.5
+     },
+     "trailing stop": {
+      "n": 16,
+      "net": 1759.8,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 132,
+      "net": 377.3,
+      "win_rate": 0.311
+     },
+     "+1": {
+      "n": 114,
+      "net": -594.82,
+      "win_rate": 0.325
+     },
+     "+2": {
+      "n": 7,
+      "net": 189.9,
+      "win_rate": 0.571
+     },
+     "-1": {
+      "n": 33,
+      "net": -556.12,
+      "win_rate": 0.273
+     }
+    }
+   },
+   "cross_up": {
+    "1m": {
+     "ref": 939,
+     "alt": 936,
+     "matched": 865,
+     "recall": 0.921,
+     "precision": 0.924,
+     "jaccard": 0.856
+    },
+    "5m": {
+     "ref": 172,
+     "alt": 173,
+     "matched": 166,
+     "recall": 0.965,
+     "precision": 0.96,
+     "jaccard": 0.927
+    },
+    "15m": {
+     "ref": 52,
+     "alt": 55,
+     "matched": 52,
+     "recall": 1.0,
+     "precision": 0.945,
+     "jaccard": 0.945
+    },
+    "144t": {
+     "ref": 9785,
+     "alt": 9326,
+     "matched": 7477,
+     "recall": 0.764,
+     "precision": 0.802,
+     "jaccard": 0.643
+    }
+   },
+   "state_agree_mean": {
+    "1m": 0.9753,
+    "5m": 0.9921,
+    "15m": 0.9921,
+    "144t": 0.8463
+   },
+   "signals_vs_sip": {
+    "ref": 875,
+    "alt": 852,
+    "matched": 677,
+    "same_setup": 665,
+    "recall": 0.774,
+    "precision": 0.795,
+    "jaccard": 0.645
+   },
+   "taken_vs_sip": {
+    "ref": 300,
+    "alt": 286,
+    "matched": 205,
+    "same_setup": 199,
+    "recall": 0.683,
+    "precision": 0.717,
+    "jaccard": 0.538
+   },
+   "daily_net_delta_vs_sip": {
+    "total": -9433.52,
+    "mean": -157.2253,
+    "sd": 1411.74,
+    "t": -0.86,
+    "days_worse": 22
+   }
+  }
+ },
+ "iex_share_median": 0.037,
+ "iex_share_range": [
+  0.0274,
+  0.0474
+ ],
+ "implied_tick_median": 5.3,
+ "run": {
+  "days": [
+   "2026-07-02",
+   "2026-07-06",
+   "2026-07-07",
+   "2026-07-08",
+   "2026-07-09",
+   "2026-07-10",
+   "2026-07-13",
+   "2026-07-14",
+   "2026-07-15",
+   "2026-07-16",
+   "2026-07-17",
+   "2026-07-20",
+   "2026-07-21",
+   "2026-07-22",
+   "2026-07-23",
+   "2026-07-24",
+   "2026-07-27",
+   "2026-07-28",
+   "2026-07-29",
+   "2026-07-30",
+   "2026-07-31",
+   "2026-08-03",
+   "2026-08-04",
+   "2026-08-05",
+   "2026-08-06",
+   "2026-08-07",
+   "2026-08-10",
+   "2026-08-11",
+   "2026-08-12",
+   "2026-08-13",
+   "2026-08-14",
+   "2026-08-17",
+   "2026-08-18",
+   "2026-08-19",
+   "2026-08-20",
+   "2026-08-21",
+   "2026-08-24",
+   "2026-08-25",
+   "2026-08-26",
+   "2026-08-27",
+   "2026-08-28",
+   "2026-08-31",
+   "2026-09-01",
+   "2026-09-02",
+   "2026-09-03",
+   "2026-09-04",
+   "2026-09-08",
+   "2026-09-09",
+   "2026-09-10",
+   "2026-09-11",
+   "2026-09-14",
+   "2026-09-15",
+   "2026-09-16",
+   "2026-09-17",
+   "2026-09-18",
+   "2026-09-21",
+   "2026-09-22",
+   "2026-09-23",
+   "2026-09-24",
+   "2026-09-25"
+  ],
+  "iv": 0.16,
+  "iex_ticks": [
+   8,
+   5
+  ],
+  "options": "Black-Scholes model (same for every variant)",
+  "generated": "2026-09-28T17:11:57.116649+00:00"
+ }
+}
