@@ -31,6 +31,7 @@ class OrbBullPut(Strategy):
         self.prev_close = None
         self.prev_macd = None
         self.orh: dict = {}
+        self.or_bars: dict = {}     # date -> 5m bars seen inside the opening range (all of them needed)
         self.last_exit = 0.0
         self._live = False
 
@@ -48,6 +49,7 @@ class OrbBullPut(Strategy):
         if 0 <= m < self.c.get("or_minutes", 30):
             d = session_date(bar.t)
             self.orh[d] = max(self.orh.get(d, bar.h), bar.h)
+            self.or_bars.setdefault(d, set()).add(m)
         e, r, mv = self.ema.update(bar.c), self.rsi.update(bar.c), self.macd.update(bar.c)
         if e is not None:
             self.emas.append(e)
@@ -65,7 +67,7 @@ class OrbBullPut(Strategy):
         if not self._live:
             self._live = True
             if self.c.get("reset_volume_on_live"):
-                self.vols.clear()           # history volume is SIP-scale; live IEX bars carry ~5% of it
+                self.vols.clear()           # only if history comes from a different feed than live bars
         s = self._update(bar)
         if ctx.open:
             pos = ctx.open[0]
@@ -78,6 +80,8 @@ class OrbBullPut(Strategy):
         if mins(ct_time(bar.t)) < mins(hhmm(w["start"])) or mins(ct_time(bar.end)) > mins(hhmm(w["end"])):
             return None
         orh = self.orh.get(ctx.day)
+        if len(self.or_bars.get(ctx.day, ())) < self.c.get("or_minutes", 30) // 5:
+            orh = None                  # a partial opening range (late start) would fake a breakout
         lo, hi = self.c.get("rsi", [55, 72])
         ok = (orh is not None and s["prev"] is not None and bar.c > orh and s["prev"] <= orh
               and ctx.vwap is not None and bar.c > ctx.vwap and s["ema_up"]

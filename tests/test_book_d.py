@@ -110,3 +110,13 @@ def test_vix_sources():
                 {"begins_at": "2026-09-26T00:00:00Z", "close_value": "14.87", "interpolated": True},
                 {"begins_at": "2026-09-28T00:00:00Z", "close_value": "16.10"}]}]}
     assert asyncio.run(RobinhoodVix(RH()).prior_close(date(2026, 9, 28))) == 14.87
+
+
+def test_partial_opening_window_skips_instead_of_guessing():         # review #4
+    s = IronCondor(C)
+    warm(s)
+    for i in range(15, 30):                                          # restart at 08:45: only 08:45-08:59 bars
+        t = ct_ts(8, 30 + i)
+        s.on_bar("1m", Bar("1m", t, 765.0, 765.0, 765.0, 765.0, 100, 1, t + 60), None)
+    assert s.on_clock(ct_ts(9, 0), ctx(ct_ts(9, 0))) is None
+    assert "30 minutes" in s.on_clock(ct_ts(9, 6), ctx(ct_ts(9, 6))).reason

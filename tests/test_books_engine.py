@@ -115,3 +115,53 @@ def test_vol_desk_vix1d_flag_reaches_book_b_same_day_only():
     assert e.books._ctx(ct_ts(8, 45), book).vix1d_flag is True
     Crew.briefs["vol"]["ts"] = ct_ts(8, 25) - 86400             # yesterday's brief says nothing about today
     assert e.books._ctx(ct_ts(8, 45), book).vix1d_flag is None
+
+
+def test_books_never_reset_book_a_error_count():                    # review #1
+    e, fq, feed = engine_with_books()
+
+    async def broker_503():
+        raise RuntimeError("robinhood 503")
+
+    async def go():
+        for s in range(3):
+            await e._run(broker_503(), "manage")
+            fq.now = feed.t = ct_ts(8, 45, s)
+            await e._on_second(ct_ts(8, 45, s))            # books run cleanly every second
+    asyncio.run(go())
+    assert e.risk.st.halted and "3 broker/API errors" in e.risk.st.halt_reason
+
+
+def test_a_host_level_books_failure_halts_books_not_a():
+    e, fq, feed = engine_with_books()
+
+    async def boom(now):
+        raise RuntimeError("host bug")
+    e.books.on_second = boom
+    for s in range(4):
+        step(e, fq, feed, ct_ts(8, 45, s))
+    assert e.books.account.halted and "host bug" in e.books.account.halt_reason
+    assert not e.risk.st.halted and e._errors == 0
+
+
+def test_iex_history_and_live_share_a_scale_so_c_keeps_its_volume_baseline():   # review #5
+    from agentdesk.__main__ import build
+    cfg = copy.deepcopy(CFG)
+    cfg["data"]["provider"], cfg["data"]["alpaca"]["feed"], cfg["data"]["quotes_source"] = "alpaca", "iex", "alpaca"
+    build(cfg, "paper", 1, 1)
+    assert not cfg["books"]["C_orb_bull_put"].get("reset_volume_on_live")
+
+
+def test_flatten_still_flattens_books_when_a_book_a_exit_fails():    # review #13
+    e, fq, feed = engine_with_books()
+    step(e, fq, feed, ct_ts(8, 45))
+
+    class APos:
+        qty = 1
+
+    async def broken_exit(*a, **k):
+        raise RuntimeError("robinhood 503")
+    e.open, e.exit = [(APos(), None)], broken_exit
+    with pytest.raises(RuntimeError):
+        asyncio.run(e.flatten())
+    assert not e.books.positions()

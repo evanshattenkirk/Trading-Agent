@@ -21,8 +21,8 @@ async def fetch_quotes(quotes, contracts) -> list:
         oid = str(item.get("instrument_id") or q.get("instrument_id") or find_key(item, ["instrument_id", "id"]) or "")
         b = q.get("bid_price", q.get("bid"))
         a = q.get("ask_price", q.get("ask"))
-        if oid and b is not None and a is not None:
-            by[oid] = Quote(float(b), float(a), now)
+        if oid and a is not None:           # no bid on a far wing means nobody bids: 0, not "no quote"
+            by[oid] = Quote(float(b or 0), float(a), now)
     cache = getattr(quotes, "cache", None)
     if cache is not None:
         cache.update(by)             # the paper fill right after reads these instead of re-fetching

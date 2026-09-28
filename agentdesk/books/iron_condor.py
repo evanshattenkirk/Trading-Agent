@@ -31,6 +31,7 @@ class IronCondor(Strategy):
         super().__init__(cfg)
         self.decided = None
         self.days: dict = {}        # date -> [high, low, last close, complete] over the first quiet_window_min
+        self.seen: dict = {}        # date -> minutes of that window that had a bar (complete = all of them)
 
     def warmup(self, bars_1m: list) -> None:
         for b in bars_1m:
@@ -52,12 +53,14 @@ class IronCondor(Strategy):
         if not 0 <= m < w:
             return
         d = session_date(b.t)
+        seen = self.seen.setdefault(d, set())
+        seen.add(m)
         cur = self.days.get(d)
         if cur is None:
-            self.days[d] = [b.h, b.l, b.c, m == w - 1]
+            self.days[d] = cur = [b.h, b.l, b.c, False]
         else:
             cur[0], cur[1], cur[2] = max(cur[0], b.h), min(cur[1], b.l), b.c
-            cur[3] = cur[3] or m == w - 1
+        cur[3] = len(seen) == w         # a partial window (late start, gap) never counts as a quiet reading
 
     def _rng(self, d) -> float:
         h, l, c, _ = self.days[d]
@@ -76,7 +79,9 @@ class IronCondor(Strategy):
             if not late:
                 return None                 # the 08:59 bar hasn't closed yet
             self.decided = ctx.day
-            return Skip("no complete 08:30-09:00 CT bars today")
+            w = self.c.get("quiet_window_min", 30)
+            have = len(self.seen.get(ctx.day, ()))
+            return Skip(f"quiet filter needs all {w} minutes of 08:30-09:00 CT bars, have {have}")
         self.decided = ctx.day
         if late:
             return Skip(f"missed the {self.c['entry_ct']} CT entry")

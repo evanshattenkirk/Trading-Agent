@@ -200,7 +200,7 @@ class Engine:
             self._last_manage = now
             await self._run(self.manage(now), "manage")
         if self.books:
-            await self._run(self.books.on_second(now), "books")
+            await self.books.run(self.books.on_second(now), self.inline)
         self._watchdog(now)
 
     def _new_day(self, d, now: float) -> None:
@@ -349,7 +349,7 @@ class Engine:
                 if es:
                     await self._run(self.enter(es), "entry")
         if self.books and b.tf in ("1m", "5m"):
-            await self._run(self.books.on_bar(b), "books")
+            await self.books.run(self.books.on_bar(b), self.inline)
 
     def _levels_payload(self) -> list:
         px = self.price or 0
@@ -616,10 +616,12 @@ class Engine:
 
     async def flatten(self, reason: str = "manual flatten") -> None:
         now = self.feed.now()
-        for pos, plan in list(self.open):
-            await self.exit(pos, plan, ExitIntent(pos.qty, reason, urgent=True), now)
-        if self.books:
-            await self.books.flatten(reason, now)
+        try:
+            for pos, plan in list(self.open):
+                await self.exit(pos, plan, ExitIntent(pos.qty, reason, urgent=True), now)
+        finally:
+            if self.books:
+                await self.books.flatten(reason, now)
 
     def pause(self, on: bool) -> None:
         self.risk.st.paused = on

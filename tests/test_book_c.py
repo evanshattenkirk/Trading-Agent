@@ -109,3 +109,16 @@ def test_iex_volume_baseline_rebuilds_from_live_bars():             # review foc
     assert len(s.vols) == 20
     s.on_bar("5m", bar5(8, 30, 760.0, 760.2, v=900), ctx(ct_ts(8, 35)))
     assert list(s.vols) == [900]
+
+
+def test_partial_opening_range_never_fires():                        # review #4
+    s = OrbBullPut(C)
+    px = 760.0
+    for i in range(40):
+        t = ct_ts(10, 0) - 86400 + i * 300
+        step = 0.30 if i % 3 else -0.45
+        s._update(Bar("5m", t, px, px + 0.4, px - 0.4, px + step, 1000, 10, t + 300))
+        px += step
+    for i, c in [(4, 763.6), (5, 763.2)]:                             # started at 08:50: only 2 of 6 bars
+        s.on_bar("5m", bar5(8, 30 + 5 * i, c - 0.3, c, hi=764.0 if i == 4 else c + 0.1), ctx(at(8, 35 + 5 * i)))
+    assert s.on_bar("5m", bar5(9, 0, 763.7, 764.4, v=1200), ctx(ct_ts(9, 5))) is None

@@ -7,6 +7,7 @@ halts everything, as for book A.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import time
 
@@ -64,6 +65,8 @@ class BookHost:
         self.day = None
         self.vix_prev, self._vix_day, self._vix_try = None, None, -1e18
         self._last_manage, self._last_emit, self._busy = 0.0, 0.0, False
+        self._errors, self._tasks = 0, set()
+        self._inline, self._vix_task = True, None
 
     @property
     def enabled(self) -> bool:
@@ -102,6 +105,32 @@ class BookHost:
             b.strategy.new_day(d)
 
     # ------------------------------------------------------------ engine hooks
+    async def run(self, coro, inline: bool) -> None:
+        """Run a hook inline (sim) or as a background task. Failures count here, never in the engine's own error
+        counter, so book A's "N errors in a row" safety halt sees only A's broker calls."""
+        self._inline = inline
+        if inline:
+            await self._guarded(coro)
+        else:
+            t = asyncio.create_task(self._guarded(coro))
+            self._tasks.add(t)
+            t.add_done_callback(self._tasks.discard)
+
+    async def _guarded(self, coro) -> None:
+        try:
+            await coro
+            self._errors = 0
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            self._errors += 1
+            now = self.e.feed.now()
+            log.exception("books hook failed (%d in a row)", self._errors)
+            self._log(now, "error", f"books failed ({self._errors} in a row): {ex}")
+            if self._errors >= self.max_errors and not self.account.halted:
+                self.halt_all(f"books: {self._errors} errors in a row: {ex}", flatten=True)
+                self._log(now, "error", f"books halted and flattening: {self.account.halt_reason}")
+
     async def on_bar(self, bar) -> None:
         if bar.tf not in ("1m", "5m"):
             return
@@ -118,7 +147,10 @@ class BookHost:
         try:
             if session_date(now) != self.day:
                 self._new_day(session_date(now))
-            await self._ensure_vix(now)
+            if self._inline:
+                await self._ensure_vix(now)
+            elif self._vix_task is None or self._vix_task.done():
+                self._vix_task = asyncio.create_task(self._ensure_vix(now))   # a slow MCP call must not stall exits
             if is_rth(now):
                 for book in self.books:
                     await self._safe(book, self._book_clock(book, now), now)
@@ -196,7 +228,10 @@ class BookHost:
         b = (crew.briefs.get("vol") if crew else None) or {}
         if "vix1d_flag" not in b or not b.get("ts") or session_date(b["ts"]) != d:
             return None             # crew briefs carry the time they were given; only today's answer counts
-        return bool(b["vix1d_flag"])
+        v = b["vix1d_flag"]
+        if isinstance(v, bool):
+            return v
+        return {"true": True, "yes": True, "false": False, "no": False}.get(str(v).strip().lower())
 
     async def _ensure_vix(self, now: float) -> None:
         d = session_date(now)
@@ -239,9 +274,13 @@ class BookHost:
             return self._skip(book, now, why)
         book.entering = True
         try:
-            exp = str(session_date(now))
-            cs = [await self.e.broker.resolve(Contract(self.e.symbol, exp, float(l.strike), l.right)) for l in it.legs]
-            cq = await self._quote(it.legs, cs, now, opening=True)
+            try:
+                exp = str(session_date(now))
+                cs = [await self.e.broker.resolve(Contract(self.e.symbol, exp, float(l.strike), l.right)) for l in it.legs]
+                cq = await self._quote(it.legs, cs, now, opening=True)
+            except Exception:
+                book.strategy.entry_failed(now)     # nothing was sent: B/D may retry inside their grace window
+                raise
             if cq.problem:
                 book.strategy.entry_failed(now)
                 return self._skip(book, now, f"quote: {cq.problem}")
@@ -255,7 +294,11 @@ class BookHost:
             ok, why = self.account.can_open(per_lot * lots, self.open_risk(), self.e.risk.st.day_pnl)
             if not ok:
                 return self._skip(book, now, why)
-            res = await self.exec.work(it.legs, cs, lots, it.credit, True, False, now)
+            try:
+                res = await self.exec.work(it.legs, cs, lots, it.credit, True, False, now)
+            except Exception:
+                book.strategy.entry_failed(now)     # paper fills come back as a result, so a raise means no fill
+                raise
             self._order_event(book, now, "open", lots, res, it.reason)
             if res.filled_qty <= 0:
                 book.strategy.entry_failed(now)
@@ -290,13 +333,19 @@ class BookHost:
     async def _manage(self, book: Book, now: float) -> None:
         for pos in list(book.open):
             cq = await self._quote(pos.legs, pos.contracts, now, opening=False)
-            if cq.problem:
-                continue            # the engine watchdog halts everything if this lasts quote_stale_sec
-            pos.last_quote_ts = now
-            pos.mark = round(cq.mid(pos.credit), 3)
-            pos.peak = min(pos.peak, pos.mark) if pos.credit else max(pos.peak, pos.mark)
             forced = self._forced(book, pos, now)
-            it = ExitIntent(forced, urgent=True) if forced else book.strategy.on_quote(pos, cq, now, self._ctx(now, book))
+            if cq.problem and not forced:
+                continue            # the engine watchdog halts everything if this lasts quote_stale_sec
+            if not cq.problem:
+                pos.last_quote_ts = now
+                pos.mark = round(cq.mid(pos.credit), 3)
+                pos.peak = min(pos.peak, pos.mark) if pos.credit else max(pos.peak, pos.mark)
+            if forced:              # a forced exit never waits for a clean quote
+                await self._exit(book, pos, ExitIntent(forced, urgent=True), now)
+                if pos.status == "open" and any(q is None for q in cq.quotes):
+                    self._close_at_mark(book, pos, forced, now)
+                continue
+            it = book.strategy.on_quote(pos, cq, now, self._ctx(now, book))
             if it:
                 await self._exit(book, pos, it, now)
             elif now - self._last_emit >= 2:
@@ -344,6 +393,19 @@ class BookHost:
                 book.blocked = f"partial exit, {pos.qty} left: reconcile before new orders"
         finally:
             pos.exiting = False
+
+    def _close_at_mark(self, book: Book, pos, reason: str, now: float) -> None:
+        """Paper only: a forced exit with a leg that has no quote at all closes at the last mark, so the position
+        is journaled and the book isn't left holding it."""
+        n = pos.qty
+        pos.realized += pos.pnl_per_share(pos.mark) * 100 * n
+        pos.fees += self.fee * sum(l.ratio for l in pos.legs) * n
+        pos.qty = 0
+        why = f"{reason} (no quote on a leg: closed at last mark {pos.mark:.2f})"
+        pos.fills.append({"ts": now, "side": "close", "qty": n, "px": pos.mark, "mid": None, "natural": None,
+                          "limit": None, "ref_id": None, "why": why})
+        self._log(now, "warn", f"book {book.letter}: {why}")
+        self._close(book, pos, why, now)
 
     def _close(self, book: Book, pos, reason: str, now: float) -> None:
         pos.status, pos.closed_ts, pos.exit_reason = "closed", now, reason

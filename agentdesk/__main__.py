@@ -47,8 +47,6 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         from .feeds.alpaca import AlpacaFeed, AlpacaQuotes
         if cfg["data"]["alpaca"]["feed"] == "iex" and cfg["strategy"].get("tick_bar_size_iex"):
             cfg["strategy"]["tick_bar_effective"] = cfg["strategy"]["tick_bar_size_iex"]
-            if isinstance(cfg.get("books", {}).get("C_orb_bull_put"), dict):
-                cfg["books"]["C_orb_bull_put"]["reset_volume_on_live"] = True
             logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)",
                                                    cfg["strategy"]["tick_bar_size_iex"])
         feed = AlpacaFeed(cfg)
