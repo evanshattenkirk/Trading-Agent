@@ -18,7 +18,20 @@ from datetime import date
 from .config import expand, load_config, set_tick_bar_for_feed
 
 
+def check_live_promotion(cfg, mode: str) -> None:
+    """Live mode needs exactly one promoted book (paper_only: false). Only book A has a live order path in this
+    build, so A is the only book that can be promoted (HANDOFF sections 10.8 and 12)."""
+    if mode != "live":
+        return
+    promoted = [k for k, v in (cfg.get("books") or {}).items()
+                if isinstance(v, dict) and v.get("enabled") and v.get("paper_only") is False]
+    if promoted != ["A_macd_calls"]:
+        raise SystemExit("Refusing live mode: set paper_only: false on exactly one book, and only A_macd_calls has a "
+                         f"live order path. Promoted now: {promoted or 'none'}.")
+
+
 def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
+    check_live_promotion(cfg, mode)
     from .brokers.paper import PaperBroker
     from .bus import Bus
     from .crew import Crew
@@ -79,6 +92,11 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         engine.simbook = SimBook(seed)
     elif rh is not None:
         engine.l2_rh = rh
+    from .books.host import BookHost
+    from .books.vol import RobinhoodVix, SimVix
+    vix = SimVix(feed) if provider == "sim" else (RobinhoodVix(rh) if rh is not None else None)
+    host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
+    engine.books = host if host.enabled else None
     engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
     return engine, bus
 
@@ -121,7 +139,8 @@ def cmd_record(args) -> None:
     with open(args.out, "w") as f:
         bus.recorder = f
         bus.record_filter = {"bar", "cross", "signal", "order", "fill", "position", "trade_closed", "risk", "skip",
-                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal"}
+                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal",
+                             "books", "book_order", "book_position", "book_closed", "book_skip"}
 
         async def main():
             await engine.run()
