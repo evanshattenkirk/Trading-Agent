@@ -70,6 +70,13 @@ This is the complete record of what was built, verified, tested and decided in t
 
 Books B–E don't need the upgrade.
 
+**Correction (2026-09-28): IEX vs SIP measured.** The "Check book A IEX vs SIP data" thread replayed Sept 14–25, 2026 on both feeds:
+- IEX carried **3.7%** of SPY prints, not 4–6%.
+- The 8-print "144t" approximation caught **55%** of the real 144t MACD crosses.
+- Book A's P&L **flipped sign** between feeds: SIP −$690 (PF 0.42) vs IEX +$521. About a third of the SIP trades never happen on IEX.
+
+So IEX paper results for book A are **not evidence** for or against A. Judge A with a weekly after-close replay on free SIP history instead, and buy Algo Trader Plus only when A is promoted to shadow or live. Two changes are left for Evan to decide, not applied here: `tick_bar_size_iex` 8 → 5 (raises cross capture to about 75%), and a 60-day rerun of the comparison.
+
 ---
 
 ## 4. System architecture (what exists)
@@ -410,6 +417,7 @@ The directional edges decayed after publication. The only effect that is modeled
    - Run `python -m agentdesk rh-inspect`: it signs in, confirms ••••6452 is Level 3, and runs the review simulation.
    - Done when `rh-inspect` prints a review with no errors and the IEX stream shows SPY prints.
 3. **Book A paper.** `python -m agentdesk run --mode paper` during market hours. Done after 1 full session with bars, signals, L2 logs and `option_quotes` recorded, and no errors in the log.
+   - *Note (2026-09-28):* this gate proves the plumbing only. Book A's results on the IEX feed don't count toward promotion (see section 3). Its evidence is the weekly SIP replay.
 4. **Multi-book framework plus B, C, D** (section 9). Done when all required tests pass and a sim day runs all books without cross-contamination.
 5. **Book E and the IV recorder.** Done when the earnings screen lists candidates daily and `iv_history` grows.
 6. **Four or more weeks of paper, all books.** Weekly, the Quant desk writes a report per book: trades, net after taker costs, PF, t, worst day, L2 split.
