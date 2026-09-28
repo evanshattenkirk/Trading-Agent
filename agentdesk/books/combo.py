@@ -133,7 +133,8 @@ class ComboPosition:
     def label(self) -> str:
         c = self.contracts[0]
         legs = "/".join(f"{'-' if l.side == 'sell' else '+'}{l.strike:g}{l.right[0].upper()}" for l in self.legs)
-        return f"{c.symbol} {legs} {c.expiry[5:]}"
+        exps = "/".join(dict.fromkeys(x.expiry[5:] for x in self.contracts))    # a calendar shows both expiries
+        return f"{c.symbol} {legs} {exps}"
 
     def to_dict(self) -> dict:
         return {
@@ -147,6 +148,6 @@ class ComboPosition:
             "opened_ts": self.opened_ts, "closed_ts": self.closed_ts, "status": self.status,
             "exit_reason": self.exit_reason, "strike_reason": self.strike_reason, "entry_reasons": self.entry_reasons,
             "fills": self.fills, "l2": self.l2,
-            "legs": [{"right": l.right, "strike": l.strike, "side": l.side, "ratio": l.ratio} for l in self.legs],
+            "legs": [{"right": l.right, "strike": l.strike, "side": l.side, "ratio": l.ratio, "dte": l.dte} for l in self.legs],
             "meta": {k: v for k, v in self.meta.items() if isinstance(v, (int, float, str))},
         }

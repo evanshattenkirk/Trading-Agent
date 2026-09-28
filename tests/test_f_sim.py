@@ -15,7 +15,7 @@ def run_day(seed, f_on=True, others_on=True, day="2026-09-28"):
     cfg = copy.deepcopy(CFG)
     cfg["books"]["F_stocks_in_play"]["enabled"] = f_on
     if not others_on:
-        for k in ("B_iron_fly", "C_orb_bull_put", "D_iron_condor"):
+        for k in ("B_iron_fly", "C_orb_bull_put", "D_iron_condor", "G_call_calendar"):
             cfg["books"][k]["enabled"] = False
     engine, bus = build(cfg, "sim", 0, seed, day)
     engine.inline = True

@@ -123,6 +123,70 @@ def test_serve_stops_engine_closes_sessions_and_skips_a_hanging_close():
     assert took < 4
 
 
+class HoldingEngine(QuietEngine):
+    """An engine with book A and paper-book positions open at shutdown."""
+
+    def __init__(self, flatten_takes=0.0):
+        super().__init__()
+        self.calls, self.takes = [], flatten_takes
+        self.open = [(type("P", (), {"qty": 2, "contract": type("C", (), {"label": "SPY 765C"})()})(), None)]
+        self.books = type("H", (), {"positions": lambda s: ["G1"]})()
+
+    async def flatten(self, reason="manual flatten"):
+        self.calls.append(("flatten", reason, self.stopped))
+        await asyncio.sleep(self.takes)
+        self.open = []
+
+    def stop(self):
+        self.calls.append(("stop",))
+        super().stop()
+
+
+def serve_until_stopped(engine, **kw):
+    async def main():
+        port = free_port()
+        server = lifecycle.Server(uvicorn.Config(create_app(engine, Bus()), host="127.0.0.1", port=port,
+                                                 log_level="error", timeout_graceful_shutdown=1))
+        stop = asyncio.Event()
+        run = asyncio.create_task(lifecycle.serve(engine, server, [], stop=stop, grace=1, close_timeout=0.5,
+                                                  hard_exit_sec=None, **kw))
+        await wait_listening(port)
+        t0 = time.monotonic()
+        stop.set()
+        await asyncio.wait_for(run, 10)
+        return time.monotonic() - t0
+    return asyncio.run(main())
+
+
+def test_shutdown_sells_open_positions_before_stopping_the_engine():
+    engine = HoldingEngine()
+    serve_until_stopped(engine)
+    assert engine.calls[0] == ("flatten", "shutdown", False)       # while the engine, quotes and broker still run
+    assert engine.calls[1] == ("stop",) and not engine.open
+
+
+def test_shutdown_sells_paper_book_positions_even_when_book_a_is_flat():
+    engine = HoldingEngine()
+    engine.open = []
+    serve_until_stopped(engine)
+    assert engine.calls[0][:2] == ("flatten", "shutdown")
+
+
+def test_shutdown_with_nothing_open_sends_nothing():
+    engine = HoldingEngine()
+    engine.open, engine.books = [], None
+    serve_until_stopped(engine)
+    assert engine.calls == [("stop",)]
+
+
+def test_a_slow_flatten_is_cut_off_and_what_is_left_is_logged(caplog):
+    engine = HoldingEngine(flatten_takes=30)
+    with caplog.at_level("ERROR", logger="agentdesk.lifecycle"):
+        took = serve_until_stopped(engine, flatten_timeout=0.5)
+    assert took < 5 and engine.stopped
+    assert "SPY 765C" in caplog.text and "still open" in caplog.text
+
+
 # --------------------------------------------------------------------------- Robinhood MCP session
 class TaskBound:
     """Mimics anyio: exiting the context from a different task than the one that entered it is an error."""
