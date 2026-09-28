@@ -135,3 +135,4 @@ Section 9's required tests, plus the integration ones:
 - Robinhood rate budget: each open combo adds one batched quote call per second on top of A and the recorder. Thread 3 measures the ceiling; the combo poll interval is a config value.
 - Index-history argument shapes (`get_indexes`, index quotes/history) are matched with `fit_args` against the live schema and still need one `rh-inspect` run on the Mac.
 - Paper fills are a model. The recorded quotes (phase 7) are the real check.
+- Evidence behind B and D weakened: the data research thread reports Vilkov's 0DTE study (cited in HANDOFF 7B/8) was corrected in August 2026, and after the fix short iron flies and condors lost even before costs on SPX (SPY spreads are about 10× tighter, so not a direct read-through). A ThetaData real-quote check of B and D is being decided separately. B and D stay paper-only pending that verdict; the framework is needed either way.
