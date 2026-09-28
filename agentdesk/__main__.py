@@ -5,6 +5,7 @@
   python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
   python -m agentdesk record-quotes [--once|--status|--report|--probe]   standalone 0DTE quote recorder (read-only)
+  python -m agentdesk f-report [--since YYYY-MM-DD]                      book F paper record
 """
 from __future__ import annotations
 
@@ -15,10 +16,23 @@ import sys
 import webbrowser
 from datetime import date
 
-from .config import expand, load_config
+from .config import expand, load_config, set_tick_bar_for_feed
+
+
+def check_live_promotion(cfg, mode: str) -> None:
+    """Live mode needs exactly one promoted book (paper_only: false). Only book A has a live order path in this
+    build, so A is the only book that can be promoted (HANDOFF sections 10.8 and 12)."""
+    if mode != "live":
+        return
+    promoted = [k for k, v in (cfg.get("books") or {}).items()
+                if isinstance(v, dict) and v.get("enabled") and v.get("paper_only") is False]
+    if promoted != ["A_macd_calls"]:
+        raise SystemExit("Refusing live mode: set paper_only: false on exactly one book, and only A_macd_calls has a "
+                         f"live order path. Promoted now: {promoted or 'none'}.")
 
 
 def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
+    check_live_promotion(cfg, mode)
     from .brokers.paper import PaperBroker
     from .bus import Bus
     from .crew import Crew
@@ -32,10 +46,9 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         quotes = SimQuotes(feed)
     elif provider == "alpaca":
         from .feeds.alpaca import AlpacaFeed, AlpacaQuotes
-        if cfg["data"]["alpaca"]["feed"] == "iex" and cfg["strategy"].get("tick_bar_size_iex"):
-            cfg["strategy"]["tick_bar_effective"] = cfg["strategy"]["tick_bar_size_iex"]
-            logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)",
-                                                   cfg["strategy"]["tick_bar_size_iex"])
+        n = set_tick_bar_for_feed(cfg, cfg["data"]["alpaca"]["feed"])
+        if n != cfg["strategy"]["tick_bar_size"]:
+            logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)", n)
         feed = AlpacaFeed(cfg)
         quotes = AlpacaQuotes(cfg)
     elif provider == "massive":
@@ -69,6 +82,10 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     bus = Bus()
     journal = Journal(expand(cfg["journal_path"]) if mode != "sim" else None)
     engine = Engine(cfg, feed, quotes, broker, bus, journal, mode)
+    if mode != "sim":                          # today's risk state survives a restart (sim days are synthetic)
+        from .risk import RiskStore
+        engine.risk.store = RiskStore(expand(cfg["risk"].get("state_path", "~/.agentdesk/risk_state_{mode}.json")
+                                             .format(mode=mode)))
     engine.crew = Crew(engine, cfg)
     from .l2 import L2Monitor, SimBook
     engine.l2 = L2Monitor(cfg, symbol=cfg["symbol"])
@@ -76,30 +93,47 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         engine.simbook = SimBook(seed)
     elif rh is not None:
         engine.l2_rh = rh
+    from .books.host import BookHost
+    from .books.vol import RobinhoodVix, SimVix
+    vix = SimVix(feed) if provider == "sim" else (RobinhoodVix(rh) if rh is not None else None)
+    host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
+    from .books.f_host import build_f
+    from .books.group import HostGroup
+    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed))
+    engine.books = group if group.enabled else None
+    engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
     return engine, bus
 
 
 def cmd_run(args) -> None:
     import uvicorn
-    from .server import create_app
+    from . import lifecycle
+    from .server import LOCAL_HOSTS, create_app, resolve_token
 
     cfg = load_config(args.config)
     mode = args.mode or cfg["mode"]
     engine, bus = build(cfg, mode, args.speed, args.seed, args.day)
-    app = create_app(engine, bus)
+    engine.risk.clear_halt_on_restore = args.clear_halt
     host, port = cfg["server"]["host"], cfg["server"]["port"]
+    token = resolve_token(cfg["server"])
+    app = create_app(engine, bus, token=token, allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])])
+    if host not in LOCAL_HOSTS:
+        logging.getLogger("agentdesk").warning("dashboard bound to %s: reachable from the network (controls still need "
+                                               "the token)", host)
+    link = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/#token={token}"
 
     async def main():
-        server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
-        eng = asyncio.create_task(engine.run())
-        print(f"\n  AgentDesk [{mode.upper()}] -> http://{host}:{port}\n")
+        server = lifecycle.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
+                                                 timeout_graceful_shutdown=2))
+        print(f"\n  AgentDesk [{mode.upper()}] -> {link}\n  (open this link for the controls; Ctrl-C to stop)\n",
+              flush=True)
         if not args.no_browser:
-            webbrowser.open(f"http://{host}:{port}")
-        await server.serve()
-        engine.stop()
-        eng.cancel()
+            webbrowser.open(link)
+        return await lifecycle.serve(engine, server, engine.closers)
 
-    asyncio.run(main())
+    timer = asyncio.run(main())
+    if timer:
+        timer.cancel()
 
 
 def cmd_record(args) -> None:
@@ -109,7 +143,8 @@ def cmd_record(args) -> None:
     with open(args.out, "w") as f:
         bus.recorder = f
         bus.record_filter = {"bar", "cross", "signal", "order", "fill", "position", "trade_closed", "risk", "skip",
-                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal"}
+                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal",
+                             "books", "book_order", "book_position", "book_closed", "book_skip"}
 
         async def main():
             await engine.run()
@@ -170,6 +205,29 @@ def cmd_record_quotes(args) -> None:
     asyncio.run(recorder.RecorderDaemon(cfg).run(once=args.once))
 
 
+def cmd_f_report(args) -> None:
+    import sqlite3
+    from .books.f_journal import FJournal
+    from .books.f_report import build_report, format_report
+    cfg = load_config(args.config)
+    print(format_report(build_report(FJournal(sqlite3.connect(str(expand(cfg["journal_path"])))), args.since)))
+
+
+def cmd_f_clear_stale(args) -> None:
+    import sqlite3
+    from .books.f_journal import FJournal
+    cfg = load_config(args.config)
+    fj = FJournal(sqlite3.connect(str(expand(cfg["journal_path"]))))
+    rows = fj.open_rows()
+    if not rows:
+        print("No open F paper positions in the journal.")
+        return
+    for r in rows:
+        print(f"  {r['session']}  {r['symbol']}  {r['qty']} @ {r['entry']:.2f}")
+    n = fj.clear_stale(date.today().isoformat() if not args.all else "9999")
+    print(f"Marked {n} F paper position(s) from earlier sessions as cleared (no P&L). Book F starts clean next run.")
+
+
 def cmd_backtest(args) -> None:
     from .backtest import main as bt_main
     asyncio.run(bt_main(load_config(args.config), args))
@@ -187,6 +245,8 @@ def main() -> None:
     r.add_argument("--seed", type=int, default=21)
     r.add_argument("--day", default=None, help="sim only: YYYY-MM-DD")
     r.add_argument("--no-browser", action="store_true")
+    r.add_argument("--clear-halt", action="store_true",
+                   help="lift today's saved halt (kill switch, safety halt); day P&L, trade count and limits carry over")
     r.set_defaults(fn=cmd_run)
 
     rec = sub.add_parser("record-demo")
@@ -211,6 +271,14 @@ def main() -> None:
     rq.add_argument("--probe", action="store_true", help="bounded read-only rate ramp; run outside market hours")
     rq.add_argument("--rates", default="1,2,4,8", help="probe steps, calls per second")
     rq.set_defaults(fn=cmd_record_quotes)
+
+    fr = sub.add_parser("f-report", help="book F paper record: win rate, mean R, PF, t, splits, shadow shorts")
+    fr.add_argument("--since", default=None, help="YYYY-MM-DD")
+    fr.set_defaults(fn=cmd_f_report)
+
+    fc = sub.add_parser("f-clear-stale", help="after checking the account: clear F paper positions left open by a crash")
+    fc.add_argument("--all", action="store_true", help="also clear today's open rows")
+    fc.set_defaults(fn=cmd_f_clear_stale)
 
     bt = sub.add_parser("backtest")
     bt.add_argument("--days", type=int, default=20)

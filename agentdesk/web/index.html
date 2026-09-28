@@ -21,6 +21,7 @@
       <div class="stat"><span class="k">W / L</span><span class="v num" id="s-wl">0 / 0</span></div>
       <div class="stat"><span class="k">Clock CT</span><span class="v num" id="s-clock">—</span></div>
     </div>
+    <div class="books" id="books" role="tablist" aria-label="Books" hidden></div>
     <div class="controls" id="controls">
       <div class="replay" id="replay" hidden>
         <button class="btn" id="rp-play" type="button">Pause</button>
@@ -68,7 +69,7 @@
         </div>
         <div class="tabbody" id="tab-trades">
           <div class="tablewrap"><table class="grid">
-            <thead><tr><th>Open</th><th>Contract</th><th>Setup</th><th class="r">Qty</th><th class="r">Entry</th><th class="r">Peak</th><th class="r">Net</th><th>Exit</th><th>Strike logic</th></tr></thead>
+            <thead><tr><th>Book</th><th>Open</th><th>Contract</th><th>Setup</th><th class="r">Qty</th><th class="r">Entry</th><th class="r">Peak</th><th class="r">Net</th><th>Exit</th><th>Strike logic</th></tr></thead>
             <tbody id="trades"></tbody>
           </table></div>
           <p class="empty" id="trades-empty">No closed trades yet today.</p>
@@ -130,6 +131,7 @@
 <script src="static/vendor/lightweight-charts.standalone.production.js"></script>
 <script src="static/office.js"></script>
 <script src="static/app.js"></script>
+<script src="static/book_f.js"></script>
 <!--/BODY-->
 </body>
 </html>

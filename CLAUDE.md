@@ -5,14 +5,16 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## What exists
 - `agentdesk/` Python engine (deterministic rules) + FastAPI/websocket dashboard with a pixel-art office (`web/`). Modes: `sim` (synthetic day, calm/event moods), `paper` (default: real data, simulated fills), `shadow` (every order sent to `review_option_order`, fills simulated), `live` (needs `live_enabled: true` + `robinhood.account_number`).
 - CLI: `python -m agentdesk run | record-demo | rh-inspect | backtest | l2-report`.
-- Book A (Evan's MACD 0DTE calls) is fully built. Books B–E exist only as the `books:` scaffold in `config.yaml`; build them per HANDOFF section 9.
+- Book A (Evan's MACD 0DTE calls) is fully built in `engine.py`. Books B, C, D are built in `agentdesk/books/` (paper only; every fill simulated by `PaperBroker.submit_combo` at mid −1¢/leg, never worse than natural; shadow only adds a read-only `review_option_order`). `BookHost` runs them from one-line engine hooks; book A's path is unchanged. Book E exists only as config (phase 5).
+- Multi-book account (`books.account`): $10,000 paper balance, $1,500 open-risk cap (book A's open debit counts), $300 max loss per B/C/D position, C budget $400 (the lower wins), $0.04 fee per leg. A book that errors `max_consecutive_errors` times in a row halts and flattens itself only. `paper_only: true` is enforced; live mode needs exactly one promoted book and only A has a live path (`check_live_promotion`).
 
-## The five books (all paper-only; Evan decided 2026-09-27: run them side by side)
+## The books (all paper-only; Evan decided 2026-09-27: run them side by side; F added 2026-09-28)
 - **A, Evan's MACD calls (built, unchanged):** 15m + 5m MACD(12,26,9) above signal = filter; 1m + 144-tick cross-up = trigger (fresh 1m cross -> SWING, 144t-only -> SCALP); RSI(14) 30–70 on 15m/5m/1m. Strikes by time of day + nearest resistance. $500 / max 5 contracts. Exits: −20% stop, scale-outs, breakeven, runner trail, cross-back, "ripping" hold, flatten 14:40 CT.
-- **B, iron fly (keep exactly as specified; Evan said don't change it):** 08:45 CT, $5 wings, TP 50%, stop 1× credit, close 14:30 CT.
+- **B, iron fly (keep exactly as specified; Evan said don't change it):** 08:45 CT, $5 wings, TP 50%, stop 1× credit (closing debit 2× credit, `stop_debit_x_credit: 2.0`, same as the backtest), close 14:30 CT. Skips high-impact events before 14:00 CT and days the Vol desk sets `vix1d_flag`.
 - **C, ChatGPT's bullish 30-min ORB -> $2 bull-put spread:** built as requested, but the backtest is negative (underlying −3 bp/trade, t −5.75 in-sample; spread −3.5% on risk). Expect paper to confirm that.
 - **C_bear_puts (disabled):** long puts on the bearish mirror; failed its backtest; stays off until a pre-registered filter set passes out-of-sample.
-- **D, 10:00 ET iron condor (new):** short strikes at 0.9× expected move, $2 wings, TP 50%, stop 2× credit, close 14:25 CT, quiet-day filter. Modeled +8.4% / +7.3% / +12.6% on risk with the filter (+4.0% / +3.5% / +10.1% at taker fills; roughly flat at IV multiplier 0.60).
+- **D, 10:00 ET iron condor (new):** short strikes at 0.9× expected move, $2 wings, TP 50%, stop 2× credit, close 14:25 CT, quiet-day filter. The published filter numbers (+8.4% / +7.3% / +12.6%) used the 9:30–10:30 ET range, 30 minutes past entry. The built filter uses only 08:30–09:00 CT (range vs its 14-day median) plus price within 0.12% of VWAP: +7.5% / +5.7% / +12.0% at 1¢, +3.3% / +1.5% / +9.0% at taker fills, 0.0% / −3.7% / +4.1% at IV multiplier 0.60 (`research/d_quiet_check.py`). Strikes use the prior VIX close from Robinhood's index data.
+- **F, large-cap stocks in play (Evan, 2026-09-28; brief `docs/BOOK_F_HANDOFF.md`, rules frozen):** top 5 green first 5-min candles by RVOL5 >= 2 among the top 130 S&P names + 18 AI/memory extras; buy-stop at the OR high until 10:30 ET; stop fill - 0.10 x ATR14; exit 15:55 ET. $25 risk / $1,000 notional / 5 open / -$75 day. Long whole shares, paper only; red candles are logged as shadow shorts; the news tag is observe-only. Code: `books/f_*.py`, `brokers/*_equity.py`, `feeds/f_data.py`, `web/book_f.js`. `f-report`, `f-clear-stale`. Replication: `research/strategy_f_intraday.py`.
 - **E, pre-earnings IV run-up (new, experiment):** E1 = ATM straddle in the first post-earnings expiry (4–10 DTE), bought at T−3, sold before the announcement. E2 = calendar (short pre-earnings weekly / long post-earnings weekly) entered T−10..T−8, exited T−1. Never held through the announcement. About 30 liquid large caps; the Earnings desk runs the screen. No quote backtest yet (ThetaData later).
 
 ## The crew (`crew.py`, `proposals.py`)
@@ -45,7 +47,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (116 pass with the crew desks). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (340 pass today; the full run takes about 3 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.

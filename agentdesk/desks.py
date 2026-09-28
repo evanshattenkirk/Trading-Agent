@@ -40,7 +40,9 @@ def ops_checks(crew, slot: str) -> list[dict]:
 
     mode = getattr(e, "mode", "sim")
     add("Mode", mode != "live" or cfg.get("live_enabled"), f"{mode}, live_enabled {bool(cfg.get('live_enabled'))}")
-    live_books = [k for k, b in (cfg.get("books") or {}).items() if isinstance(b, dict) and not b.get("paper_only", False)]
+    # a book is a books.* entry with "enabled" (books.account, books.fills etc. are settings, not books)
+    live_books = [k for k, b in (cfg.get("books") or {}).items()
+                  if isinstance(b, dict) and "enabled" in b and b.get("paper_only") is not True]
     add("Books paper-only", not live_books, ", ".join(live_books) or "all paper")
     r = cfg["risk"]
     wd = r.get("watchdog") or {}

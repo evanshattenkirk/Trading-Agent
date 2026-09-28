@@ -6,6 +6,7 @@ Modes
             sizing, exits and risk limits are identical to live.
   --ticks   downloads every SPY print per day (Alpaca, cached) and runs the full spec:
             144t + 1m triggers, SCALP and SWING. ~1M prints/day on SIP, so start with 5-10 days.
+            On feed iex the "144t" bars use tick_bar_size_iex prints, exactly as the live engine does.
 
 Option prices
   model      Black-Scholes on the replayed spot with a 0DTE skew (--iv). Directionally useful,
@@ -30,6 +31,7 @@ from .bars import Bar, Trade
 from .brokers.paper import PaperBroker
 from .bus import Bus
 from .clock import CT, at_ct, session_date
+from .config import set_tick_bar_for_feed
 from .engine import Engine
 from .feeds.base import Feed, Heartbeat, Quote, QuoteSource
 from .journal import Journal
@@ -230,6 +232,8 @@ async def main(cfg, args) -> None:
     else:
         if not args.ticks:
             cfg["strategy"]["trigger_timeframes"] = ["1m"]
+        else:                                  # same "144t" construction as the live engine on this feed
+            tick_n = set_tick_bar_for_feed(cfg, cfg["data"]["alpaca"]["feed"])
         rh = None
         if args.csv:
             bars = _load_csv(args.csv)
@@ -257,7 +261,8 @@ async def main(cfg, args) -> None:
             rows += [_row(p, d) for p in closed]
             print(f"{d}  trades {len(closed):2d}  net {sum(p.realized - p.fees for p in closed):+8.2f}")
         label = (f"{len(test_days)} days {test_days[0]}..{test_days[-1]}, "
-                 f"{'1m+144t (ticks)' if args.ticks else '1m trigger only'}, options={args.options}") if test_days else "no data"
+                 f"{f'1m+144t (ticks, {tick_n} prints/bar)' if args.ticks else '1m trigger only'}, "
+                 f"options={args.options}") if test_days else "no data"
 
     out = Path(args.out)
     out.mkdir(exist_ok=True)

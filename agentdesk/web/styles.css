@@ -50,6 +50,16 @@ h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-t
 .brand { display: flex; align-items: center; gap: 10px; }
 .logo { font-family: var(--pixel); font-size: 15px; letter-spacing: .04em; color: var(--accent); }
 .stats { display: flex; gap: 22px; flex-wrap: wrap; flex: 1; }
+.books { display: flex; gap: 4px; flex-wrap: wrap; background: var(--panel-2); border-radius: var(--r); padding: 2px; }
+.books button { display: inline-flex; align-items: baseline; gap: 6px; background: none; border: 0; color: var(--ink-2); padding: 4px 9px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.books button b { font-family: var(--mono); color: var(--ink); }
+.books button small { color: var(--ink-3); font-family: var(--mono); }
+.books button[aria-selected="true"] { background: var(--acc-bg); box-shadow: 0 0 0 1px var(--accent); }
+.books button[aria-selected="true"] b { color: var(--accent); }
+.books button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.books .hd { width: 6px; height: 6px; border-radius: 50%; background: var(--dn); align-self: center; }
+table.legs { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+table.legs td { padding: 2px 4px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
 .stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .stat .k { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
 .stat .v { font-family: var(--mono); font-size: 15px; font-weight: 500; }

@@ -56,6 +56,7 @@ class Engine:
         self._managing = False
         self.l2 = None              # L2Monitor
         self.l2_rh = None           # RobinhoodMCP for live books
+        self.closers: list = []     # async close() callables run on shutdown (data feed, Robinhood session)
         self.simbook = None         # SimBook in the simulator
         self._last_l2_emit = 0.0
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
@@ -68,21 +69,30 @@ class Engine:
         self._errors = 0            # consecutive failed background tasks (broker/API errors)
         self._last_reconcile = 0.0
         self._mismatches = 0
+        self.books = None           # BookHost for paper books B/C/D (books/host.py); None when none is enabled
 
     # ------------------------------------------------------------------ lifecycle
     async def run(self) -> None:
         await self.broker.start()
         await self.quotes.start()
         await self._warmup()
+        restored = self.risk.restore(str(self.day))      # a restart keeps today's P&L, counts, cooldown and halts
+        if restored:
+            self.bus.emit("log", self.feed.now(), level="warn" if self.risk.st.halted else "info", msg=restored)
         try:
             stale = await self.broker.open_positions()
         except Exception as ex:
             stale = None
-            self.risk.halt(f"could not read account positions at startup ({ex}); fix the connection, then restart")
+            self.risk.halt(f"could not read account positions at startup ({ex}); fix the connection, then restart", sticky=False)
             self.bus.emit("log", self.feed.now(), level="error", msg=self.risk.st.halt_reason)
         if stale:
-            self.risk.halt(f"{len(stale)} option position(s) already open in the account at startup; close them in the app, then restart")
+            self.risk.halt(f"{len(stale)} option position(s) already open in the account at startup; close them in the app, then restart",
+                           sticky=False)
             self.bus.emit("log", self.feed.now(), level="warn", msg=self.risk.st.halt_reason)
+        if self.books:
+            if self.risk.st.halted:
+                self.books.halt_all(self.risk.st.halt_reason)
+            await self.books.start()
         self.set_agent(self.feed.now(), "arriving", "Booting up. Loading history...")
         if self.l2 and self.l2.enabled and self.l2_rh is not None and not self.inline:
             asyncio.create_task(self.l2.run_live(self.l2_rh, lambda st: self._on_l2(st, st.ts)))
@@ -194,6 +204,8 @@ class Engine:
         if self.open and now - self._last_manage >= poll:
             self._last_manage = now
             await self._run(self.manage(now), "manage")
+        if self.books:
+            await self.books.run(self.books.on_second(now), self.inline)
         self._watchdog(now)
 
     def _new_day(self, d, now: float) -> None:
@@ -208,7 +220,7 @@ class Engine:
         self.levels.reset_session()
         self.vwap.reset()
         self.tick.reset()
-        self.risk.reset_day()
+        self.risk.reset_day(str(d))
         self.closed.clear()
         for q in self.bars.values():
             q.clear()
@@ -256,6 +268,8 @@ class Engine:
         """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions."""
         first = not (self.risk.st.halted and self.risk.st.flatten_all)
         self.risk.halt(f"SAFETY: {reason}", flatten=True)
+        if self.books:
+            self.books.halt_all(f"SAFETY: {reason}", flatten=True)
         if not first:
             return
         log.error("SAFETY HALT: %s", reason)
@@ -272,10 +286,12 @@ class Engine:
 
     def _watchdog(self, now: float) -> None:
         stale = self.wd["quote_stale_sec"]
-        for pos, _ in self.open:
+        held = [p for p, _ in self.open] + (self.books.positions() if self.books else [])
+        for pos in held:
             age = now - pos.last_quote_ts
             if age > stale:
-                self._trip(f"no fresh quote for {pos.contract.label} in {age:.0f}s, stop can't be checked", now)
+                label = getattr(pos, "label", None) or pos.contract.label
+                self._trip(f"no fresh quote for {label} in {age:.0f}s, stop can't be checked", now)
                 break
         rs = self.wd["reconcile_sec"]
         if self.broker.live and rs and now - self._last_reconcile >= rs and not self._busy.locked() \
@@ -337,6 +353,8 @@ class Engine:
                 es = self.sig.evaluate(now, self.price or b.c)
                 if es:
                     await self._run(self.enter(es), "entry")
+        if self.books and b.tf in ("1m", "5m"):
+            await self.books.run(self.books.on_bar(b), self.inline)
 
     def _levels_payload(self) -> list:
         px = self.price or 0
@@ -348,7 +366,7 @@ class Engine:
             return
         async with self._busy:
             now = es.ts
-            ok, why = self.risk.can_enter(now, len(self.open))
+            ok, why = self.risk.can_enter(now, len(self.open), self.risk.open_pnl([p for p, _ in self.open]))
             self.sig.consume(es)
             if not ok:
                 self._skip(now, es, why)
@@ -488,6 +506,10 @@ class Engine:
             if q is None or (q.bid <= 0 and q.ask <= 0) or (not self.inline and now - q.ts > self.wd["quote_stale_sec"]):
                 continue            # the watchdog halts if this lasts longer than quote_stale_sec
             pos.last_quote_ts = now
+            pos.bid = q.bid
+            if not flat and self.risk.check_open_loss([p for p, _ in self.open]):
+                flat = self.risk.st.halt_reason
+                self.bus.emit("log", now, level="error", msg=f"{flat}. Flattening.")
             so = getattr(pos.contract, "sellout_ts", None)
             if not flat and so and now >= so - 300:
                 flat = "5 min before Robinhood's sellout time"
@@ -596,16 +618,22 @@ class Engine:
             except Exception as ex:             # keep going: the other positions and the cancels still matter
                 log.exception("kill: exit %s failed", pos.contract.label)
                 self.bus.emit("log", now, level="error", msg=f"kill: exit {pos.contract.label} failed: {ex}")
+        if self.books:
+            await self.books.kill(now)
         await self._cancel_all_quietly()
         self.bus.emit("risk", now, risk=self.risk.to_dict())
 
     async def flatten(self, reason: str = "manual flatten") -> None:
         now = self.feed.now()
-        for pos, plan in list(self.open):
-            await self.exit(pos, plan, ExitIntent(pos.qty, reason, urgent=True), now)
+        try:
+            for pos, plan in list(self.open):
+                await self.exit(pos, plan, ExitIntent(pos.qty, reason, urgent=True), now)
+        finally:
+            if self.books:
+                await self.books.flatten(reason, now)
 
     def pause(self, on: bool) -> None:
-        self.risk.st.paused = on
+        self.risk.set_paused(on)
         now = self.feed.now()
         self.set_agent(now, "paused" if on else "watching", "Paused: no new entries" if on else "Back on it.")
         self.bus.emit("risk", now, risk=self.risk.to_dict())
@@ -649,4 +677,5 @@ class Engine:
             "l2": ({"book": self.l2.latest.to_dict() if self.l2.latest else None, "mode": self.l2.mode}
                    if self.l2 else None),
             "config": {k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")},
+            "books": self.books.snapshot() if self.books else None,
         }

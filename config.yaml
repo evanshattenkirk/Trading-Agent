@@ -97,6 +97,7 @@ risk:
     quote_stale_sec: 10           # an open position with no usable option quote for this long
     max_consecutive_errors: 3     # broker/API calls failing in a row
     reconcile_sec: 30             # live only: account positions vs engine positions; 2 mismatches in a row halt
+  state_path: ~/.agentdesk/risk_state_{mode}.json   # today's P&L, trades, cooldown and halts survive a restart
 
 crew:
   enabled: true
@@ -132,15 +133,26 @@ robinhood:
   arg_overrides: {}         # per-tool fixed args if the schema matcher misses one (see rh-inspect)
 
 # ---------------------------------------------------------------------------------------------
-# Paper books (spec for the multi-book build in HANDOFF.md section 7). The current engine runs
-# book A only; Claude Code implements B-E against these settings. All paper-only.
+# Paper books (HANDOFF section 9). Book A runs in engine.py; B, C and D run in agentdesk/books/ next to it.
+# Book E is not built yet (phase 5). Every B-E fill is simulated; paper_only is enforced.
 books:
+  account: {paper_balance: 10000, open_risk_cap: 1500, per_position_max_loss: 300, fee_per_leg: 0.04}   # $10k paper (section 11 row); cap = sum of open max losses incl. A
+  fills: {model: mid_offset, cents_per_leg: 1, reprice_step_c: 1, max_reprices: 4, max_quote_age_s: 5, max_leg_spread_pct: 0.25, tick_exempt: 0.02}
+  history_days: 20        # 1m history the books load at startup (D's 14-day quiet filter, C's indicators)
   A_macd_calls:    {enabled: true,  paper_only: true,  risk_per_trade: 500, max_contracts: 5, daily_loss: 400}
-  B_iron_fly:      {enabled: true,  paper_only: true,  lots: 1, entry_ct: "08:45", wings: 5, take_profit_pct: 0.50, stop_x_credit: 1.0, close_ct: "14:30"}
-  C_orb_bull_put:  {enabled: true,  paper_only: true,  max_loss_budget: 400, width: 2, max_trades_day: 2}
+  B_iron_fly:      {enabled: true,  paper_only: true,  lots: 1, entry_ct: "08:45", entry_grace_min: 5, wings: 5, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:30", skip_event_before_ct: "14:00", vix1d_gap: 3.0}
+  C_orb_bull_put:  {enabled: true,  paper_only: true,  max_loss_budget: 400, width: 2, max_trades_day: 2, window_ct: {start: "09:00", end: "13:30"}, or_minutes: 30, ema: 20, rsi: [55, 72], vol_mult: 0.8, vol_lookback: 20, stop_pct: 0.0018, target_pct: 0.0045, max_hold_min: 45, close_ct: "14:15"}
   C_bear_puts:     {enabled: false, paper_only: true,  note: "failed its backtest; stays off until a pre-registered filter set passes out-of-sample"}
-  D_iron_condor:   {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", short_em_mult: 0.9, wings: 2, take_profit_pct: 0.50, stop_x_credit: 2.0, close_ct: "14:25", quiet_filter: true}
-  E_earnings_iv:   {enabled: true,  paper_only: true,  max_debit: 250, max_open: 3, structures: [straddle_t3, calendar_t10], never_hold_through_announcement: true}
+  D_iron_condor:   {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, short_em_mult: 0.9, em_rth_mult: 0.80, wings: 2, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:25", quiet_filter: true, quiet_window_min: 30, quiet_lookback_days: 14, vwap_max_pct: 0.0012}
+  E_earnings_iv:   {enabled: true,  paper_only: true,  max_debit: 500, max_debit_e2: 250, max_open: 3, structures: [straddle_t3, calendar_t10], never_hold_through_announcement: true}
+  # Book F (docs/BOOK_F_HANDOFF.md): large-cap stocks in play, long whole shares, paper only. Section 3 rules are frozen.
+  F_stocks_in_play: {enabled: true,  paper_only: true,  instrument: shares, scan_et: "09:35", rvol5_min: 2.0, top_n: 5, first_candle: green, entry_cutoff_et: "10:30",
+                     stop_atr_frac: 0.10, exit_et: "15:55", risk_per_trade: 25, max_notional: 1000, max_positions: 5, daily_loss: 75,
+                     universe: {min_price: 10, min_atr: 0.50, min_dollar_vol_20d: 100000000, top_sp500_by_dollar_vol: 130,
+                                extra: [NVDA, AMD, AVGO, MU, TSM, ARM, MRVL, SMCI, WDC, STX, MSFT, META, GOOGL, AMZN, AAPL, ORCL, PLTR, TSLA]},
+                     news_tag: observe, shorts: log_only,
+                     prep_et: "08:30", max_quote_age_s: 5, max_sends: 3, cache_dir: ~/.agentdesk/cache/f, max_calls_per_s: 20}
+  F2_momentum_hold: {enabled: false, paper_only: true, note: "multi-day hold after a high-volume up day: no edge in the 2013-18 daily test (best t 1.31 vs Bonferroni 2.96)"}
 
 calendar:
   # 12:00 CT closes: entries stop 11:20, flatten 11:40. Full-day holidays need no entry (no prints = no trades).
@@ -150,7 +162,8 @@ calendar:
              2027-07-05, 2027-09-06, 2027-11-25, 2027-12-24]
 
 server:
-  host: 127.0.0.1
+  host: 127.0.0.1         # localhost only; the dashboard controls also need the token in the printed link
   port: 8765
+  token: null             # null = new random token each run (or set AGENTDESK_TOKEN in .env)
 
 journal_path: ~/.agentdesk/journal.db

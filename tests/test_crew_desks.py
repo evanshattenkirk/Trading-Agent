@@ -181,7 +181,7 @@ def test_ops_reports_a_book_that_is_not_paper_only_without_acting_on_it():
     e, c = make(cfg)
     b = c._finish(c._ops_brief("premarket"), "ops")
     bad = [ch for ch in b["checks"] if not ch["ok"]]
-    assert [ch["name"] for ch in bad] == ["Books paper-only"] and "B_iron_fly" in bad[0]["detail"]
+    assert [ch["name"] for ch in bad] == ["Books paper-only"] and bad[0]["detail"] == "B_iron_fly"   # not account/fills
     assert b["size_multiplier"] == 1.0
 
 
