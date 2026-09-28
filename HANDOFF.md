@@ -70,6 +70,13 @@ This is the complete record of what was built, verified, tested and decided in t
 
 Books B–E don't need the upgrade.
 
+**Correction (2026-09-28): IEX vs SIP measured.** The "Check book A IEX vs SIP data" thread replayed Sept 14–25, 2026 on both feeds:
+- IEX carried **3.7%** of SPY prints, not 4–6%.
+- The 8-print "144t" approximation caught **55%** of the real 144t MACD crosses.
+- Book A's P&L **flipped sign** between feeds: SIP −$690 (PF 0.42) vs IEX +$521. About a third of the SIP trades never happen on IEX.
+
+So IEX paper results for book A are **not evidence** for or against A. Judge A with a weekly after-close replay on free SIP history instead, and buy Algo Trader Plus only when A is promoted to shadow or live. Two changes are left for Evan to decide, not applied here: `tick_bar_size_iex` 8 → 5 (raises cross capture to about 75%), and a 60-day rerun of the comparison.
+
 ---
 
 ## 4. System architecture (what exists)
@@ -257,6 +264,7 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
 
 **Read:** the entire edge is the variance risk premium, meaning how rich real 0DTE premium is versus the move that follows. At IV 0.60 (little premium) it disappears.
 - Vilkov's real-quote study (SPX 0DTE, 2016–2026, net of half-spreads + 0.5 bp) puts the short straddle/strangle at only **about +1.2 bp/day net**. Treat the table above as an upper bound.
+  - **Correction (2026-09-28):** Vilkov's repo corrected its cost model in August 2026 (`KNOWN-ISSUES.md`; the half-spread had been charged at 1/100 of its true size). After the fix, a short iron fly/condor entered at 10:00 ET and held to settlement has Sharpe **−0.56 at mid** and **−2.67 net** on SPXW. The +1.2 bp/day figure above is out of date. SPY 0DTE quotes are about 1¢ wide (~0.13 bp of spot) versus ~1.7 bp for SPXW, so the cost drag doesn't transfer directly. The negative result at mid does carry over as a warning, though B uses take-profits, stops and early closes. The real-quote check (section 10, step 7a) decides B; see `research/historical-option-data.md` in the project files.
 - **The go/no-go number:** the real opening ATM straddle cost vs the realized move afterwards, computed from `option_quotes` after 4+ weeks of paper.
 
 ### C. ChatGPT's bullish 30-min ORB → $2 bull-put credit spread (paper book C, as requested)
@@ -354,6 +362,15 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 
 The directional edges decayed after publication. The only effect that is modeled-positive in every period is premium selling.
 - Real-quote literature: Vilkov, SSRN 4641356, as accessible on 2026-09-27. Net of costs: put ratio spread Sharpe 0.93, top-3 basket 0.82, short straddle/strangle about +1.2 bp/day, directional spreads negative. The claim that no 0DTE strategy survives costs could not be verified.
+  - **Correction (2026-09-28):** after Vilkov's August 2026 cost fix, **no structure keeps a positive net Sharpe** on SPXW 0DTE (10:00 ET entry, held to settlement, 2016–2026):
+
+    | Structure | Sharpe at mid | Net, as first published | Net, corrected |
+    |---|---|---|---|
+    | Put ratio spread | +1.06 | +0.84 | **−0.61** |
+    | Long strangle/straddle | −0.27 | −0.51 | **−0.97** |
+    | Iron butterfly/condor (short vol) | −0.56 | −0.96 | **−2.67** |
+
+    The conditional put ratio (0.93) is now −0.75, and the top-3 basket (0.82) is now −0.82. So "no 0DTE strategy survives costs" now holds for SPXW. For SPY, whose spreads are about 10× tighter, it is open until the real-quote replay. This strengthens the case for the real-quote checks in section 10, step 7, before any promotion.
 - Beckmeyer, Branger & Gayda: retail 0DTE traders lost about $241k/day on average. Multi-leg, premium-collecting trades did better than single-leg debits.
 - Low-turnover references on S&P 2005–2020 (price only): buy and hold Sharpe 0.44 (max DD −57%); 200-day trend 0.45 (−22%); VIX-scaled exposure 0.63 (needs leverage).
 
@@ -404,6 +421,7 @@ The directional edges decayed after publication. The only effect that is modeled
    - Run `python -m agentdesk rh-inspect`: it signs in, confirms ••••6452 is Level 3, and runs the review simulation.
    - Done when `rh-inspect` prints a review with no errors and the IEX stream shows SPY prints.
 3. **Book A paper.** `python -m agentdesk run --mode paper` during market hours. Done after 1 full session with bars, signals, L2 logs and `option_quotes` recorded, and no errors in the log.
+   - *Note (2026-09-28):* this gate proves the plumbing only. Book A's results on the IEX feed don't count toward promotion (see section 3). Its evidence is the weekly SIP replay.
 4. **Multi-book framework plus B, C, D** (section 9). Done when all required tests pass and a sim day runs all books without cross-contamination.
 5. **Book E and the IV recorder.** Done when the earnings screen lists candidates daily and `iv_history` grows.
 6. **Four or more weeks of paper, all books.** Weekly, the Quant desk writes a report per book: trades, net after taker costs, PF, t, worst day, L2 split.

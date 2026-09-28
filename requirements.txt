@@ -5,6 +5,6 @@ websockets>=12
 pyyaml>=6
 numpy>=1.26
 pandas>=2.1
-mcp>=1.20
+mcp>=1.20,<2   # mcp 2.x renamed streamablehttp_client; brokers/robinhood.py uses the 1.x API
 anthropic>=0.40
 pytest>=8
