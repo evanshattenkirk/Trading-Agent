@@ -95,6 +95,24 @@ def test_untradable_names_are_dropped(tmp_path):
     assert run(data(tmp_path).tradable(["NVDA", "HALT"])) == {"NVDA"}
 
 
+def test_tradability_sends_the_account_number_the_server_requires(tmp_path):
+    rh = RH()
+    rh.account = "123456"
+    run(data(tmp_path, rh).tradable(["NVDA"]))
+    assert rh.calls == [("get_equity_tradability", {"account_number": "123456", "symbols": ["NVDA"]})]
+
+
+def test_tradability_uses_the_account_found_when_the_session_starts(tmp_path):
+    class Lazy(RH):
+        account = None
+
+        async def start(self):
+            self.account = "654321"                 # RobinhoodMCP only knows the account after start()
+    rh = Lazy()
+    run(data(tmp_path, rh).tradable(["NVDA"]))
+    assert rh.calls[0][1]["account_number"] == "654321"
+
+
 def test_throttle_caps_calls_per_second():
     from agentdesk.feeds.f_data import Throttle
     th = Throttle(per_s=5)

@@ -234,7 +234,8 @@ def test_shadow_reviews_every_order_and_never_places():
     assert [c[0] for c in rh.calls] == ["review_equity_order", "review_equity_order"]
     a = rh.calls[0][1]
     assert a["type"] == "limit" and a["time_in_force"] == "gfd" and a["market_hours"] == "regular_hours"
-    assert a["quantity"] == "5" and a["side"] == "buy" and a["symbol"] == "NVDA" and a["price"] == "100.05"
+    assert a["quantity"] == "5" and a["side"] == "buy" and a["symbol"] == "NVDA" and a["limit_price"] == "100.05"
+    assert "price" not in a                     # the server wants limit_price; fit_args would drop "price" (rh-inspect 2026-09-28)
 
 
 def test_live_places_after_review_and_polls_until_filled():
@@ -273,7 +274,9 @@ def test_rh_inspect_equity_section_reviews_and_never_places():
     assert "get_equity_tradability" in tools and "review_equity_order" in tools
     assert not any(t.startswith(("place_", "cancel_")) for t in tools)
     rev = next(a for t, a in rh.calls if t == "review_equity_order")
-    assert rev["quantity"] == "1" and rev["symbol"] == "SPY"
+    assert rev["quantity"] == "1" and rev["symbol"] == "SPY" and rev["limit_price"]
+    trad = next(a for t, a in rh.calls if t == "get_equity_tradability")
+    assert trad["account_number"] == "123456"   # required by the server schema
 
 
 # ------------------------------------------------------------------ universe and scan rows (live path)

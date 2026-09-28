@@ -74,6 +74,8 @@ class RobinhoodEquityData:
         start = getattr(self.rh, "start", None)
         if start is not None:
             await start()                                   # idempotent: the engine usually connected already
+        if "account_number" in args and args["account_number"] is None:
+            args = {**args, "account_number": getattr(self.rh, "account", None)}   # known only after start()
         await self.throttle.wait()
         try:
             return await self.rh.call(tool, args)
@@ -137,7 +139,7 @@ class RobinhoodEquityData:
         ok = set()
         for grp in _chunks(symbols, 10):
             try:
-                data = await self._call("get_equity_tradability", {"symbols": grp})
+                data = await self._call("get_equity_tradability", {"account_number": None, "symbols": grp})
             except Exception as ex:
                 log.warning("tradability %s failed (%s); keeping them", grp, ex)
                 ok |= set(grp)
