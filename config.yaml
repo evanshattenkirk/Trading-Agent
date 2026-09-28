@@ -1,0 +1,143 @@
+# AgentDesk configuration. Times are US/Central (America/Chicago).
+# Every number here is a knob; the defaults encode the rules from your spec.
+
+mode: paper               # sim | paper | shadow | live   (CLI --mode overrides). Paper first; live only after a deposit + sizing review
+symbol: SPY
+live_enabled: false       # must be true AND --mode live to send real orders
+
+data:
+  provider: alpaca        # sim | alpaca | massive   (paper/shadow/live need a real SPY trade feed)
+  history_days: 5         # 1m history pulled at startup to warm up 15m/5m MACD
+  alpaca:
+    feed: iex             # iex = free (a small slice of prints -> 144t bars form far slower). sip = all exchanges (Algo Trader Plus, $99/mo); switch before live
+    options_feed: indicative   # only used if quotes_source: alpaca. Paper uses Robinhood's real option quotes (quotes_source auto)
+  massive:                # formerly Polygon.io
+    rest_url: https://api.massive.com
+    ws_url: wss://socket.massive.com/stocks
+  quotes_source: auto     # auto | robinhood | alpaca | massive | sim   (where option bid/ask comes from)
+
+strategy:
+  macd: {fast: 12, slow: 26, signal: 9}
+  rsi: {period: 14, lower: 30, upper: 70}
+  tick_bar_size: 144
+  tick_bar_size_iex: 8                # free Alpaca IEX sees ~4-6% of SPY prints: 8 IEX ticks ~ 144 consolidated ticks in time (approximation)
+  filter_timeframes: [15m, 5m]      # MACD must be above signal (live/forming bar)
+  trigger_timeframes: [1m, 144t]    # both above signal + a fresh cross-up on either
+  rsi_check_timeframes: [15m, 5m, 1m]  # RSI must sit inside [lower, upper]
+  confirm_window_sec: 120           # how old a cross can be and still count as "fresh"
+  allow_puts: false                 # mirror logic for puts; off because you trade calls
+  enabled_setups: [SWING, SCALP]
+  entry_window: {start: "08:35", end: "14:30"}
+
+strikes:
+  # Offsets from the money: +1 = first OTM strike, 0 = ATM, -1 = first ITM.
+  # base = default; max = furthest the level check may push OTM.
+  schedule:
+    - {from: "08:30", base: 1, max: 2}
+    - {from: "10:30", base: 1, max: 1}
+    - {from: "12:30", base: 0, max: 0}
+    - {from: "13:45", base: -1, max: -1}
+  level_buffer: 0.15      # $ a resistance level must clear the strike by to go further OTM
+  max_spread_pct: 0.12    # skip / step toward ATM if (ask-bid)/mid is wider than this
+
+sizing:
+  max_trade_dollars: 500
+  max_contracts: 5
+  min_contracts: 1
+  fee_per_contract: 0.03  # regulatory pass-through, approx
+
+orders:
+  entry_limit: mid_plus   # mid_plus: mid + 35% of spread, capped at ask
+  entry_spread_frac: 0.35
+  reprice_after_ms: 2500
+  max_reprices: 2
+  exit_urgent: bid        # stops/flatten go out at the bid
+
+exits:
+  stop_loss_pct: 0.20
+  flatten_at: "14:40"      # Robinhood force-closes SPY 0DTE at 14:45 CT (sellout_datetime); the engine also flattens 5 min before each contract's own sellout
+  swing:                  # entries triggered by a fresh 1m cross
+    scale_outs:
+      - {at: 0.25, fraction: 0.50}
+      - {at: 0.50, fraction: 0.25}
+    breakeven_after_first_scale: true
+    runner_trail_pct: 0.25          # runner exits if premium drops 25% from its peak
+    exit_on_cross_back: 1m
+    ripping_hold: true              # 5m hist rising + price > VWAP -> runner waits for 5m cross-back
+    time_stop_min: 20
+    time_stop_min_gain: 0.10
+  scalp:                  # entries triggered by a fresh 144t cross
+    scale_outs:
+      - {at: 0.15, fraction: 0.50}
+    breakeven_after_first_scale: true
+    runner_trail_pct: 0.15
+    exit_on_cross_back: 144t
+    ripping_hold: false
+    time_stop_min: 6
+    time_stop_min_gain: 0.05
+
+l2:                      # Level 2 book from Robinhood get_equity_price_book
+  mode: observe           # off | observe (log + display, never blocks) | enforce (can veto entries)
+  poll_ms: 1000
+  near_dollars: 0.25      # imbalance measured on levels within this distance of mid
+  wall_mult: 4.0          # a wall = level size >= 4x the median level size on that side
+  min_wall_shares: 10000  # ...and at least this many shares
+  min_imbalance_for_calls: -0.25        # enforce: skip calls when the near book is this ask-heavy
+  block_if_ask_wall_within: 0.15        # enforce: skip calls when a wall sits within $0.15 above
+
+risk:
+  max_daily_loss: 400
+  profit_lock: {trigger: 600, giveback_pct: 0.40}   # after +$600 on the day, stop if you give back 40% of the peak
+  max_trades_per_day: 12
+  max_open_positions: 1
+  loss_streak_cooldown: {losses: 2, minutes: 15}
+  event_blackout: {before_min: 10, after_min: 20}
+  flatten_before_high_impact_min: 5
+  watchdog:               # safety halt + flatten (HANDOFF section 12): the engine is the only stop, so it must never run blind
+    quote_stale_sec: 10           # an open position with no usable option quote for this long
+    max_consecutive_errors: 3     # broker/API calls failing in a row
+    reconcile_sec: 30             # live only: account positions vs engine positions; 2 mismatches in a row halt
+
+crew:
+  enabled: true
+  model: claude-sonnet-5
+  fast_model: claude-haiku-4-5-20251001
+  web_search: true
+  schedule: {premarket: "07:45", midday: "11:30", late: "13:15", postclose: "15:05"}
+  consult_quant_after_losses: 2
+  min_size_multiplier: 0.5          # lowest a desk vote can cut size to
+  max_size_multiplier: 1.25         # size-up cap; only when every conviction check passes (see crew.py size_up)
+  auto_apply_tweaks: true           # per-trade / per-day tweaks inside whitelisted bounds apply without asking
+  # Known events if you want them without the API (or to override):
+  events: []
+  #  - {date: 2026-10-15, time: "07:30", name: "CPI", impact: high}
+
+robinhood:
+  mcp_url: https://agent.robinhood.com/mcp/trading
+  redirect_port: 8766
+  token_dir: ~/.agentdesk
+  account_number: null      # null = auto-detect the Agentic account
+  quote_poll_ms: 1000
+  record_option_quotes: true   # log real 0DTE SPY call+put quotes ATM-10..ATM+10 every 10s -> journal.option_quotes
+  arg_overrides: {}         # per-tool fixed args if the schema matcher misses one (see rh-inspect)
+
+# ---------------------------------------------------------------------------------------------
+# Paper books (spec for the multi-book build in HANDOFF.md section 7). The current engine runs
+# book A only; Claude Code implements B-E against these settings. All paper-only.
+books:
+  A_macd_calls:    {enabled: true,  paper_only: true,  risk_per_trade: 500, max_contracts: 5, daily_loss: 400}
+  B_iron_fly:      {enabled: true,  paper_only: true,  lots: 1, entry_ct: "08:45", wings: 5, take_profit_pct: 0.50, stop_x_credit: 1.0, close_ct: "14:30"}
+  C_orb_bull_put:  {enabled: true,  paper_only: true,  max_loss_budget: 400, width: 2, max_trades_day: 2}
+  C_bear_puts:     {enabled: false, paper_only: true,  note: "failed its backtest; stays off until a pre-registered filter set passes out-of-sample"}
+  D_iron_condor:   {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", short_em_mult: 0.9, wings: 2, take_profit_pct: 0.50, stop_x_credit: 2.0, close_ct: "14:25", quiet_filter: true}
+  E_earnings_iv:   {enabled: true,  paper_only: true,  max_debit: 250, max_open: 3, structures: [straddle_t3, calendar_t10], never_hold_through_announcement: true}
+
+calendar:
+  # 12:00 CT closes: entries stop 11:20, flatten 11:40. Full-day holidays need no entry (no prints = no trades).
+  early_close: [2026-11-27, 2026-12-24, 2027-07-02, 2027-11-26, 2027-12-24]
+
+server:
+  host: 127.0.0.1
+  port: 8765
+
+journal_path: ~/.agentdesk/journal.db

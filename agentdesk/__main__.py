@@ -1,0 +1,199 @@
+"""AgentDesk CLI.
+
+  python -m agentdesk run [--mode sim|paper|shadow|live] [--speed 60]   dashboard + engine
+  python -m agentdesk rh-inspect                                         connect to Robinhood MCP, dump tool schemas (read-only)
+  python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
+  python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import sys
+import webbrowser
+from datetime import date
+
+from .config import expand, load_config
+
+
+def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
+    from .brokers.paper import PaperBroker
+    from .bus import Bus
+    from .crew import Crew
+    from .engine import Engine
+    from .journal import Journal
+
+    provider = "sim" if mode == "sim" else cfg["data"]["provider"]
+    if provider == "sim":
+        from .feeds.sim import SimFeed, SimQuotes
+        feed = SimFeed(day=date.fromisoformat(sim_day) if sim_day else None, seed=seed, speed=speed)
+        quotes = SimQuotes(feed)
+    elif provider == "alpaca":
+        from .feeds.alpaca import AlpacaFeed, AlpacaQuotes
+        if cfg["data"]["alpaca"]["feed"] == "iex" and cfg["strategy"].get("tick_bar_size_iex"):
+            cfg["strategy"]["tick_bar_effective"] = cfg["strategy"]["tick_bar_size_iex"]
+            logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)",
+                                                   cfg["strategy"]["tick_bar_size_iex"])
+        feed = AlpacaFeed(cfg)
+        quotes = AlpacaQuotes(cfg)
+    elif provider == "massive":
+        from .feeds.massive import MassiveFeed, MassiveQuotes
+        feed = MassiveFeed(cfg)
+        quotes = MassiveQuotes(cfg)
+    else:
+        raise SystemExit(f"unknown data.provider {provider}")
+
+    rh = None
+    if mode in ("paper", "shadow", "live") and (mode != "paper" or cfg["data"]["quotes_source"] in ("auto", "robinhood")):
+        from .brokers.robinhood import RobinhoodMCP
+        rh = RobinhoodMCP(cfg)
+    if rh and cfg["data"]["quotes_source"] in ("auto", "robinhood"):
+        from .brokers.robinhood import RobinhoodQuotes
+        quotes = RobinhoodQuotes(rh)
+
+    if mode in ("sim", "paper"):
+        broker = PaperBroker(quotes)
+    elif mode == "shadow":
+        from .brokers.robinhood import RobinhoodBroker
+        broker = RobinhoodBroker(rh, quotes, live=False)
+    elif mode == "live":
+        if not cfg.get("live_enabled"):
+            raise SystemExit("Refusing live mode: set live_enabled: true in config.yaml first.")
+        from .brokers.robinhood import RobinhoodBroker
+        broker = RobinhoodBroker(rh, quotes, live=True)
+    else:
+        raise SystemExit(f"unknown mode {mode}")
+
+    bus = Bus()
+    journal = Journal(expand(cfg["journal_path"]) if mode != "sim" else None)
+    engine = Engine(cfg, feed, quotes, broker, bus, journal, mode)
+    engine.crew = Crew(engine, cfg)
+    from .l2 import L2Monitor, SimBook
+    engine.l2 = L2Monitor(cfg, symbol=cfg["symbol"])
+    if provider == "sim":
+        engine.simbook = SimBook(seed)
+    elif rh is not None:
+        engine.l2_rh = rh
+    return engine, bus
+
+
+def cmd_run(args) -> None:
+    import uvicorn
+    from .server import create_app
+
+    cfg = load_config(args.config)
+    mode = args.mode or cfg["mode"]
+    engine, bus = build(cfg, mode, args.speed, args.seed, args.day)
+    app = create_app(engine, bus)
+    host, port = cfg["server"]["host"], cfg["server"]["port"]
+
+    async def main():
+        server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+        eng = asyncio.create_task(engine.run())
+        print(f"\n  AgentDesk [{mode.upper()}] -> http://{host}:{port}\n")
+        if not args.no_browser:
+            webbrowser.open(f"http://{host}:{port}")
+        await server.serve()
+        engine.stop()
+        eng.cancel()
+
+    asyncio.run(main())
+
+
+def cmd_record(args) -> None:
+    cfg = load_config(args.config)
+    engine, bus = build(cfg, "sim", 0, args.seed, args.day)
+    engine.inline = True
+    with open(args.out, "w") as f:
+        bus.recorder = f
+        bus.record_filter = {"bar", "cross", "signal", "order", "fill", "position", "trade_closed", "risk", "skip",
+                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal"}
+
+        async def main():
+            await engine.run()
+            import json
+            f.write(json.dumps({"type": "final", "ts": engine.feed.now(), "snapshot": {
+                "config": engine.snapshot()["config"], "day": str(engine.day)}}, default=str) + "\n")
+
+        asyncio.run(main())
+    print(f"recorded -> {args.out}  day P&L {engine.risk.st.day_pnl:+.2f}, trades {engine.risk.st.trades}")
+
+
+def cmd_rh_inspect(args) -> None:
+    from .brokers.robinhood import inspect_main
+    asyncio.run(inspect_main(load_config(args.config), args.out))
+
+
+def cmd_l2_report(args) -> None:
+    import json
+    from .journal import Journal
+    cfg = load_config(args.config)
+    rows = [r for r in Journal(expand(cfg["journal_path"])).trades(limit=5000) if r.get("l2") and r["l2"] != "null"]
+    if not rows:
+        print("No trades with Level 2 snapshots yet. Run paper/shadow/live during market hours first.")
+        return
+    def show(label, xs):
+        if xs:
+            w = sum(1 for x in xs if x["pnl"] > 0)
+            print(f"  {label:34s} n={len(xs):4d}  win {100 * w / len(xs):5.1f}%  avg ${sum(x['pnl'] for x in xs) / len(xs):+7.2f}")
+    for r in rows:
+        r["_l2"] = json.loads(r["l2"])
+    print(f"{len(rows)} trades with a book snapshot at entry" + ("  (under 50: treat as anecdote)" if len(rows) < 50 else ""))
+    show("book would have blocked", [r for r in rows if r["_l2"].get("would_block")])
+    show("book ok", [r for r in rows if not r["_l2"].get("would_block")])
+    for lo, hi in ((-1, -0.25), (-0.25, 0), (0, 0.25), (0.25, 1.01)):
+        show(f"imbalance {lo:+.2f}..{hi:+.2f}", [r for r in rows if lo <= r["_l2"].get("imb", 0) < hi])
+    show("ask wall within $0.30", [r for r in rows if r["_l2"].get("ask_wall")])
+
+
+def cmd_backtest(args) -> None:
+    from .backtest import main as bt_main
+    asyncio.run(bt_main(load_config(args.config), args))
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    p = argparse.ArgumentParser(prog="agentdesk")
+    p.add_argument("--config", default=None)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("run")
+    r.add_argument("--mode", choices=["sim", "paper", "shadow", "live"])
+    r.add_argument("--speed", type=float, default=30.0, help="sim only: sim-seconds per real second")
+    r.add_argument("--seed", type=int, default=21)
+    r.add_argument("--day", default=None, help="sim only: YYYY-MM-DD")
+    r.add_argument("--no-browser", action="store_true")
+    r.set_defaults(fn=cmd_run)
+
+    rec = sub.add_parser("record-demo")
+    rec.add_argument("--seed", type=int, default=21)
+    rec.add_argument("--day", default="2026-09-28")
+    rec.add_argument("--out", default="demo.jsonl")
+    rec.set_defaults(fn=cmd_record)
+
+    ins = sub.add_parser("rh-inspect")
+    ins.add_argument("--out", default="rh_tools.json")
+    ins.set_defaults(fn=cmd_rh_inspect)
+
+    l2r = sub.add_parser("l2-report", help="win rate / avg P&L by Level 2 state at entry")
+    l2r.set_defaults(fn=cmd_l2_report)
+
+    bt = sub.add_parser("backtest")
+    bt.add_argument("--days", type=int, default=20)
+    bt.add_argument("--end", default=None, help="YYYY-MM-DD, default yesterday")
+    bt.add_argument("--ticks", action="store_true", help="download trades to build real 144t bars (slow, heavy)")
+    bt.add_argument("--options", choices=["model", "alpaca"], default="model")
+    bt.add_argument("--source", choices=["alpaca", "robinhood"], default="alpaca", help="where SPY 1m bars come from")
+    bt.add_argument("--iv", type=float, default=0.16, help="model IV when --options model")
+    bt.add_argument("--csv", default=None, help="use a local 1m CSV (t,o,h,l,c,v) instead of downloading")
+    bt.add_argument("--sim-days", type=int, default=0, help="run on N synthetic days (plumbing check only)")
+    bt.add_argument("--out", default="backtest")
+    bt.set_defaults(fn=cmd_backtest)
+
+    args = p.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

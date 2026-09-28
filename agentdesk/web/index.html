@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AgentDesk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="static/styles.css">
+</head>
+<body>
+<!--BODY-->
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand"><span class="logo">AGENTDESK</span><span class="pill mode" id="mode">SIM</span></div>
+    <div class="stats" id="stats">
+      <div class="stat"><span class="k">SPY</span><span class="v num" id="s-px">—</span><span class="d num" id="s-chg"></span></div>
+      <div class="stat"><span class="k">VWAP</span><span class="v num" id="s-vwap">—</span></div>
+      <div class="stat"><span class="k">Day P&amp;L</span><span class="v num" id="s-pnl">$0</span></div>
+      <div class="stat"><span class="k">W / L</span><span class="v num" id="s-wl">0 / 0</span></div>
+      <div class="stat"><span class="k">Clock CT</span><span class="v num" id="s-clock">—</span></div>
+    </div>
+    <div class="controls" id="controls">
+      <div class="replay" id="replay" hidden>
+        <button class="btn" id="rp-play" type="button">Pause</button>
+        <label class="sr" for="rp-speed">Replay speed</label>
+        <select id="rp-speed" class="btn">
+          <option value="20">20×</option><option value="60" selected>60×</option><option value="180">180×</option><option value="600">600×</option>
+        </select>
+        <button class="btn" id="rp-restart" type="button">Restart day</button>
+      </div>
+      <div class="live" id="live">
+        <button class="btn" id="btn-pause" type="button">Pause entries</button>
+        <button class="btn" id="btn-flatten" type="button">Flatten</button>
+        <button class="btn danger" id="btn-kill" type="button">Kill</button>
+      </div>
+    </div>
+  </header>
+  <div class="confirm" id="confirm" hidden>
+    <span id="confirm-text"></span>
+    <button class="btn danger" id="confirm-yes" type="button">Confirm</button>
+    <button class="btn" id="confirm-no" type="button">Cancel</button>
+  </div>
+  <div class="banner" id="banner" hidden></div>
+
+  <main class="main">
+    <section class="chart-col">
+      <div class="panel chart-panel">
+        <div class="chart-head">
+          <div class="tfs" role="tablist" aria-label="Timeframe">
+            <button class="tf" data-tf="144t" role="tab">144t</button>
+            <button class="tf on" data-tf="1m" role="tab">1m</button>
+            <button class="tf" data-tf="5m" role="tab">5m</button>
+            <button class="tf" data-tf="15m" role="tab">15m</button>
+          </div>
+          <div class="legend">
+            <span><i class="sw macd"></i>MACD 12/26</span><span><i class="sw sig"></i>Signal 9</span>
+            <span><i class="sw rsi"></i>RSI 14</span><span><i class="sw vwap"></i>VWAP</span>
+          </div>
+        </div>
+        <div id="chart" class="chart"></div>
+      </div>
+      <div class="panel log-panel">
+        <div class="tabs" role="tablist">
+          <button class="tab on" data-tab="trades" role="tab">Trades</button>
+          <button class="tab" data-tab="activity" role="tab">Activity</button>
+        </div>
+        <div class="tabbody" id="tab-trades">
+          <div class="tablewrap"><table class="grid">
+            <thead><tr><th>Open</th><th>Contract</th><th>Setup</th><th class="r">Qty</th><th class="r">Entry</th><th class="r">Peak</th><th class="r">Net</th><th>Exit</th><th>Strike logic</th></tr></thead>
+            <tbody id="trades"></tbody>
+          </table></div>
+          <p class="empty" id="trades-empty">No closed trades yet today.</p>
+        </div>
+        <div class="tabbody" id="tab-activity" hidden><ol class="feed" id="feed"></ol></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="side-scroll">
+        <section class="panel card" aria-labelledby="h-sig">
+          <div class="card-h"><h2 id="h-sig">Signal gate</h2><span class="pill" id="gate">Warming up</span></div>
+          <table class="matrix">
+            <thead><tr><th></th><th>Role</th><th>MACD vs sig</th><th class="r">Hist</th><th class="r">RSI</th></tr></thead>
+            <tbody id="matrix"></tbody>
+          </table>
+          <ul class="chips" id="conds"></ul>
+        </section>
+
+        <section class="panel card" aria-labelledby="h-book">
+          <div class="card-h"><h2 id="h-book">Level 2 · SPY</h2><span class="pill" id="book-state">No book</span></div>
+          <div id="book-body"><p class="note">Book appears during market hours (Robinhood Level 2).</p></div>
+        </section>
+
+        <section class="panel card" aria-labelledby="h-pos">
+          <div class="card-h"><h2 id="h-pos">Position</h2><span class="pill" id="pos-setup">Flat</span></div>
+          <div id="pos-body"></div>
+        </section>
+
+        <section class="panel card" aria-labelledby="h-risk">
+          <div class="card-h"><h2 id="h-risk">Risk</h2><span class="pill" id="risk-state">Normal</span></div>
+          <div id="risk-body"></div>
+        </section>
+
+        <section class="panel card" aria-labelledby="h-crew">
+          <div class="card-h"><h2 id="h-crew">Research crew</h2><span class="pill muted" id="crew-mode">offline</span></div>
+          <ul class="crew" id="crew"></ul>
+        </section>
+
+        <section class="panel card" aria-labelledby="h-props">
+          <div class="card-h"><h2 id="h-props">Crew proposals</h2><span class="pill" id="props-state">None</span></div>
+          <ul class="props" id="props"></ul>
+        </section>
+      </div>
+
+      <section class="panel office" aria-label="Agent office">
+        <div class="office-h">
+          <span class="office-title">THE DESK</span>
+          <span class="office-status" id="office-status">—</span>
+          <button class="icon-btn" id="office-toggle" type="button" aria-expanded="true" aria-controls="office-canvas">Hide</button>
+        </div>
+        <canvas id="office-canvas" width="384" height="240" aria-label="Pixel office showing the agent and research crew"></canvas>
+        <p class="office-cap" id="office-cap" aria-live="polite"></p>
+      </section>
+    </aside>
+  </main>
+</div>
+<script src="config.js"></script>
+<script src="static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="static/office.js"></script>
+<script src="static/app.js"></script>
+<!--/BODY-->
+</body>
+</html>

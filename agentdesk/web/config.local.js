@@ -1,0 +1,1 @@
+window.AGENTDESK = { source: 'ws' };
