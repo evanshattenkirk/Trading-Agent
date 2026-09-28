@@ -112,6 +112,15 @@ crew:
   # Known events if you want them without the API (or to override):
   events: []
   #  - {date: 2026-10-15, time: "07:30", name: "CPI", impact: high}
+  ops:                              # Ops desk pre-flight at the 08:15 catch-up (reports; cuts size to 50% only if history is cold)
+    min_warm_bars: 50               # 15m and 5m MACD need this many closed bars
+    recorder_days_log: ~/.agentdesk/recorder/days.jsonl   # standalone recorder's day log; journal.option_quotes also counts
+  earnings:                         # Earnings desk: book E's screen (HANDOFF 7E) from Robinhood get_earnings_calendar
+    universe: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, AVGO, TSLA, JPM, V, MA, UNH, XOM, LLY, COST,
+               NFLX, AMD, ORCL, CRM, ADBE, BAC, WMT, HD, PG, JNJ, KO, PEP, DIS, INTC, QCOM]   # starting list; book E finalizes
+    heavyweights: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, AVGO, TSLA, JPM, LLY]   # overnight reports flagged for SPY
+    calendar: []                    # offline fallback: - {symbol: NVDA, date: 2026-11-18, timing: pm}
+  postmortem_dir: ~/.agentdesk/postmortems   # Post-mortem desk writes YYYY-MM-DD.md here after the close
 
 robinhood:
   mcp_url: https://agent.robinhood.com/mcp/trading
@@ -136,6 +145,9 @@ books:
 calendar:
   # 12:00 CT closes: entries stop 11:20, flatten 11:40. Full-day holidays need no entry (no prints = no trades).
   early_close: [2026-11-27, 2026-12-24, 2027-07-02, 2027-11-26, 2027-12-24]
+  # NYSE full-day holidays; the Earnings desk counts trading days with these (book E's T-10 / T-3 / T-1 windows)
+  holidays: [2026-11-26, 2026-12-25, 2027-01-01, 2027-01-18, 2027-02-15, 2027-03-26, 2027-05-31, 2027-06-18,
+             2027-07-05, 2027-09-06, 2027-11-25, 2027-12-24]
 
 server:
   host: 127.0.0.1

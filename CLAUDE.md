@@ -13,10 +13,10 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 - **C, ChatGPT's bullish 30-min ORB -> $2 bull-put spread:** built as requested, but the backtest is negative (underlying −3 bp/trade, t −5.75 in-sample; spread −3.5% on risk). Expect paper to confirm that.
 - **C_bear_puts (disabled):** long puts on the bearish mirror; failed its backtest; stays off until a pre-registered filter set passes out-of-sample.
 - **D, 10:00 ET iron condor (new):** short strikes at 0.9× expected move, $2 wings, TP 50%, stop 2× credit, close 14:25 CT, quiet-day filter. Modeled +8.4% / +7.3% / +12.6% on risk with the filter (+4.0% / +3.5% / +10.1% at taker fills; roughly flat at IV multiplier 0.60).
-- **E, pre-earnings IV run-up (new, experiment):** E1 = ATM straddle in the first post-earnings expiry (4–10 DTE), bought at T−3, sold before the announcement. E2 = calendar (short pre-earnings weekly / long post-earnings weekly) entered T−10..T−8, exited T−1. Never held through the announcement. About 30 liquid large caps; the Vol desk runs the screen. No quote backtest yet (ThetaData later).
+- **E, pre-earnings IV run-up (new, experiment):** E1 = ATM straddle in the first post-earnings expiry (4–10 DTE), bought at T−3, sold before the announcement. E2 = calendar (short pre-earnings weekly / long post-earnings weekly) entered T−10..T−8, exited T−1. Never held through the announcement. About 30 liquid large caps; the Earnings desk runs the screen. No quote backtest yet (ThetaData later).
 
 ## The crew (`crew.py`, `proposals.py`)
-- Desks: Macro, Rates, Fed, Vol, Quant, Risk, Tape. At huddles they brief, then talk to each other in a roundtable (lines carry from/to), then vote size 0.5–1.25×.
+- Desks: Macro, Rates, Fed, Vol, Quant, Risk, Tape, plus restrict-only Ops (pre-flight), Earnings (book E screen) and Post-mortem (rule audit) in `desks.py`. At huddles they brief, then talk to each other in a roundtable (lines carry from/to), then vote size 0.5–1.25×.
 - Any vote below 1 cuts size (lowest wins). A size-up (max 1.25×, book A SWING only) needs every check in `Crew.size_up` to pass; the checklist shows on each entry.
 - Proposals (rules Evan approved):
   - Next-trade and today tweaks auto-apply, but only for the `TWEAKS` whitelist within hard bounds: stop 10–25%, trail, first target, RSI cap, earlier cutoff, fewer trades, skip a setup, strike distance.
@@ -45,7 +45,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (38 pass today). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (71 pass on this branch). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.
