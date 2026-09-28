@@ -181,3 +181,18 @@ def test_snapshot_lists_book_a_first():
     eng, fq, host = setup()
     snap = host.snapshot()
     assert [b["book"] for b in snap["books"]] == ["A", "B"] and "open_risk" in snap["account"]
+
+
+def test_start_announces_the_books_so_a_replay_shows_the_strip():
+    eng, fq, host = setup()
+    run(host.start())
+    (ev,) = eng.bus.of("books")
+    assert [b["book"] for b in ev["books"]] == ["A", "B"] and "open_risk" in ev["account"]
+
+
+def test_position_updates_carry_only_the_live_fields():
+    eng, fq, host = setup()
+    tick(host, fq, ct_ts(8, 45))
+    tick(host, fq, ct_ts(8, 45, 3))
+    up = [d for d in eng.bus.of("book_position") if d["event"] == "update"][0]["pos"]
+    assert "legs" not in up and "fills" not in up and {"id", "book", "mark", "total_pnl"} <= set(up)

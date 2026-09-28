@@ -128,7 +128,8 @@ def cmd_record(args) -> None:
     with open(args.out, "w") as f:
         bus.recorder = f
         bus.record_filter = {"bar", "cross", "signal", "order", "fill", "position", "trade_closed", "risk", "skip",
-                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal"}
+                             "crew", "directive", "agent", "log", "session", "l2", "conviction", "proposal",
+                             "books", "book_order", "book_position", "book_closed", "book_skip"}
 
         async def main():
             await engine.run()

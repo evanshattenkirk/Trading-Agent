@@ -25,6 +25,8 @@ log = logging.getLogger("agentdesk.books")
 FILLS = {"model": "mid_offset", "cents_per_leg": 1, "reprice_step_c": 1, "max_reprices": 4,
          "max_quote_age_s": 5, "max_leg_spread_pct": 0.25, "tick_exempt": 0.02}
 HIST_SEED = 424242
+LIVE_FIELDS = ("id", "book", "qty", "mark", "peak", "unrealized", "realized", "fees", "total_pnl", "pnl_pct",
+               "max_loss", "status")
 
 
 def strategy_class(key: str):
@@ -83,6 +85,7 @@ class BookHost:
             self._log(self.e.feed.now(), "warn", f"books: history load failed ({ex}); indicators warm up live")
         for b in self.books:
             b.strategy.warmup(hist)
+        self._emit_books(self.e.feed.now())
 
     async def _history(self) -> list:
         f = self.e.feed
@@ -298,7 +301,8 @@ class BookHost:
                 await self._exit(book, pos, it, now)
             elif now - self._last_emit >= 2:
                 self._last_emit = now
-                self.e.bus.emit("book_position", now, pos=pos.to_dict(), event="update")
+                d = pos.to_dict()           # updates carry only what moves; the dashboard merges them into the open event
+                self.e.bus.emit("book_position", now, event="update", pos={k: d[k] for k in LIVE_FIELDS})
 
     def _forced(self, book: Book, pos, now: float) -> str | None:
         st = self.e.risk.st
