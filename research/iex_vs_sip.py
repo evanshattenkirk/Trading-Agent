@@ -2,7 +2,8 @@
 
 Replays the same sessions through the unchanged Engine twice and compares what book A sees:
 
-  iex8    what paper runs today: IEX prints, IEX 1m warm-up, 144t series built from 8 IEX prints
+  iexK    IEX prints, IEX 1m warm-up, 144t series built from K IEX prints, one run per --iex-ticks value
+          (default 8 and 5: the original setting and the one paper runs since 2026-09-28)
   sip144  what Algo Trader Plus ($99/mo) would give: SIP prints, SIP warm-up, real 144-print bars
   iexN    diagnostic: IEX prints with the tick size re-calibrated to that day's measured IEX share
           (144 x IEX/SIP print ratio). Uses same-day information, so it only answers "would a better
@@ -329,6 +330,7 @@ async def main(args) -> None:
         from agentdesk.config import _load_dotenv
         _load_dotenv(Path(os.path.expanduser(args.env)))     # keys stay inside this process
     cfg = load_config(args.config)
+    iex_ticks = [int(x) for x in str(args.iex_ticks).split(",") if x.strip()]
     cache = Path(os.path.expanduser(args.cache))
     cache.mkdir(parents=True, exist_ok=True)
     out = Path(args.out)
@@ -351,9 +353,10 @@ async def main(args) -> None:
         hist = {f: [b for dd in days[max(0, i - warm):i] for b in by_day[f].get(dd, [])] for f in bars}
         tr = {f: await load_trades(d, f, cache) for f in ("iex", "sip")}
         share = print_share(list(tr["iex"][0]), list(tr["sip"][0]), d)
-        n_eq = max(1, round(share["implied_tick"] or args.iex_tick))
-        runs = {"sip144": await replay(cfg, d, hist["sip"], tr["sip"], cfg["strategy"]["tick_bar_size"], args.iv),
-                "iex8": await replay(cfg, d, hist["iex"], tr["iex"], args.iex_tick, args.iv)}
+        n_eq = max(1, round(share["implied_tick"] or iex_ticks[0]))
+        runs = {"sip144": await replay(cfg, d, hist["sip"], tr["sip"], cfg["strategy"]["tick_bar_size"], args.iv)}
+        for k in iex_ticks:
+            runs[f"iex{k}"] = await replay(cfg, d, hist["iex"], tr["iex"], k, args.iv)
         if not args.no_diag:
             runs["iexN"] = await replay(cfg, d, hist["iex"], tr["iex"], n_eq, args.iv)
         cd = compare_day(d, runs, share)
@@ -365,13 +368,14 @@ async def main(args) -> None:
         (out / "signals").mkdir(exist_ok=True)
         (out / "signals" / f"{d}.json").write_text(json.dumps({k: v["signals"] for k, v in runs.items()}, indent=1))
         v = cd["variants"]
-        print(f"{d}  IEX share {share['share']:.3f} (tick~{share['implied_tick']})  "
-              f"sip144 {v['sip144']['trades']:2d} tr {v['sip144']['net']:+8.2f}  "
-              f"iex8 {v['iex8']['trades']:2d} tr {v['iex8']['net']:+8.2f}  "
-              f"144t xup recall {v['iex8']['cross_up']['144t']['recall']}  "
-              f"signals jaccard {v['iex8']['signals_vs_sip']['jaccard']}  ({_time.time() - t0:.0f}s)", flush=True)
+        line = f"{d}  IEX share {share['share']:.3f} (tick~{share['implied_tick']})  " \
+               f"sip144 {v['sip144']['trades']:2d} tr {v['sip144']['net']:+8.2f}"
+        for k in iex_ticks:
+            x = v[f"iex{k}"]
+            line += f"  | iex{k} {x['trades']:2d} tr {x['net']:+8.2f} 144t recall {x['cross_up']['144t']['recall']}"
+        print(line + f"  ({_time.time() - t0:.0f}s)", flush=True)
     total = roll_up(per_day, trades)
-    total["run"] = {"days": [str(d) for d in test_days], "iv": args.iv, "iex_tick": args.iex_tick,
+    total["run"] = {"days": [str(d) for d in test_days], "iv": args.iv, "iex_ticks": iex_ticks,
                     "options": "Black-Scholes model (same for every variant)", "generated": datetime.now(timezone.utc).isoformat()}
     (out / "per_day.json").write_text(json.dumps(per_day, indent=1))
     (out / "summary.json").write_text(json.dumps(total, indent=1))
@@ -395,7 +399,7 @@ def cli(argv=None):
     p.add_argument("--days", type=int, default=10)
     p.add_argument("--end", default=None, help="last session YYYY-MM-DD (default: now - 20 min)")
     p.add_argument("--iv", type=float, default=0.16)
-    p.add_argument("--iex-tick", type=int, default=8, help="prints per '144t' bar on IEX (config tick_bar_size_iex)")
+    p.add_argument("--iex-ticks", default="8,5", help="comma list of prints per '144t' bar on IEX, one run each")
     p.add_argument("--no-diag", action="store_true", help="skip the re-calibrated iexN diagnostic run")
     p.add_argument("--cache", default="~/.agentdesk/cache-iex-vs-sip")
     p.add_argument("--out", default="research/iex_vs_sip_out")

@@ -123,3 +123,25 @@ def test_replay_does_not_touch_the_callers_config():
     asyncio.run(ivs.replay(cfg, day, hist, (ts[:2000], ps[:2000], ss[:2000]), 8, 0.16))
     assert "tick_bar_effective" not in cfg["strategy"]
     assert cfg["crew"]["enabled"] == load_config()["crew"]["enabled"]
+
+
+def test_main_runs_one_variant_per_iex_tick_size(tmp_path, monkeypatch):
+    days = [date(2026, 9, d) for d in (17, 18, 21, 22, 23, 24, 25)]
+    hist = _synthetic_history(days)
+
+    async def fake_bars(feed, start, end, cache):
+        return hist
+
+    async def fake_trades(day, feed, cache):
+        ts, ps, ss = _synthetic_day(day, day.day)
+        return (ts, ps, ss) if feed == "sip" else (ts[::25], ps[::25], ss[::25])
+
+    monkeypatch.setattr(ivs, "load_bars", fake_bars)
+    monkeypatch.setattr(ivs, "load_trades", fake_trades)
+    ivs.cli(["--days", "2", "--end", "2026-09-25", "--iex-ticks", "8,5", "--no-diag", "--env", "",
+             "--out", str(tmp_path), "--cache", str(tmp_path / "cache")])
+    import json
+    s = json.loads((tmp_path / "summary.json").read_text())
+    assert set(s["variants"]) == {"sip144", "iex8", "iex5"}
+    assert s["run"]["iex_ticks"] == [8, 5]
+    assert "cross_up" in s["variants"]["iex5"]
