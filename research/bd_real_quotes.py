@@ -40,7 +40,7 @@ B_ENTRY, B_CLOSE = 9 * 60 + 45, 15 * 60 + 30
 D_ENTRY, D_CLOSE = 10 * 60, 15 * 60 + 25
 MODELS = ("mid", "patient", "taker")
 VIX_URL = "https://raw.githubusercontent.com/datasets/finance-vix/main/data/vix-daily.csv"
-DAILY_ERA = date(2022, 11, 14)   # approx. start of SPY Tue/Thu expiries; before it 0DTE existed Mon/Wed/Fri only
+DAILY_ERA = date(2022, 11, 14)   # approx. start of SPY Tue/Thu expiries; before it only some weekdays had a same-day expiry
 
 
 # ---------------------------------------------------------------- loading
@@ -318,7 +318,7 @@ def run(quotes: Path, out: Path, spy_dir: Path | None, vix_path: Path | None) ->
             skipped["no_spot"] += 1
             continue
         vx = prev_close(vix, d)
-        base = {"date": d, "year": d.year, "era": "daily" if d >= DAILY_ERA else "mon-wed-fri", "vix": vx}
+        base = {"date": d, "year": d.year, "era": "daily" if d >= DAILY_ERA else "pre-daily", "vix": vx}
         q_bt = q_nl = None
         if bars is not None:
             q_bt = quiet_ok(bars, d, sD, window_end=10 * 60 + 30)
@@ -370,7 +370,7 @@ def _report(df: pd.DataFrame, skipped: dict, n_files: int, have_bars: bool):
         lines += [f"## {label}", "", "| period | model | stats | avg $/1-lot | worst $ | avg credit $ |", "|---|---|---|---|---|---|"]
         for model in MODELS:
             sm = sub[sub.model == model]
-            periods = [("all", sm)] + [(e, sm[sm.era == e]) for e in ("mon-wed-fri", "daily")] + \
+            periods = [("all", sm)] + [(e, sm[sm.era == e]) for e in ("pre-daily", "daily")] + \
                       [(str(y), sm[sm.year == y]) for y in sorted(sm.year.unique())]
             for name, x in periods:
                 if len(x) == 0:
