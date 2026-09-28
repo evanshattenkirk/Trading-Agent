@@ -28,7 +28,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 
 ## Data stack (paper)
 - Robinhood MCP: option quotes/greeks, Level 2 (`get_equity_price_book`, Nasdaq TotalView), SPY bars, earnings calendar, order review.
-- Free Alpaca IEX feed for SPY prints. IEX carries only about 4–6% of volume, so on `provider: alpaca` + `feed: iex` the engine uses `tick_bar_size_iex: 8` prints as the "144t" approximation (it logs a warning). Upgrade to Algo Trader Plus (SIP + OPRA, $99/mo) before live if A looks effective or data turns out to be the blocker.
+- Free Alpaca IEX feed for SPY prints. IEX carries only about 3.7% of SPY prints (measured 2026-09-28), so on `provider: alpaca` + `feed: iex` the engine uses `tick_bar_size_iex: 5` prints as the "144t" approximation (it logs a warning). Book A results on IEX are not evidence; judge A by the weekly SIP replay (HANDOFF section 3). Upgrade to Algo Trader Plus (SIP + OPRA, $99/mo) before live if A looks effective or data turns out to be the blocker.
 - The recorder saves real 0DTE quotes, ATM−10..ATM+10 calls and puts, every 10s into `journal.option_quotes`. That is the data for real-quote analyses of A, B, C and D.
 - Level 2 (`l2.py`) runs in observe mode: it logs book state per entry and never blocks. Use `l2-report` after a few weeks.
 

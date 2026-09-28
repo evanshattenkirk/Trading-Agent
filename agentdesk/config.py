@@ -48,7 +48,7 @@ def load_config(path: str | Path | None = None) -> Cfg:
 
 def set_tick_bar_for_feed(cfg, feed: str) -> int:
     """Prints per "144t" bar for a trade feed; sets strategy.tick_bar_effective, which the engine reads.
-    IEX carries only ~4-6% of SPY prints, so on feed "iex" the series is built from tick_bar_size_iex prints
+    IEX carries only ~3.7% of SPY prints, so on feed "iex" the series is built from tick_bar_size_iex prints
     (an approximation). SIP uses tick_bar_size. Live engine and backtest both call this, so they match."""
     s = cfg["strategy"]
     n = s["tick_bar_size_iex"] if feed == "iex" and s.get("tick_bar_size_iex") else s["tick_bar_size"]
