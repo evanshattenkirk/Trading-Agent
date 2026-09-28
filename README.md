@@ -81,10 +81,10 @@ Robinhood auth is OAuth. Tokens are cached at `~/.agentdesk/rh_oauth.json` with 
 
 | Desk | Huddles | Brings |
 |---|---|---|
-| Macro | 07:45, 11:30 | Econ calendar, data surprises, blackouts around CPI / NFP / ISM |
-| Rates | 07:45, 11:30 | 2Y / 10Y moves, curve, auctions |
-| Fed Watch | 07:45, 13:15 | FOMC timing, Fed speakers |
-| Vol | 07:45, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop |
+| Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar, data surprises, blackouts around CPI / NFP / ISM |
+| Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y / 10Y moves, curve, auctions |
+| Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC timing, Fed speakers |
+| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop |
 | Quant | after 2 straight losses, 15:05 | Our own stats; per-day and standing tweaks |
 | Risk | loss reviews, halts | Reports the deterministic risk manager |
 | Tape | loss reviews, big walls | Level 2 book read |

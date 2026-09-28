@@ -4,6 +4,7 @@
   python -m agentdesk rh-inspect                                         connect to Robinhood MCP, dump tool schemas (read-only)
   python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
+  python -m agentdesk record-quotes [--once|--status|--report|--probe]   standalone 0DTE quote recorder (read-only)
 """
 from __future__ import annotations
 
@@ -168,6 +169,28 @@ def cmd_l2_report(args) -> None:
     show("ask wall within $0.30", [r for r in rows if r["_l2"].get("ask_wall")])
 
 
+def cmd_record_quotes(args) -> None:
+    from . import recorder
+    cfg = load_config(args.config)
+    if args.status:
+        print(recorder.status(cfg))
+        return
+    if args.report:
+        print(recorder.rate_report(expand(cfg["journal_path"]), days=args.days, tag=args.tag))
+        return
+    if args.probe:
+        print(asyncio.run(recorder.probe(cfg, rates=tuple(int(x) for x in args.rates.split(",")))))
+        return
+    from logging.handlers import RotatingFileHandler
+    recorder.RECORDER_DIR.mkdir(parents=True, exist_ok=True)
+    fh = RotatingFileHandler(recorder.RECORDER_DIR / "recorder.log", maxBytes=5_000_000, backupCount=5)
+    fh.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(fh)
+    for noisy in ("httpx", "httpcore", "mcp"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    asyncio.run(recorder.RecorderDaemon(cfg).run(once=args.once))
+
+
 def cmd_backtest(args) -> None:
     from .backtest import main as bt_main
     asyncio.run(bt_main(load_config(args.config), args))
@@ -199,6 +222,16 @@ def main() -> None:
 
     l2r = sub.add_parser("l2-report", help="win rate / avg P&L by Level 2 state at entry")
     l2r.set_defaults(fn=cmd_l2_report)
+
+    rq = sub.add_parser("record-quotes", help="standalone 0DTE quote recorder (launchd runs this; read-only)")
+    rq.add_argument("--once", action="store_true", help="sign in if needed, take one snapshot now, exit")
+    rq.add_argument("--status", action="store_true", help="is it recording? today's rows and call stats")
+    rq.add_argument("--report", action="store_true", help="Robinhood call rates, latency and errors")
+    rq.add_argument("--days", type=int, default=5)
+    rq.add_argument("--tag", default=None, help="report only recorder or probe calls")
+    rq.add_argument("--probe", action="store_true", help="bounded read-only rate ramp; run outside market hours")
+    rq.add_argument("--rates", default="1,2,4,8", help="probe steps, calls per second")
+    rq.set_defaults(fn=cmd_record_quotes)
 
     bt = sub.add_parser("backtest")
     bt.add_argument("--days", type=int, default=20)

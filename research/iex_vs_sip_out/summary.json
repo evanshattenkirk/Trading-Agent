@@ -1,0 +1,504 @@
+{
+ "days": 10,
+ "variants": {
+  "sip144": {
+   "summary": {
+    "trades": 43,
+    "days": 8,
+    "net": -689.58,
+    "win_rate": 0.326,
+    "avg_win": 35.73,
+    "avg_loss": -41.03,
+    "expectancy": -16.04,
+    "profit_factor": 0.42,
+    "max_drawdown": -724.28,
+    "green_days": 2,
+    "red_days": 6,
+    "best_day": 113.52,
+    "worst_day": -320.34,
+    "by_setup": {
+     "SCALP": {
+      "n": 30,
+      "net": -346.04,
+      "win_rate": 0.333
+     },
+     "SWING": {
+      "n": 13,
+      "net": -343.54,
+      "win_rate": 0.308
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 4,
+      "net": -116.9,
+      "win_rate": 0.0
+     },
+     "09:00": {
+      "n": 3,
+      "net": -61.66,
+      "win_rate": 0.333
+     },
+     "10:00": {
+      "n": 7,
+      "net": -19.74,
+      "win_rate": 0.571
+     },
+     "11:00": {
+      "n": 13,
+      "net": -265.72,
+      "win_rate": 0.385
+     },
+     "12:00": {
+      "n": 3,
+      "net": -35.9,
+      "win_rate": 0.0
+     },
+     "13:00": {
+      "n": 9,
+      "net": 5.42,
+      "win_rate": 0.444
+     },
+     "14:00": {
+      "n": 4,
+      "net": -195.08,
+      "win_rate": 0.0
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 26,
+      "net": -527.84,
+      "win_rate": 0.231
+     },
+     "1m MACD cross back": {
+      "n": 4,
+      "net": -175.08,
+      "win_rate": 0.0
+     },
+     "breakeven stop": {
+      "n": 3,
+      "net": 50.16,
+      "win_rate": 0.667
+     },
+     "runner out": {
+      "n": 3,
+      "net": 238.22,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 4,
+      "net": -411.14,
+      "win_rate": 0.0
+     },
+     "trailing stop": {
+      "n": 3,
+      "net": 136.1,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 20,
+      "net": -34.4,
+      "win_rate": 0.4
+     },
+     "+1": {
+      "n": 17,
+      "net": -445.62,
+      "win_rate": 0.294
+     },
+     "-1": {
+      "n": 6,
+      "net": -209.56,
+      "win_rate": 0.167
+     }
+    }
+   }
+  },
+  "iex8": {
+   "summary": {
+    "trades": 33,
+    "days": 8,
+    "net": 521.0,
+    "win_rate": 0.485,
+    "avg_win": 79.54,
+    "avg_loss": -44.22,
+    "expectancy": 15.79,
+    "profit_factor": 1.69,
+    "max_drawdown": -220.46,
+    "green_days": 5,
+    "red_days": 3,
+    "best_day": 469.32,
+    "worst_day": -176.8,
+    "by_setup": {
+     "SCALP": {
+      "n": 19,
+      "net": -207.28,
+      "win_rate": 0.368
+     },
+     "SWING": {
+      "n": 14,
+      "net": 728.28,
+      "win_rate": 0.643
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 3,
+      "net": -35.6,
+      "win_rate": 0.333
+     },
+     "09:00": {
+      "n": 4,
+      "net": 344.1,
+      "win_rate": 0.75
+     },
+     "10:00": {
+      "n": 1,
+      "net": -100.3,
+      "win_rate": 0.0
+     },
+     "11:00": {
+      "n": 10,
+      "net": 349.12,
+      "win_rate": 0.6
+     },
+     "12:00": {
+      "n": 3,
+      "net": -10.9,
+      "win_rate": 0.333
+     },
+     "13:00": {
+      "n": 9,
+      "net": 140.42,
+      "win_rate": 0.556
+     },
+     "14:00": {
+      "n": 3,
+      "net": -165.84,
+      "win_rate": 0.0
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 14,
+      "net": -293.78,
+      "win_rate": 0.214
+     },
+     "1m MACD cross back": {
+      "n": 2,
+      "net": -93.54,
+      "win_rate": 0.0
+     },
+     "breakeven stop": {
+      "n": 4,
+      "net": 170.98,
+      "win_rate": 1.0
+     },
+     "runner out": {
+      "n": 4,
+      "net": 364.98,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 4,
+      "net": -351.2,
+      "win_rate": 0.0
+     },
+     "trailing stop": {
+      "n": 5,
+      "net": 723.56,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 17,
+      "net": 596.32,
+      "win_rate": 0.471
+     },
+     "+1": {
+      "n": 11,
+      "net": -13.0,
+      "win_rate": 0.545
+     },
+     "-1": {
+      "n": 5,
+      "net": -62.32,
+      "win_rate": 0.4
+     }
+    }
+   },
+   "cross_up": {
+    "1m": {
+     "ref": 156,
+     "alt": 156,
+     "matched": 147,
+     "recall": 0.942,
+     "precision": 0.942,
+     "jaccard": 0.891
+    },
+    "5m": {
+     "ref": 29,
+     "alt": 29,
+     "matched": 28,
+     "recall": 0.966,
+     "precision": 0.966,
+     "jaccard": 0.933
+    },
+    "15m": {
+     "ref": 6,
+     "alt": 6,
+     "matched": 6,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0
+    },
+    "144t": {
+     "ref": 1617,
+     "alt": 1030,
+     "matched": 896,
+     "recall": 0.554,
+     "precision": 0.87,
+     "jaccard": 0.512
+    }
+   },
+   "state_agree_mean": {
+    "1m": 0.9751,
+    "5m": 0.9968,
+    "15m": 1.0,
+    "144t": 0.7792
+   },
+   "signals_vs_sip": {
+    "ref": 102,
+    "alt": 75,
+    "matched": 70,
+    "same_setup": 67,
+    "recall": 0.686,
+    "precision": 0.933,
+    "jaccard": 0.654
+   },
+   "taken_vs_sip": {
+    "ref": 43,
+    "alt": 33,
+    "matched": 30,
+    "same_setup": 29,
+    "recall": 0.698,
+    "precision": 0.909,
+    "jaccard": 0.652
+   },
+   "daily_net_delta_vs_sip": {
+    "total": 1210.58,
+    "mean": 121.058,
+    "sd": 177.59,
+    "t": 2.16,
+    "days_worse": 1
+   }
+  },
+  "iexN": {
+   "summary": {
+    "trades": 42,
+    "days": 8,
+    "net": 26.6,
+    "win_rate": 0.333,
+    "avg_win": 78.95,
+    "avg_loss": -38.53,
+    "expectancy": 0.63,
+    "profit_factor": 1.02,
+    "max_drawdown": -311.02,
+    "green_days": 5,
+    "red_days": 3,
+    "best_day": 285.72,
+    "worst_day": -187.1,
+    "by_setup": {
+     "SCALP": {
+      "n": 30,
+      "net": -487.22,
+      "win_rate": 0.233
+     },
+     "SWING": {
+      "n": 12,
+      "net": 513.82,
+      "win_rate": 0.583
+     }
+    },
+    "by_hour": {
+     "08:00": {
+      "n": 4,
+      "net": -51.9,
+      "win_rate": 0.25
+     },
+     "09:00": {
+      "n": 4,
+      "net": 172.1,
+      "win_rate": 0.5
+     },
+     "10:00": {
+      "n": 4,
+      "net": -105.9,
+      "win_rate": 0.25
+     },
+     "11:00": {
+      "n": 12,
+      "net": 179.52,
+      "win_rate": 0.333
+     },
+     "12:00": {
+      "n": 3,
+      "net": -0.9,
+      "win_rate": 0.333
+     },
+     "13:00": {
+      "n": 11,
+      "net": 37.82,
+      "win_rate": 0.455
+     },
+     "14:00": {
+      "n": 4,
+      "net": -204.14,
+      "win_rate": 0.0
+     }
+    },
+    "by_exit": {
+     "144t MACD cross back": {
+      "n": 28,
+      "net": -589.62,
+      "win_rate": 0.179
+     },
+     "1m MACD cross back": {
+      "n": 2,
+      "net": -93.54,
+      "win_rate": 0.0
+     },
+     "breakeven stop": {
+      "n": 3,
+      "net": 153.28,
+      "win_rate": 1.0
+     },
+     "runner out": {
+      "n": 2,
+      "net": 169.52,
+      "win_rate": 1.0
+     },
+     "stop -20%": {
+      "n": 3,
+      "net": -275.9,
+      "win_rate": 0.0
+     },
+     "trailing stop": {
+      "n": 4,
+      "net": 662.86,
+      "win_rate": 1.0
+     }
+    },
+    "by_offset": {
+     "+0": {
+      "n": 20,
+      "net": 364.48,
+      "win_rate": 0.4
+     },
+     "+1": {
+      "n": 16,
+      "net": -237.26,
+      "win_rate": 0.25
+     },
+     "-1": {
+      "n": 6,
+      "net": -100.62,
+      "win_rate": 0.333
+     }
+    }
+   },
+   "cross_up": {
+    "1m": {
+     "ref": 156,
+     "alt": 156,
+     "matched": 147,
+     "recall": 0.942,
+     "precision": 0.942,
+     "jaccard": 0.891
+    },
+    "5m": {
+     "ref": 29,
+     "alt": 29,
+     "matched": 28,
+     "recall": 0.966,
+     "precision": 0.966,
+     "jaccard": 0.933
+    },
+    "15m": {
+     "ref": 6,
+     "alt": 6,
+     "matched": 6,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0
+    },
+    "144t": {
+     "ref": 1617,
+     "alt": 1533,
+     "matched": 1218,
+     "recall": 0.753,
+     "precision": 0.795,
+     "jaccard": 0.63
+    }
+   },
+   "state_agree_mean": {
+    "1m": 0.9751,
+    "5m": 0.9968,
+    "15m": 1.0,
+    "144t": 0.8434
+   },
+   "signals_vs_sip": {
+    "ref": 102,
+    "alt": 108,
+    "matched": 86,
+    "same_setup": 83,
+    "recall": 0.843,
+    "precision": 0.796,
+    "jaccard": 0.694
+   },
+   "taken_vs_sip": {
+    "ref": 43,
+    "alt": 42,
+    "matched": 36,
+    "same_setup": 35,
+    "recall": 0.837,
+    "precision": 0.857,
+    "jaccard": 0.735
+   },
+   "daily_net_delta_vs_sip": {
+    "total": 716.18,
+    "mean": 71.618,
+    "sd": 140.79,
+    "t": 1.61,
+    "days_worse": 3
+   }
+  }
+ },
+ "iex_share_median": 0.0374,
+ "iex_share_range": [
+  0.0363,
+  0.0474
+ ],
+ "implied_tick_median": 5.4,
+ "run": {
+  "days": [
+   "2026-09-14",
+   "2026-09-15",
+   "2026-09-16",
+   "2026-09-17",
+   "2026-09-18",
+   "2026-09-21",
+   "2026-09-22",
+   "2026-09-23",
+   "2026-09-24",
+   "2026-09-25"
+  ],
+  "iv": 0.16,
+  "iex_tick": 8,
+  "options": "Black-Scholes model (same for every variant)",
+  "generated": "2026-09-28T05:24:48.353101+00:00"
+ }
+}
