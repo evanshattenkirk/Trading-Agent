@@ -5,9 +5,10 @@ from datetime import date
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
-RESEARCH = Path(__file__).resolve().parents[1] / "research"
+RESEARCH = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RESEARCH))
 sys.path.insert(0, str(RESEARCH.parent))
 
@@ -188,3 +189,144 @@ def test_lots_fit_the_per_position_cap():
 def test_breakeven_scale_finds_the_zero_crossing():
     assert sn.breakeven_scale(lambda s: s - 0.8) == pytest.approx(0.8, abs=0.005)
     assert math.isnan(sn.breakeven_scale(lambda s: 1.0))
+
+
+# ---------------------------------------------------------------- runner
+
+def test_period_labels_match_the_bcd_study():
+    assert sn.period_of(date(2005, 1, 3)) == "2005-14"
+    assert sn.period_of(date(2014, 12, 31)) == "2005-14"
+    assert sn.period_of(date(2015, 1, 2)) == "2015-20"
+    assert sn.period_of(date(2025, 4, 1)) == "2025-26"
+
+
+def _days(n, start=date(2026, 1, 5)):
+    from datetime import timedelta
+    out, d = [], start
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def test_collect_skips_sessions_without_prior_vix_and_tags_period_and_year():
+    M = _synthetic(nd=12)
+    days = _days(12)
+    vixp = np.full(12, VIX); vixp[3] = np.nan
+    df = sn.collect("F2", days, M, vixp, sn.COSTS["mid-1c"])
+    assert 3 not in set(df.i)
+    assert set(df.columns) >= {"i", "date", "period", "year", "ret", "pnl", "risk", "why"}
+    assert (df.period == "2025-26").all() and (df.year == 2026).all()
+
+
+def test_f2_trend_is_the_subset_of_f2_that_passes_the_gate():
+    M = _synthetic(nd=70, seed=5)
+    M["C"] = M["C"] * np.linspace(1, 1.3, 70)[:, None]       # rising market so the gate opens
+    M["O"] = M["O"] * np.linspace(1, 1.3, 70)[:, None]
+    days = _days(70)
+    vixp = np.full(70, VIX)
+    all_ = sn.collect("F2", days, M, vixp, sn.COSTS["mid-1c"], min_credit_override=None)
+    tr = sn.collect("F2-trend", days, M, vixp, sn.COSTS["mid-1c"], min_credit_override=None)
+    assert len(tr) > 0 and set(tr.i) <= set(all_.i)
+    assert min(tr.i) >= 50
+    closes = M["C"][:, -1]
+    assert all(sn.sma_gate(closes, i) for i in tr.i)
+
+
+def test_summarize_reports_periods_years_drawdown_and_capacity():
+    df = pd.DataFrame({"i": range(6), "date": _days(6), "period": ["2025-26"] * 6, "year": [2026] * 6,
+                       "ret": [0.1, -0.2, 0.1, 0.1, -0.05, 0.1], "pnl": [0.15, -0.3, 0.15, 0.15, -0.08, 0.15],
+                       "risk": [1.5] * 6, "why": ["take 50%"] * 6})
+    s = sn.summarize(df)
+    assert s["all"]["n"] == 6
+    assert s["2025-26"]["n"] == 6 and s["by_year"]["2026"]["n"] == 6
+    assert s["all"]["max_dd_usd_1lot"] == pytest.approx(-30.0)
+    assert s["all"]["lots_at_cap"] == 2
+    assert s["all"]["avg_usd_1lot"] == pytest.approx(df.pnl.mean() * 100)
+
+
+def test_correlation_with_d_uses_shared_sessions_only():
+    a = pd.DataFrame({"date": _days(5), "pnl": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    b = pd.DataFrame({"date": _days(5)[1:], "pnl": [2.0, 3.0, 4.0, 5.0]})
+    assert sn.corr_with(a, b) == pytest.approx(1.0)
+
+
+def _res(t_is=3.5, nat_oos=(1.0, 2.0), be=0.8, lots=1):
+    mid = {"2005-14": {"t": t_is}, "all": {"lots_at_cap": lots}}
+    nat = {"2015-20": {"avg": nat_oos[0]}, "2025-26": {"avg": nat_oos[1]}}
+    return mid, nat, be
+
+
+def test_decision_rule_needs_every_pre_registered_check():
+    assert sn.decision(*_res())["pass"]
+    assert not sn.decision(*_res(t_is=2.5))["pass"]
+    assert not sn.decision(*_res(nat_oos=(1.0, -0.1)))["pass"]
+    assert not sn.decision(*_res(be=0.9))["pass"]
+    assert not sn.decision(*_res(be=float("nan")))["pass"]
+    assert not sn.decision(*_res(lots=0))["pass"]
+    assert sn.decision(*_res(be=0.9))["checks"]["breakeven_s<=0.85"] is False
+
+
+# ---------------------------------------------------------------- addendum 1: metric fixes and G1/G2
+
+def test_multi_session_leg_adds_a_night_and_a_session_per_session_ahead():
+    k = 76
+    want = (0.80 ** 2 * V * (77 - k) / 78 + 3 * 0.60 ** 2 * V + 2 * 0.80 ** 2 * V
+            + 0.80 ** 2 * V * sn.rth_frac(-1))
+    assert sn.leg_sd(VIX, expiry=3, d=0, k=k) ** 2 == pytest.approx(want)
+
+
+def test_capacity_is_per_trade_and_skips_trades_that_do_not_fit():
+    df = pd.DataFrame({"i": range(4), "date": _days(4), "period": ["2025-26"] * 4, "year": [2026] * 4,
+                       "ret": [0.1, 0.1, 0.1, -0.1], "pnl": [0.2, 0.2, 0.5, -0.4], "risk": [1.5, 2.0, 4.0, 1.5],
+                       "why": ["time"] * 4})
+    s = sn.summarize(df)["all"]
+    assert s["lots_at_cap"] == 1                    # median of [2, 1, 0, 2] -> 1.5 -> floor 1
+    assert s["share_trades_fitting_cap"] == pytest.approx(0.75)
+    yrs = (df.date.max() - df.date.min()).days / 365.25
+    assert s["usd_per_year_at_cap"] == pytest.approx((0.2 * 2 + 0.2 * 1 + 0 - 0.4 * 2) * 100 / yrs)
+
+
+def test_collect_can_restrict_to_a_fixed_set_of_sessions():
+    M = _synthetic(nd=12)
+    days = _days(12)
+    vixp = np.full(12, VIX)
+    keep = {days[2], days[7]}
+    df = sn.collect("D", days, M, vixp, sn.COSTS["mid-1c"], keep_dates=keep)
+    assert set(df.date) == keep
+
+
+def test_month_turn_enters_second_to_last_session_and_exits_third_session():
+    days = [date(2026, 1, d) for d in (26, 27, 28, 29, 30)] + [date(2026, 2, d) for d in (2, 3, 4, 5, 6)] + \
+           [date(2026, 2, d) for d in (23, 24, 25, 26, 27)] + [date(2026, 3, d) for d in (2, 3, 4, 5)]
+    pairs = sn.month_turn_entries(days)
+    assert (days[3], days[7]) in [(days[i], days[j]) for i, j in pairs]          # Jan 29 -> Feb 4
+    assert (days[13], days[17]) in [(days[i], days[j]) for i, j in pairs]        # Feb 26 -> Mar 4
+    assert len(pairs) == 2
+
+
+def test_vix_stretch_uses_the_prior_close_against_the_ten_before_it_without_overlap():
+    vixp = np.r_[np.full(12, 15.0), 19.0, 19.5, 20.0, np.full(10, 15.0)]    # vixp[i] = VIX close of session i-1
+    pairs = sn.vix_stretch_entries(vixp, n_sessions=len(vixp), hold=5)
+    assert pairs[0] == (12, 17)
+    assert all(i >= 17 for i, _ in pairs[1:])                            # no entry while a position is open
+    assert sn.vix_stretch_entries(np.full(20, 15.0), 20, 5) == []
+
+
+def test_g_trade_is_a_call_debit_spread_expiring_on_the_exit_session():
+    M = _synthetic(nd=8)
+    r = sn.run_G(M, 1, 6, VIX, sn.COSTS["mid-1c"])
+    f = sn.REBASE / M["O"][1, 0]
+    S0, S1 = M["C"][1, 76] * f, M["C"][6, 70] * f
+    assert r["legs"] == [("C", round(S0), 1, 5), ("C", round(S0) + 5, -1, 5)]
+    assert 0 < r["debit"] < 5
+    assert r["und_bp"] == pytest.approx((S1 / S0 - 1) * 1e4 - 2.0)
+
+
+def test_leg_cost_follows_days_left_at_the_time_of_the_fill():
+    legs = sn.legs_put_spread(765.0, 3.0, expiry=1)
+    nat = sn.COSTS["natural"]
+    assert sn._cost(legs, nat, d=0) == pytest.approx(2 * (0.03 + sn.FEE))     # opened as next-day legs
+    assert sn._cost(legs, nat, d=1) == pytest.approx(2 * (0.02 + sn.FEE))     # closed on expiry day
+    assert sn._cost([("C", 765, 1, 5)], nat, d=0) == pytest.approx(0.03 + sn.FEE)
