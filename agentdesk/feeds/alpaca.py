@@ -17,6 +17,7 @@ import httpx
 from ..bars import Bar, Trade
 from ..clock import is_rth, session_date
 from .base import Feed, Heartbeat, Quote, QuoteSource
+from .prints import PrintFilter
 
 log = logging.getLogger("agentdesk.alpaca")
 DATA = "https://data.alpaca.markets"
@@ -53,9 +54,9 @@ async def fetch_bars_1m(symbol: str, start: datetime, end: datetime, feed: str) 
                 return out
 
 
-async def fetch_trades(symbol: str, start: datetime, end: datetime, feed: str):
-    """Async generator of Trade for a window (used by backtest --ticks)."""
-    token = None
+async def fetch_trades(symbol: str, start: datetime, end: datetime, feed: str, clean: bool = True):
+    """Async generator of Trade for a window (used by backtest --ticks). Bad prints are dropped unless clean=False."""
+    token, prints = None, PrintFilter(enabled=clean)
     async with httpx.AsyncClient(headers=_headers(), timeout=60) as c:
         while True:
             params = {"start": start.isoformat(), "end": end.isoformat(), "feed": feed, "limit": 10000, "sort": "asc"}
@@ -65,9 +66,12 @@ async def fetch_trades(symbol: str, start: datetime, end: datetime, feed: str):
             r.raise_for_status()
             j = r.json()
             for t in j.get("trades") or []:
-                yield Trade(_ts(t["t"]), float(t["p"]), float(t["s"]))
+                for tr in prints.push(Trade(_ts(t["t"]), float(t["p"]), float(t["s"])), t.get("c")):
+                    yield tr
             token = j.get("next_page_token")
             if not token:
+                if clean:
+                    log.info("alpaca %s %s trades cleaned: %s", feed, symbol, prints.stats)
                 return
 
 
@@ -78,6 +82,7 @@ class AlpacaFeed(Feed):
         self.symbol = cfg["symbol"]
         self.feed = cfg["data"]["alpaca"]["feed"]
         self.q: asyncio.Queue = asyncio.Queue(maxsize=200000)
+        self.prints = PrintFilter(enabled=cfg["data"]["alpaca"].get("clean_prints", True))
 
     async def history_1m(self, days: int) -> list[Bar]:
         end = datetime.now(timezone.utc) - timedelta(minutes=16)     # free plan: SIP history must be >15 min old
@@ -103,13 +108,17 @@ class AlpacaFeed(Feed):
                     backoff = 1
                     log.info("alpaca %s stream connected", self.feed)
                     async for raw in ws:
-                        for m in json.loads(raw):
-                            if m.get("T") == "t":
-                                await self.q.put(Trade(_ts(m["t"]), float(m["p"]), float(m["s"])))
+                        await self._handle(raw)
             except Exception as ex:
                 log.warning("alpaca ws dropped (%s); reconnecting in %ss", ex, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(30, backoff * 2)
+
+    async def _handle(self, raw) -> None:
+        for m in json.loads(raw):
+            if m.get("T") == "t":
+                for tr in self.prints.push(Trade(_ts(m["t"]), float(m["p"]), float(m["s"])), m.get("c")):
+                    await self.q.put(tr)
 
     async def _beat(self) -> None:
         import time

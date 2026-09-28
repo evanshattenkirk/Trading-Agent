@@ -10,6 +10,7 @@ data:
   history_days: 5         # 1m history pulled at startup to warm up 15m/5m MACD
   alpaca:
     feed: iex             # iex = free (a small slice of prints -> 144t bars form far slower). sip = all exchanges (Algo Trader Plus, $99/mo); switch before live
+    clean_prints: true    # drop prints that don't set the last price + isolated bad prints before bars are built (feeds/prints.py)
     options_feed: indicative   # only used if quotes_source: alpaca. Paper uses Robinhood's real option quotes (quotes_source auto)
   massive:                # formerly Polygon.io
     rest_url: https://api.massive.com
