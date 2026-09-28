@@ -40,7 +40,8 @@ B_ENTRY, B_CLOSE = 9 * 60 + 45, 15 * 60 + 30
 D_ENTRY, D_CLOSE = 10 * 60, 15 * 60 + 25
 MODELS = ("mid", "patient", "taker")
 VIX_URL = "https://raw.githubusercontent.com/datasets/finance-vix/main/data/vix-daily.csv"
-DAILY_ERA = date(2022, 11, 14)   # approx. start of SPY Tue/Thu expiries; before it 0DTE existed Mon/Wed/Fri only
+D_HOLD = "D no TP/stop to 15:25"   # paper variant Evan picked 2026-09-28: D's entry and close, no take-profit, no stop
+DAILY_ERA = date(2022, 11, 14)   # approx. start of SPY Tue/Thu expiries; before it only some weekdays had a same-day expiry
 
 
 # ---------------------------------------------------------------- loading
@@ -77,7 +78,9 @@ class QuotePanel:
         for (r, k), g in df.groupby(["right", "strike"]):
             g = g.drop_duplicates("minute", keep="last").set_index("minute").reindex(self.minutes).ffill()
             self.q[(r, float(k))] = (g.bid.to_numpy(), g.ask.to_numpy())
-        self.last_minute = int(df.minute.max()) if len(df) else 0
+        # last minute any quote changed: ThetaData keeps emitting stale rows to 16:00 on 13:00-close days
+        chg = df.sort_values("minute").groupby(["right", "strike"])[["bid", "ask"]].diff().abs().sum(axis=1) > 0
+        self.last_minute = int(df.loc[chg, "minute"].max()) if chg.any() else (int(df.minute.max()) if len(df) else 0)
 
     def ba(self, right: str, strike: float, minute: int):
         v = self.q.get((right, float(strike)))
@@ -145,8 +148,9 @@ def _value(p: QuotePanel, legs, minute: int, model: str, opening: bool):
     return tot
 
 
-def replay(p: QuotePanel, legs, entry: int, close: int, model: str, width: float, tp: float = 0.5,
-           stop_mult: float = 2.0):
+def replay(p: QuotePanel, legs, entry: int, close: int, model: str, width: float, tp: float | None = 0.5,
+           stop_mult: float | None = 2.0):
+    """Short structure opened at entry, closed at TP / stop / close. tp or stop_mult None disables that exit."""
     val = _value(p, legs, entry, model, opening=True)
     if val is None:
         return None
@@ -159,18 +163,18 @@ def replay(p: QuotePanel, legs, entry: int, close: int, model: str, width: float
         d = _value(p, legs, t, model, opening=False)
         if d is None:
             continue
-        v = d + fees
-        if v <= cr * tp:
+        v = min(d, width) + fees      # never pay more than the width: holding to expiry caps the loss there
+        if tp is not None and v <= cr * tp:
             exit_min, why = t, "take 50%"
             break
-        if v >= stop_mult * cr:
+        if stop_mult is not None and v >= stop_mult * cr:
             exit_min, why = t, "stop"
             break
     else:
         d = _value(p, legs, close, model, opening=False)
         if d is None:
             return None
-        v = d + fees
+        v = min(d, width) + fees
     pnl = cr - v
     return {"credit": cr, "risk": width - cr, "pnl": pnl, "ret": pnl / (width - cr), "why": why,
             "exit_minute": exit_min}
@@ -318,7 +322,7 @@ def run(quotes: Path, out: Path, spy_dir: Path | None, vix_path: Path | None) ->
             skipped["no_spot"] += 1
             continue
         vx = prev_close(vix, d)
-        base = {"date": d, "year": d.year, "era": "daily" if d >= DAILY_ERA else "mon-wed-fri", "vix": vx}
+        base = {"date": d, "year": d.year, "era": "daily" if d >= DAILY_ERA else "pre-daily", "vix": vx}
         q_bt = q_nl = None
         if bars is not None:
             q_bt = quiet_ok(bars, d, sD, window_end=10 * 60 + 30)
@@ -331,6 +335,9 @@ def run(quotes: Path, out: Path, spy_dir: Path | None, vix_path: Path | None) ->
                 rD = replay(p, legs_D(sD, vx), D_ENTRY, D_CLOSE, model, width=2)
                 if rD:
                     rows.append({**base, "book": "D", "model": model, "quiet_backtested": q_bt, "quiet_tradeable": q_nl, **rD})
+                rH = replay(p, legs_D(sD, vx), D_ENTRY, D_CLOSE, model, width=2, tp=None, stop_mult=None)
+                if rH:
+                    rows.append({**base, "book": D_HOLD, "model": model, "quiet_backtested": q_bt, "quiet_tradeable": q_nl, **rH})
             g = straddle_vs_move(p, B_ENTRY, model)
             if g:
                 rows.append({**base, "book": "straddle@09:45 to settle", "model": model, "credit": g["straddle"],
@@ -358,9 +365,9 @@ def _report(df: pd.DataFrame, skipped: dict, n_files: int, have_bars: bool):
     lines += [f"# Books B and D on real SPY 0DTE quotes ({d0} to {d1})", "",
               f"{n_files} quote files, {df.date.nunique()} sessions used, skipped {skipped}.",
               "Returns are % of max risk per trade (straddle row: % of the straddle premium). Fees included.", ""]
-    groups = [("B", None), ("D", None)]
+    groups = [("B", None), ("D", None), (D_HOLD, None)]
     if have_bars:
-        groups += [("D", "quiet_tradeable"), ("D", "quiet_backtested")]
+        groups += [("D", "quiet_tradeable"), ("D", "quiet_backtested"), (D_HOLD, "quiet_tradeable")]
     groups += [("straddle@09:45 to settle", None), ("D condor@10:00 to settle", None)]
     for book, filt in groups:
         sub = df[df.book == book]
@@ -370,7 +377,7 @@ def _report(df: pd.DataFrame, skipped: dict, n_files: int, have_bars: bool):
         lines += [f"## {label}", "", "| period | model | stats | avg $/1-lot | worst $ | avg credit $ |", "|---|---|---|---|---|---|"]
         for model in MODELS:
             sm = sub[sub.model == model]
-            periods = [("all", sm)] + [(e, sm[sm.era == e]) for e in ("mon-wed-fri", "daily")] + \
+            periods = [("all", sm)] + [(e, sm[sm.era == e]) for e in ("pre-daily", "daily")] + \
                       [(str(y), sm[sm.year == y]) for y in sorted(sm.year.unique())]
             for name, x in periods:
                 if len(x) == 0:
