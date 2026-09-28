@@ -12,13 +12,16 @@
   };
   const CREW = {
     agent: { name: 'AGENT', shirt: '#2b3243', trim: '#f0b44c', hair: '#2a1d14', skin: 1 },
-    macro: { name: 'MACRO', shirt: '#3987e5', hair: '#1c1c1c', skin: 2, seat: [30, 64], face: 'L', desk: [6, 58] },
-    rates: { name: 'RATES', shirt: '#199e70', hair: '#8a5a2b', skin: 0, seat: [30, 94], face: 'L', desk: [6, 88] },
-    fed: { name: 'FED', shirt: '#9085e9', hair: '#c9c2b5', skin: 4, seat: [162, 64], face: 'R', desk: [168, 58] },
-    vol: { name: 'VOL', shirt: '#c98500', hair: '#2a1d14', skin: 3, seat: [162, 94], face: 'R', desk: [168, 88] },
-    quant: { name: 'QUANT', shirt: '#d55181', hair: '#3b2a55', skin: 6, seat: [70, 110], face: 'L', desk: [46, 104] },
-    risk: { name: 'RISK', shirt: '#e66767', hair: '#5a3a1a', skin: 5, seat: [122, 110], face: 'R', desk: [128, 104] },
-    tape: { name: 'TAPE', shirt: '#4fb3bf', hair: '#1c1c1c', skin: 3, seat: [108, 110], face: 'L', desk: [84, 104] },
+    macro: { name: 'MACRO', shirt: '#3987e5', hair: '#1c1c1c', skin: 2, seat: [30, 56], face: 'L', desk: [6, 50] },
+    rates: { name: 'RATES', shirt: '#199e70', hair: '#8a5a2b', skin: 0, seat: [30, 78], face: 'L', desk: [6, 72] },
+    earnings: { name: 'EARN', shirt: '#b0623a', hair: '#5a3a1a', skin: 1, seat: [30, 100], face: 'L', desk: [6, 94] },
+    fed: { name: 'FED', shirt: '#9085e9', hair: '#c9c2b5', skin: 4, seat: [162, 56], face: 'R', desk: [168, 50] },
+    vol: { name: 'VOL', shirt: '#c98500', hair: '#2a1d14', skin: 3, seat: [162, 78], face: 'R', desk: [168, 72] },
+    ops: { name: 'OPS', shirt: '#7a8aa0', hair: '#1c1c1c', skin: 2, seat: [162, 100], face: 'R', desk: [168, 94] },
+    quant: { name: 'QUANT', shirt: '#d55181', hair: '#3b2a55', skin: 6, seat: [58, 110], face: 'L', desk: [34, 104] },
+    tape: { name: 'TAPE', shirt: '#4fb3bf', hair: '#1c1c1c', skin: 3, seat: [90, 110], face: 'L', desk: [66, 104] },
+    postmortem: { name: 'POST', shirt: '#b8a05a', hair: '#8a5a2b', skin: 5, seat: [104, 110], face: 'R', desk: [110, 104] },
+    risk: { name: 'RISK', shirt: '#e66767', hair: '#5a3a1a', skin: 5, seat: [136, 110], face: 'R', desk: [142, 104] },
   };
   const AGENT_SEAT = [96, 78];
   const HUDDLE = [[80, 84], [112, 84], [76, 98], [116, 98], [88, 102], [104, 102], [96, 106]];
@@ -175,7 +178,7 @@
       this.drawTicker();
       this.drawClock(hour, min);
       this.drawAlarm();
-      for (const k of ['macro', 'fed', 'rates', 'vol', 'quant', 'risk', 'tape']) this.drawStation(k);
+      for (const k of Object.keys(CREW)) if (k !== 'agent') this.drawStation(k);
       this.drawBattlestation();
       const people = Object.values(this.actors).filter(a => !(a.key === 'agent' && this.agentAct === 'offline'));
       people.sort((a, b) => a.y - b.y);
@@ -306,6 +309,9 @@
         this.r(sx + 1, dy - 6, g, 1, '#26a69a'); this.r(sx + 1, dy - 4, rd, 1, '#ef5350');
       } else this.r(sx + 2, dy - 5 + blink % 2, 5, 1, c.shirt);
       if (k === 'risk') this.r(dx + 13, dy - 2, 3, 2, '#c0392b');
+      if (k === 'ops') { this.r(dx + 13, dy - 4, 4, 4, '#e9e6de'); this.r(dx + 14, dy - 3, 1, 1, '#26a69a'); this.r(dx + 14, dy - 1, 1, 1, '#26a69a'); }   // checklist
+      if (k === 'earnings') { this.r(dx + 13, dy - 4, 4, 4, '#e9e6de'); this.r(dx + 13, dy - 4, 4, 1, '#c0392b'); }   // calendar
+      if (k === 'postmortem') { this.r(dx + 1, dy - 2, 4, 2, '#e9e6de'); this.r(dx + 1, dy - 3, 4, 1, '#d8d2c4'); }   // report pile
       if (k === 'quant') {   // whiteboard on the back wall
         this.r(27, 14, 22, 15, '#9aa3b2'); this.r(28, 15, 20, 13, '#e9e6de');
         this.r(30, 17, 8, 1, '#556'); this.r(30, 20, 14, 1, '#556'); this.r(30, 23, 6, 1, '#b8453f'); this.r(38, 23, 1, 3, '#2a78d6'); this.r(41, 21, 1, 5, '#2a78d6'); this.r(44, 18, 1, 8, '#2a78d6');
@@ -371,7 +377,7 @@
 
     drawProps() {
       // plants
-      for (const [x, y] of [[2, 112], [184, 112], [48, 50], [140, 50]]) {
+      for (const [x, y] of [[48, 50], [140, 50]]) {
         this.r(x, y - 4, 6, 5, '#7a4e32'); this.r(x - 1, y - 10, 8, 6, '#2f7d4f'); this.r(x + 1, y - 13, 4, 3, '#3a9660');
       }
       // water cooler

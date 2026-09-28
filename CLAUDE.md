@@ -15,10 +15,10 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 - **C_bear_puts (disabled):** long puts on the bearish mirror; failed its backtest; stays off until a pre-registered filter set passes out-of-sample.
 - **D, 10:00 ET iron condor (new):** short strikes at 0.9× expected move, $2 wings, TP 50%, stop 2× credit, close 14:25 CT, quiet-day filter. The published filter numbers (+8.4% / +7.3% / +12.6%) used the 9:30–10:30 ET range, 30 minutes past entry. The built filter uses only 08:30–09:00 CT (range vs its 14-day median) plus price within 0.12% of VWAP: +7.5% / +5.7% / +12.0% at 1¢, +3.3% / +1.5% / +9.0% at taker fills, 0.0% / −3.7% / +4.1% at IV multiplier 0.60 (`research/d_quiet_check.py`). Strikes use the prior VIX close from Robinhood's index data.
 - **F, large-cap stocks in play (Evan, 2026-09-28; brief `docs/BOOK_F_HANDOFF.md`, rules frozen):** top 5 green first 5-min candles by RVOL5 >= 2 among the top 130 S&P names + 18 AI/memory extras; buy-stop at the OR high until 10:30 ET; stop fill - 0.10 x ATR14; exit 15:55 ET. $25 risk / $1,000 notional / 5 open / -$75 day. Long whole shares, paper only; red candles are logged as shadow shorts; the news tag is observe-only. Code: `books/f_*.py`, `brokers/*_equity.py`, `feeds/f_data.py`, `web/book_f.js`. `f-report`, `f-clear-stale`. Replication: `research/strategy_f_intraday.py`.
-- **E, pre-earnings IV run-up (new, experiment):** E1 = ATM straddle in the first post-earnings expiry (4–10 DTE), bought at T−3, sold before the announcement. E2 = calendar (short pre-earnings weekly / long post-earnings weekly) entered T−10..T−8, exited T−1. Never held through the announcement. About 30 liquid large caps; the Vol desk runs the screen. No quote backtest yet (ThetaData later).
+- **E, pre-earnings IV run-up (new, experiment):** E1 = ATM straddle in the first post-earnings expiry (4–10 DTE), bought at T−3, sold before the announcement. E2 = calendar (short pre-earnings weekly / long post-earnings weekly) entered T−10..T−8, exited T−1. Never held through the announcement. About 30 liquid large caps; the Earnings desk runs the screen. No quote backtest yet (ThetaData later).
 
 ## The crew (`crew.py`, `proposals.py`)
-- Desks: Macro, Rates, Fed, Vol, Quant, Risk, Tape. At huddles they brief, then talk to each other in a roundtable (lines carry from/to), then vote size 0.5–1.25×.
+- Desks: Macro, Rates, Fed, Vol, Quant, Risk, Tape, plus restrict-only Ops (pre-flight), Earnings (book E screen) and Post-mortem (rule audit) in `desks.py`. At huddles they brief, then talk to each other in a roundtable (lines carry from/to), then vote size 0.5–1.25×.
 - Any vote below 1 cuts size (lowest wins). A size-up (max 1.25×, book A SWING only) needs every check in `Crew.size_up` to pass; the checklist shows on each entry.
 - Proposals (rules Evan approved):
   - Next-trade and today tweaks auto-apply, but only for the `TWEAKS` whitelist within hard bounds: stop 10–25%, trail, first target, RSI cap, earlier cutoff, fewer trades, skip a setup, strike distance.
@@ -47,7 +47,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (181 pass today; the two sim-day tests take about 50 s). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (340 pass today; the full run takes about 3 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.

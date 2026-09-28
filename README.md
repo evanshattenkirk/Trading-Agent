@@ -92,6 +92,11 @@ Robinhood auth is OAuth. Tokens are cached at `~/.agentdesk/rh_oauth.json` with 
 | Quant | after 2 straight losses, 15:05 | Our own stats; per-day and standing tweaks |
 | Risk | loss reviews, halts | Reports the deterministic risk manager |
 | Tape | loss reviews, big walls | Level 2 book read |
+| Ops | 08:15 catch-up, 08:25 huddle, halts | Pre-flight checklist: paper mode, limits and watchdog armed, data and broker up, recorder landed |
+| Earnings | 08:15 catch-up, 08:25 huddle | Earnings calendar: book E's windows, SPY heavyweights reporting overnight |
+| Post-mortem | 15:05 | Audits the day's trades against the rules; writes a daily file |
+
+Ops, Earnings and Post-mortem are restrict-only: they can cut size (Ops, when signal history is short) but never raise it, pitch changes or add blackouts.
 
 **Roundtables.** In each huddle the desks brief, then talk to each other: Rates checks Macro's read against bonds, Vol prices Fed risk, Risk grills Quant after losses. Desks can revise their votes after hearing the others. With an Anthropic key, this is one extra model call per huddle. Offline, it's templated from the briefs.
 

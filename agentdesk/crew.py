@@ -1,7 +1,9 @@
 """The research crew: desks that brief the agent, argue with each other, vote on size and pitch ideas.
 
 Desks: Macro (econ calendar), Rates (bonds/yields), Fed Watch, Vol (VIX/expected move),
-Quant (reviews our own trades), Risk (deterministic), Tape (Level 2 book, deterministic).
+Quant (reviews our own trades), Risk (deterministic), Tape (Level 2 book, deterministic),
+Ops (pre-flight), Earnings (book E's screen) and Post-mortem (rule audit). The last three live in desks.py and
+are restrict-only: they can cut size, never raise it, pitch changes or add blackouts.
 
 With ANTHROPIC_API_KEY set, Macro/Rates/Fed/Vol research with Claude + web search, and a
 roundtable call lets desks respond to each other and revise their votes. Without a key (or in
@@ -31,6 +33,8 @@ from datetime import time
 
 from .clock import at_ct, ct, ct_time, is_rth, session_date
 from .config import expand, hhmm
+from . import desks as xdesks
+from .desks import RESTRICT_ONLY
 from .proposals import ProposalBook
 
 log = logging.getLogger("agentdesk.crew")
@@ -54,6 +58,9 @@ DESKS = {
     "quant": Desk("quant", "Quant", "Reviews the engine's own trades today: win rate, avg win/loss, which setup and time windows are working, whether the market is chopping the MACD triggers.", uses_web=False),
     "risk": Desk("risk", "Risk", "Deterministic risk manager.", uses_web=False),
     "tape": Desk("tape", "Tape", "Level 2 order book reader.", uses_web=False),
+    "ops": Desk("ops", "Ops", "Pre-flight: paper mode, risk limits and watchdog armed, data and broker up, recorder landed.", uses_web=False),
+    "earnings": Desk("earnings", "Earnings", "Robinhood earnings calendar: book E's windows and SPY heavyweights reporting.", uses_web=False),
+    "postmortem": Desk("postmortem", "Post-mortem", "Audits the day's trades against the rules; writes the daily file.", uses_web=False),
 }
 VOTERS_FOR_SIZE_UP = ("macro", "rates", "vol")
 
@@ -85,7 +92,7 @@ any desk revise its size vote after hearing the others. Keep it terse and numeri
  "votes": {"<desk>": 0.5-1.25},        // revised votes, only for desks that changed
  "proposals": [ ...same shape as in the briefs, include "desk" ... ]}   // usually empty"""
 
-PREMARKET_DESKS = ["macro", "rates", "fed", "vol"]
+PREMARKET_DESKS = ["macro", "rates", "fed", "vol", "ops", "earnings"]
 
 
 def clock_label(hm: str) -> str:
@@ -134,7 +141,7 @@ class Crew:
             if t < hhmm(sch["premarket"]):          # started after the huddle time: the huddle briefs in full
                 await self._catch_up(PREMARKET_DESKS, now)
         plan = [("premarket", PREMARKET_DESKS), ("midday", ["vol", "rates", "macro"]),
-                ("late", ["fed", "vol"]), ("postclose", ["quant", "vol"])]
+                ("late", ["fed", "vol"]), ("postclose", ["quant", "vol", "postmortem"])]
         for slot, desks in plan:
             if slot not in self.ran and t >= hhmm(sch[slot]) and ct(now).weekday() < 5:
                 self.ran.add(slot)
@@ -164,7 +171,7 @@ class Crew:
             desks = ["quant", "risk"] + (["tape"] if self.e.l2 and self.e.l2.latest else [])
             await self._dispatch("loss-review", desks, now)
         if st.halted:
-            await self._dispatch("halt", ["risk", "quant"], now)
+            await self._dispatch("halt", ["risk", "quant", "ops"], now)
 
     # ------------------------------------------------------------ premarket catch-up
     async def _catch_up(self, desks: list[str], now: float) -> None:
@@ -187,7 +194,7 @@ class Crew:
             raise
         except Exception as ex:
             log.warning("crew %s catch-up failed: %s", key, ex)
-            b = self._finish(self._offline_brief(key, now, "premarket"))
+            b = self._finish(self._offline_brief(key, now, "premarket"), key)
         b["prepared_ts"] = now
         self.prep[key] = b
         self.prep_tasks.pop(key, None)
@@ -207,7 +214,7 @@ class Crew:
             return self.prep.pop(key)
         if slot == "premarket" and key in self.prep_tasks:
             self.prep_tasks.pop(key).cancel()
-            b = self._finish(self._offline_brief(key, now, slot))
+            b = self._finish(self._offline_brief(key, now, slot), key)
             b["notes"] = ["Still researching at huddle time; using my offline read."] + list(b.get("notes") or [])
             return b
         return await self._brief(key, slot, now)
@@ -251,8 +258,10 @@ class Crew:
                 bus.emit("crew", now, desk=frm, phase="say", who=frm, to=to, text=str(ln["text"])[:140])
         for k, v in (talk.get("votes") or {}).items():
             if k in self.briefs:
-                self.briefs[k]["size_multiplier"] = self._clamp(v)
+                self.briefs[k]["size_multiplier"] = self._clamp(v, k)
         for p in pitched + list(talk.get("proposals") or []):
+            if p.get("desk", desks[0]) in RESTRICT_ONLY:
+                continue
             await self._handle_proposal(p.get("desk", desks[0]), p, now)
         self._apply(now)
         bus.emit("crew", now, desk=desks[0], phase="say", who="agent", to="all", text=self._wrap_line(slot))
@@ -278,8 +287,9 @@ class Crew:
             return f"{', '.join(DESKS[k].name for k in up)} want more size. Not enough agreement; staying at 100%."
         return "Rules unchanged. Back to the screens."
 
-    def _clamp(self, v) -> float:
-        return max(self.cfg["min_size_multiplier"], min(self.cfg.get("max_size_multiplier", 1.25), float(v)))
+    def _clamp(self, v, key: str | None = None) -> float:
+        hi = 1.0 if key in RESTRICT_ONLY else self.cfg.get("max_size_multiplier", 1.25)
+        return max(self.cfg["min_size_multiplier"], min(hi, float(v)))
 
     def _apply(self, now: float) -> None:
         votes = {k: b.get("size_multiplier", 1.0) for k, b in self.briefs.items() if b.get("day") == str(self.day)}
@@ -362,6 +372,12 @@ class Crew:
             b = self._risk_brief()
         elif key == "tape":
             b = self._tape_brief()
+        elif key == "ops":
+            b = self._ops_brief(slot)
+        elif key == "earnings":
+            b = await self._earnings_brief(now)
+        elif key == "postmortem":
+            b = self._postmortem_brief(now)
         elif key == "quant":
             b = self._quant_brief(slot)
             if not self.offline:
@@ -370,13 +386,24 @@ class Crew:
             b = await self._llm(key, now)
         if b is None:
             b = self._offline_brief(key, now, slot)
-        return self._finish(b)
+        return self._finish(b, key)
 
-    def _finish(self, b: dict) -> dict:
+    def _finish(self, b: dict, key: str | None = None) -> dict:
         b["day"] = str(self.day)
-        b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0))
+        b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0), key)
         b["cooldown_minutes"] = max(0, min(30, int(b.get("cooldown_minutes") or 0)))
+        if key in RESTRICT_ONLY:            # inform or cut only: no pitches, no blackouts
+            b["proposals"], b["events"] = [], []
         return b
+
+    def _ops_brief(self, slot: str = "") -> dict:
+        return xdesks.ops_brief(self, slot)
+
+    async def _earnings_brief(self, now: float) -> dict:
+        return await xdesks.earnings_brief(self, now)
+
+    def _postmortem_brief(self, now: float) -> dict:
+        return xdesks.postmortem_brief(self, now)
 
     def _risk_brief(self) -> dict:
         r = self.e.risk.to_dict()
@@ -476,6 +503,14 @@ class Crew:
             fed = [e for e in evs if "fed" in (e["name"] or "").lower() or "fomc" in (e["name"] or "").lower()]
             return {"headline": (f"{fed[0]['name']} at {fed[0]['time_ct']} CT" if fed else "Nothing else from the Fed today")
                     + ("" if sim else tag), "bias": bias, "confidence": conf, "events": fed, "size_multiplier": vote, "notes": []}
+        if key == "ops":
+            return self._ops_brief(slot)
+        if key == "postmortem":
+            return self._postmortem_brief(now)
+        if key == "earnings":        # the huddle couldn't wait for the calendar: use today's cached copy or config
+            cal = getattr(self, "_earnings_cal", None)
+            return {"headline": "Calendar still loading; screen after the huddle." if not cal else
+                    f"E screen from {cal[2]}.", "bias": "neutral", "confidence": 0.3, "events": [], "notes": []}
         if key == "vol":
             b = self._vol_brief(tag)
             if sim and bias == "bullish":
@@ -515,7 +550,7 @@ class Crew:
 
     # ------------------------------------------------------------ roundtable
     async def _roundtable(self, slot: str, desks: list[str], now: float) -> dict:
-        if not self.offline and len([d for d in desks if d not in ("risk", "tape")]) >= 2:
+        if not self.offline and len([d for d in desks if d not in ("risk", "tape") + RESTRICT_ONLY]) >= 2:
             out = await self._llm_roundtable(slot, desks, now)
             if out:
                 return out
@@ -559,6 +594,7 @@ class Crew:
         if "quant" in b and "vol" in b and slot == "postclose":
             lines.append({"from": "vol", "to": "quant", "text": "Straddles overpriced the move again today. That's the edge we keep paying for."})
             lines.append({"from": "quant", "to": "vol", "text": "Then pitch it properly. Put it in front of Evan with the numbers."})
+        lines += xdesks.templated_lines(slot, b)
         return {"lines": lines, "votes": votes, "proposals": []}
 
     async def _llm_roundtable(self, slot: str, desks: list[str], now: float) -> dict | None:

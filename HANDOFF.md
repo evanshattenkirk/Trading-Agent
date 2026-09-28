@@ -123,7 +123,7 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 
 **Office (bottom right).** Pixel art on a 192×120 grid drawn at 2×.
 - **The agent** sits at a three-monitor desk under a Chicago-style window whose sky follows CT time. The monitors show the 1m price, the 144t price and position P&L; an LED ticker scrolls SPY and P&L.
-- **Desks:** Macro, Rates, Fed, Vol, Quant, Risk, Tape, each labeled.
+- **Desks:** Macro, Rates, Earnings (left wall), Fed, Vol, Ops (right wall), Quant, Tape, Post-mortem, Risk (front row), each labeled.
 - **Huddles:** desks walk to spots around the agent, face whoever they're addressing, and talk in speech bubbles. The caption shows "RATES → MACRO: …".
 - **Reactions:**
   - The agent types on orders, jumps with $ particles on wins, and slumps under a rain cloud on losses.
@@ -140,12 +140,15 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 | Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE |
 | Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y/10Y moves, curve, auctions |
 | Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC, Fed speakers |
-| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; **also runs book E's IV screen** (section 7E) |
+| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; checks IV on the names the Earnings desk flags for book E |
 | Quant | loss reviews, 15:05 | Our stats; per-day and permanent tweak proposals |
 | Risk | loss reviews, halts | Deterministic risk manager's view |
 | Tape | loss reviews, big walls | Level 2 read; comments on walls of at least 25k shares near price (at most once every 20 min) |
+| Ops | 08:15 catch-up, 08:25 huddle, halts | Pre-flight (section 12): paper mode, books `paper_only`, loss limit and watchdog armed, not halted, 15m/5m history warm, SPY price, Robinhood connected, previous session's quotes recorded. Reports only; cuts size to 50% only when the 15m/5m MACD history is short |
+| Earnings | 08:15 catch-up, 08:25 huddle | Robinhood `get_earnings_calendar` (31 days, large caps): **runs book E's screen** (T−10..T−8 E2, T−3 E1, exit T−1 / T−0) and notes SPY heavyweights that reported overnight. Information only |
+| Post-mortem | 15:05 | Audits each closed trade against the rules (entry window, blackouts, contract cap, flat by the flatten time, loss within stop + 10 points) and flags round trips; writes `~/.agentdesk/postmortems/YYYY-MM-DD.md` for the weekly Quant report. Information only |
 
-- **Premarket (Evan, 2026-09-28).** At 08:15 CT (`crew.schedule.arrive`) Macro, Rates, Fed and Vol arrive and research at their own desks, in parallel. At 08:25 CT (`crew.schedule.premarket`) they huddle with the agent using those briefs, so the meeting ends before the 08:30 open. A desk still researching at 08:25 attends with its offline read and says so; the huddle never waits. If the engine starts after 08:25, the premarket huddle briefs in full as before.
+- **Premarket (Evan, 2026-09-28).** At 08:15 CT (`crew.schedule.arrive`) Macro, Rates, Fed, Vol, Ops and Earnings arrive and research at their own desks, in parallel. At 08:25 CT (`crew.schedule.premarket`) they huddle with the agent using those briefs, so the meeting ends before the 08:30 open. A desk still researching at 08:25 attends with its offline read and says so; the huddle never waits. If the engine starts after 08:25, the premarket huddle briefs in full as before.
 - **Research.** With an Anthropic key, Macro/Rates/Fed/Vol research with Claude plus web search, returning JSON briefs: headline, bias, confidence, events, vote, notes, proposals. Without a key, everything runs offline from config events and the data.
 - **Roundtable.** After the briefs, desks talk **to each other**: Rates checks Macro against bonds, Vol prices Fed risk, Risk grills Quant after losses. Any desk can revise its vote. With a key this is one extra LLM call per huddle; otherwise it's templated.
 - **Size votes (0.5–1.25×).**
@@ -163,6 +166,7 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 
     The checklist is shown on every entry.
   - For books B–E, the crew can only restrict: blackouts, skipping a day, cutting lots. Never a size-up.
+  - **Ops, Earnings and Post-mortem are restrict-only** (`RESTRICT_ONLY` in `desks.py`): their votes are capped at 1.0, they can't pitch proposals or add blackouts, and they never lift a halt. A cut from any of them also fails the size-up check "No desk voting down".
 - **Proposals (Evan's approved rules):**
   - **Next-trade or today changes apply automatically,** but only to a fixed list of settings within hard limits:
     - stop 10–25%
@@ -332,7 +336,7 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 - Evidence for the calendar version is practitioner-only.
 
 **Rules (paper):**
-- **Universe:** about 30 liquid large caps with weekly options and an ATM spread no wider than 5% of mid. Not SPY. Screen daily with `get_earnings_calendar` (31-day window) at the 08:15 CT catch-up; the Vol desk owns it.
+- **Universe:** about 30 liquid large caps with weekly options and an ATM spread no wider than 5% of mid. Not SPY. Screen daily with `get_earnings_calendar` (31-day window) at the 08:15 CT catch-up; the Earnings desk owns it (`agentdesk/earnings.py`, list in `crew.earnings.universe`, holidays in `calendar.holidays`).
 - **E1, short-dated straddle:** buy the ATM straddle in the first expiry **after** earnings with 4–10 DTE, at the close **3 trading days before** the announcement. Sell at the close before the announcement: the day before for pre-market reporters, the same day for after-close reporters. Take profit +20%, stop −30%.
 - **E2, calendar (the spread combo):** at **T−10 to T−8** trading days, sell the ATM weekly expiring before earnings and buy the same-strike weekly expiring after, as one 2-leg debit order. Exit at T−1 (T−0 for after-close reporters). Take profit +15%, stop −30%.
 - **Both:**
@@ -384,7 +388,7 @@ The directional edges decayed after publication. The only effect that is modeled
   - Reconcile partial fills before any new order.
 - **Live and shadow:** `order_args()` already supports multi-leg with `direction`; review every order; one `ref_id` per logical order.
 - **Global risk:** kill switch across all books; account-level open-risk cap; B, C and D must not open while the account's buying power is below the combined max loss.
-- **Crew hooks:** blackouts apply to every 0DTE book; size-up applies to book A only; E's universe screen is run by the Vol desk.
+- **Crew hooks:** blackouts apply to every 0DTE book; size-up applies to book A only; E's universe screen is run by the Earnings desk.
 - **Dashboard:** book switcher; per-book P&L strip; a book A–E label on markers and trades; the office monitors show the active book.
 - **Journal:** add a `book` column to `trades`; add an `iv_history` table for E.
 - **Recorders:** extend `OptionQuoteRecorder` for E's watchlist (EOD snapshot, 15:00 CT).

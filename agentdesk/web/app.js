@@ -3,10 +3,11 @@
   const CFG = window.AGENTDESK || { source: 'ws' };
   const $ = (id) => document.getElementById(id);
   const TF_SEC = { '1m': 60, '5m': 300, '15m': 900 };
-  const DESK_ORDER = ['macro', 'rates', 'fed', 'vol', 'quant', 'risk', 'tape'];
+  const DESK_ORDER = ['macro', 'rates', 'fed', 'vol', 'quant', 'risk', 'tape', 'ops', 'earnings', 'postmortem'];
   const DESK_META = {
     macro: ['Macro', '#3987e5'], rates: ['Rates', '#199e70'], fed: ['Fed Watch', '#9085e9'],
     vol: ['Vol', '#c98500'], quant: ['Quant', '#d55181'], risk: ['Risk', '#e66767'], tape: ['Tape (L2)', '#4fb3bf'],
+    ops: ['Ops', '#7a8aa0'], earnings: ['Earnings', '#b0623a'], postmortem: ['Post-mortem', '#b8a05a'],
   };
   const ACT_LABEL = {
     watching: 'WATCHING THE TAPE', typing: 'PLACING ORDER', thinking: 'PICKING A STRIKE', consulting: 'IN A HUDDLE',

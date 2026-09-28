@@ -10,12 +10,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentdesk.clock import at_ct
 from agentdesk.config import load_config
-from agentdesk.crew import Crew
+from agentdesk.crew import PREMARKET_DESKS, Crew
 from agentdesk.risk import RiskManager
 
 CFG = load_config()
 D = date(2026, 9, 28)          # a Monday
-PREMARKET = ["macro", "rates", "fed", "vol"]
+PREMARKET = PREMARKET_DESKS
 
 
 class Bus:
