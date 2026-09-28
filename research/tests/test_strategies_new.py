@@ -330,3 +330,28 @@ def test_leg_cost_follows_days_left_at_the_time_of_the_fill():
     assert sn._cost(legs, nat, d=0) == pytest.approx(2 * (0.03 + sn.FEE))     # opened as next-day legs
     assert sn._cost(legs, nat, d=1) == pytest.approx(2 * (0.02 + sn.FEE))     # closed on expiry day
     assert sn._cost([("C", 765, 1, 5)], nat, d=0) == pytest.approx(0.03 + sn.FEE)
+
+
+# ---------------------------------------------------------------- vega sensitivity (hold-to-close, exit marked at the day's VIX)
+
+def test_exit_mark_at_a_higher_vix_helps_the_calendar_and_hurts_the_condor():
+    cost = {0: 0.01, 1: 0.01}
+    cal = sn.legs_calendar(765.0)
+    flat = sn.debit_trade(_flat_path(765.0, 5, 70), cal, VIX, cost, tp=math.inf, stop=math.inf)
+    up = sn.debit_trade(_flat_path(765.0, 5, 70), cal, VIX, cost, tp=math.inf, stop=math.inf, vix_mark=VIX * 1.2)
+    assert up["pnl"] > flat["pnl"]
+    ic = sn.legs_condor(765.0, 3.0)
+    flat = sn.credit_trade(_flat_path(765.0, 5, 70), ic, VIX, cost, 2, tp=-math.inf, stop=math.inf, min_credit=None)
+    up = sn.credit_trade(_flat_path(765.0, 5, 70), ic, VIX, cost, 2, tp=-math.inf, stop=math.inf, min_credit=None,
+                         vix_mark=VIX * 1.2)
+    assert up["pnl"] < flat["pnl"]
+
+
+def test_vega_check_pairs_hold_to_close_runs_with_and_without_the_same_day_vix():
+    M = _synthetic(nd=6)
+    days = _days(6)
+    vixp = np.full(6, VIX)
+    vix_today = np.full(6, VIX * 1.1)
+    out = sn.vega_check("F3", days, M, vixp, vix_today, sn.COSTS["mid-1c"])
+    assert set(out.columns) >= {"date", "ret_prior_vix", "ret_day_vix"}
+    assert (out.ret_day_vix > out.ret_prior_vix).all()

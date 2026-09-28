@@ -90,3 +90,44 @@ def test_run_end_to_end_writes_report_and_results(tmp_path):
     assert "## F1" in text and "## F2" in text
     assert res["F1|patient|all"]["n"] == 2
     assert (tmp_path / "out" / "trades.parquet").exists()
+
+
+# ---------- F3 calendar on two chains (0DTE + next expiry) ----------
+
+def _const_panel(strike, bid, ask, right="C"):
+    rows = [{"minute": t, "right": right, "strike": float(strike), "bid": bid, "ask": ask}
+            for t in range(m("09:30"), m("16:00") + 1)]
+    return nq.bd.QuotePanel(pd.DataFrame(rows))
+
+
+def test_calendar_debit_is_long_next_minus_short_same_day_plus_fees():
+    p0 = make_panel({m("09:30"): 500.0}, range(490, 511), iv_share=0.006)
+    p1 = _const_panel(500, 3.00, 3.04)
+    r = nq.replay_calendar(p0, p1, 500.0, nq.F2_ENTRY, nq.CLOSE_MIN, "taker")
+    b0, a0 = p0.ba("C", 500.0, nq.F2_ENTRY)
+    assert r["debit"] == pytest.approx(3.04 - b0 + 2 * nq.bd.FEE)
+
+
+def test_calendar_takes_profit_as_the_same_day_leg_decays():
+    p0 = make_panel({m("09:30"): 500.0}, range(490, 511), iv_share=0.006)
+    p1 = _const_panel(500, 3.00, 3.02)
+    r = nq.replay_calendar(p0, p1, 500.0, nq.F2_ENTRY, nq.CLOSE_MIN, "patient")
+    assert r["why"] == "take profit" and r["ret"] >= 0.25
+
+
+def test_calendar_stops_when_spot_runs_away_from_the_strike():
+    p0 = make_panel({m("09:30"): 500.0, m("10:01"): 510.0}, range(490, 521), iv_share=0.006)
+    p1 = _const_panel(500, 3.00, 3.02)
+    r = nq.replay_calendar(p0, p1, 500.0, nq.F2_ENTRY, nq.CLOSE_MIN, "patient")
+    assert r["why"] == "stop" and r["ret"] <= -0.35
+
+
+def test_run_includes_f3_when_next_expiry_quotes_are_given(tmp_path):
+    q = tmp_path / "quotes"; q.mkdir(); nx = tmp_path / "next"; nx.mkdir()
+    _write_day(q, "2025-03-19", 500.0)
+    _write_day(nx, "2025-03-19", 500.0)
+    vix = tmp_path / "vix.csv"
+    pd.DataFrame({"DATE": ["2025-03-18"], "CLOSE": [VIX]}).to_csv(vix, index=False)
+    res = nq.run(q, tmp_path / "out", None, vix, next_quotes=nx)
+    assert res["F3|patient|all"]["n"] == 1
+    assert "## F3" in (tmp_path / "out" / "report.md").read_text()

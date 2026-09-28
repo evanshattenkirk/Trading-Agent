@@ -7,11 +7,13 @@ modeled backtest (prior VIX close, 0.80 RTH factor, bar-share of the session lef
   F2        10:00 ET put credit spread, short floor(S - 0.9 EM), long $2 lower, same exits
   F2-trend  F2 only when the prior SPY close is above the average of the prior 50 closes (needs --spy bars)
 All skip when the opening credit after fees is below $0.10.
-F3 (0DTE/1DTE calendar) and F4 (overnight put spread) need next-day-expiry quotes, which the 0DTE pull lacks.
+  F3        10:00 ET call calendar: sell the 0DTE call, buy the next expiry's call at round(S); TP +25% / stop -35%
+            of the debit; close 15:25 ET. Runs only with --next-quotes (the 0DTE pull has no next-expiry chain).
+F4 (overnight put spread) would need next-expiry quotes on the following morning too; not replayed here.
 
 Usage (Mac, repo root, after the ThetaData pull):
     .venv/bin/python research/strategies_new_quotes.py --quotes data/thetadata/spy_0dte \\
-        --out data/thetadata/new_results [--spy data/spy_1m]
+        --out data/thetadata/new_results [--spy data/spy_1m] [--next-quotes data/thetadata/spy_next]
 """
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ import strategies_new as sn  # noqa: E402
 
 F1_ENTRY, F2_ENTRY, CLOSE_MIN = 13 * 60 + 30, 10 * 60, 15 * 60 + 25
 MIN_CREDIT = 0.10
-BOOKS = ("F1", "F2", "F2-trend")
+BOOKS = ("F1", "F2", "F2-trend", "F3")
 
 
 def _bd(legs):
@@ -74,7 +76,62 @@ def day_rows(p: bd.QuotePanel, d: date, vix: float, gate: bool) -> list[dict]:
     return rows
 
 
-def run(quotes: Path, out: Path, spy_dir: Path | None, vix_path: Path | None) -> dict:
+def replay_calendar(p0: bd.QuotePanel, p1: bd.QuotePanel, K: float, entry: int, close: int, model: str,
+                    tp: float = 0.25, stop: float = 0.35):
+    """F3: sell the same-day call (p0), buy the next-expiry call (p1), same strike. TP +25% / stop -35% of the
+    debit on the closing value, checked every minute; otherwise close at `close`."""
+    def legs_at(t):
+        s0, l1 = p0.ba("C", K, t), p1.ba("C", K, t)
+        return (s0, l1) if s0 and l1 else None
+
+    q = legs_at(entry)
+    if q is None:
+        return None
+    fees = 2 * bd.FEE
+    debit = bd.fill(*q[1], "buy", model) - bd.fill(*q[0], "sell", model) + fees
+    if debit <= 0:
+        return None
+    w, why, exit_min = None, "time", close
+    for t in range(entry + 1, close + 1):
+        q = legs_at(t)
+        if q is None:
+            continue
+        w = bd.fill(*q[1], "sell", model) - bd.fill(*q[0], "buy", model) - fees
+        if w >= debit * (1 + tp):
+            why, exit_min = "take profit", t
+            break
+        if w <= debit * (1 - stop):
+            why, exit_min = "stop", t
+            break
+    if w is None:
+        return None
+    pnl = w - debit
+    return {"debit": debit, "credit": -debit, "risk": debit, "pnl": pnl, "ret": pnl / debit, "why": why,
+            "exit_minute": exit_min}
+
+
+def f3_rows(p0: bd.QuotePanel, p1: bd.QuotePanel, d: date, vix: float, next_expiry: date | None) -> list[dict]:
+    S = bd.spot(p0, F2_ENTRY)
+    if S is None:
+        return []
+    base = {"date": d, "year": d.year, "era": "daily" if d >= bd.DAILY_ERA else "mon-wed-fri", "vix": vix,
+            "next_dte": (next_expiry - d).days if next_expiry else None}
+    rows = []
+    for model in bd.MODELS:
+        r = replay_calendar(p0, p1, float(round(S)), F2_ENTRY, CLOSE_MIN, model)
+        if r:
+            rows.append({**base, "book": "F3", "model": model, **r})
+    return rows
+
+
+def _next_expiry(raw: pd.DataFrame) -> date | None:
+    cols = {c.lower(): c for c in raw.columns}
+    if "expiration" not in cols or raw.empty:
+        return None
+    return pd.to_datetime(raw[cols["expiration"]].iloc[0]).date()
+
+
+def run(quotes: Path, out: Path, spy_dir: Path | None, vix_path: Path | None, next_quotes: Path | None = None) -> dict:
     vix = bd.load_vix(vix_path)
     bars = bd.load_spy_bars(spy_dir)
     closes = daily_closes(bars) if bars is not None else None
@@ -96,6 +153,10 @@ def run(quotes: Path, out: Path, spy_dir: Path | None, vix_path: Path | None) ->
             skipped["no_vix"] += 1
             continue
         rows += day_rows(p, d, vx, gate=bool(closes is not None and gate_for(closes, d)))
+        nf = next_quotes / f.name if next_quotes is not None else None
+        if nf is not None and nf.exists():
+            raw1 = pd.read_parquet(nf)
+            rows += f3_rows(p, bd.QuotePanel(bd.normalize(raw1)), d, vx, _next_expiry(raw1))
     df = pd.DataFrame(rows)
     out.mkdir(parents=True, exist_ok=True)
     if df.empty:
@@ -113,7 +174,8 @@ def _report(df: pd.DataFrame, skipped: dict, n_files: int, have_gate: bool):
     L += [f"# Candidates F1 and F2 on real SPY 0DTE quotes ({df.date.min()} to {df.date.max()})", "",
           f"{n_files} quote files, {df.date.nunique()} sessions with a trade, skipped {skipped}.",
           "Returns are % of max risk per trade, fees included. patient = mid -+ 1c (the approved paper fill rule).",
-          "" if have_gate else "F2-trend needs --spy bars for the 50-day average; not run.", ""]
+          "" if have_gate else "F2-trend needs --spy bars for the 50-day average; not run.",
+          "F3 returns are % of the debit; it runs only for dates that have a --next-quotes file.", ""]
     for book in BOOKS:
         sub = df[df.book == book]
         if sub.empty:
@@ -144,8 +206,11 @@ def main():
     ap.add_argument("--out", type=Path, default=Path("data/thetadata/new_results"))
     ap.add_argument("--spy", type=Path, default=None)
     ap.add_argument("--vix", type=Path, default=None)
+    ap.add_argument("--next-quotes", type=Path, default=None,
+                    help="folder of YYYY-MM-DD.parquet files (named by trade date) holding that day's quotes for the "
+                         "next expiration after it; enables F3")
     a = ap.parse_args()
-    run(a.quotes, a.out, a.spy, a.vix)
+    run(a.quotes, a.out, a.spy, a.vix, a.next_quotes)
 
 
 if __name__ == "__main__":

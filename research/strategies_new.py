@@ -106,16 +106,17 @@ def _cost(legs, cost, d=0) -> float:
     return sum(cost[min(e - d, 1)] for *_, e in legs)
 
 
-def credit_trade(path, legs, vix, cost, width, tp=0.5, stop=2.0, min_credit=0.10, s=1.0, frac=rth_frac):
+def credit_trade(path, legs, vix, cost, width, tp=0.5, stop=2.0, min_credit=0.10, s=1.0, frac=rth_frac, vix_mark=None):
     """Short defined-risk structure. path: [(session, bar, spot)], first point is the entry.
-    TP when the closing debit <= tp x credit, stop when it >= stop x credit (as strategies_bcd.condor_like)."""
+    TP when the closing debit <= tp x credit, stop when it >= stop x credit (as strategies_bcd.condor_like).
+    vix_mark (sensitivity only): IV used to mark every point after entry."""
     d0, k0, S0 = path[0]
     cr = -value(legs, S0, vix, d0, k0, s, frac) - _cost(legs, cost, d0)
     if min_credit is not None and cr < min_credit:
         return None
     v, why, exit_at = None, "time", path[-1][:2]
     for d, k, S in path[1:]:
-        v = -value(legs, S, vix, d, k, s, frac) + _cost(legs, cost, d)
+        v = -value(legs, S, vix if vix_mark is None else vix_mark, d, k, s, frac) + _cost(legs, cost, d)
         if v <= cr * tp:
             why, exit_at = "take 50%", (d, k)
             break
@@ -126,7 +127,7 @@ def credit_trade(path, legs, vix, cost, width, tp=0.5, stop=2.0, min_credit=0.10
     return {"credit": cr, "risk": width - cr, "pnl": pnl, "ret": pnl / (width - cr), "why": why, "exit": exit_at}
 
 
-def debit_trade(path, legs, vix, cost, tp=0.25, stop=0.35, s=1.0):
+def debit_trade(path, legs, vix, cost, tp=0.25, stop=0.35, s=1.0, vix_mark=None):
     """Long structure (calendar). TP at +tp of the debit, stop at -stop, else the last path point."""
     d0, k0, S0 = path[0]
     debit = value(legs, S0, vix, d0, k0, s) + _cost(legs, cost, d0)
@@ -134,7 +135,7 @@ def debit_trade(path, legs, vix, cost, tp=0.25, stop=0.35, s=1.0):
         return None
     w, why, exit_at = None, "time", path[-1][:2]
     for d, k, S in path[1:]:
-        w = value(legs, S, vix, d, k, s) - _cost(legs, cost, d)
+        w = value(legs, S, vix if vix_mark is None else vix_mark, d, k, s) - _cost(legs, cost, d)
         if w >= debit * (1 + tp):
             why, exit_at = "take profit", (d, k)
             break
@@ -354,6 +355,41 @@ def corr_with(a: pd.DataFrame, b: pd.DataFrame) -> float:
     return float(m.pnl_x.corr(m.pnl_y)) if len(m) > 2 else float("nan")
 
 
+def vega_check(name, days, M, vixp, vix_today, cost) -> pd.DataFrame:
+    """Hold-to-15:25 version (no TP/stop) of D, F1 or F3, marked at the exit with the prior VIX close (the model)
+    and with that session's own VIX close (a proxy for the IV the market actually marks at 15:25)."""
+    C, rows = M["C"], []
+    for i, d in enumerate(days):
+        if not (np.isfinite(vixp[i]) and np.isfinite(vix_today[i])):
+            continue
+        vx, f = float(vixp[i]), REBASE / M["O"][i, 0]
+        k0 = K_1330 if name == "F1" else K_1000
+        path = [(0, k0, C[i, k0] * f), (0, K_1525, C[i, K_1525] * f)]
+        S = path[0][2]
+        out = {}
+        for tag, mark in (("prior", None), ("day", float(vix_today[i]))):
+            if name == "F3":
+                if i + 1 >= len(days) or not next_is_consecutive(d, days[i + 1]):
+                    break
+                r = debit_trade(path, legs_calendar(S), vx, cost, tp=math.inf, stop=math.inf, vix_mark=mark)
+            else:
+                legs = legs_condor(S, 0.9 * _em(vx, k0, S))
+                r = credit_trade(path, legs, vx, cost, 2, tp=-math.inf, stop=math.inf,
+                                 min_credit=None if name == "D" else 0.10, vix_mark=mark)
+            if r is None:
+                break
+            out[f"ret_{tag}_vix"] = r["ret"]
+        if len(out) == 2:
+            rows.append({"date": d, "period": period_of(d), **out})
+    return pd.DataFrame(rows, columns=["date", "period", "ret_prior_vix", "ret_day_vix"])
+
+
+def vix_same_day(days, data: Path = HERE / "data") -> np.ndarray:
+    vix = pd.read_csv(data / "vix.csv", parse_dates=["DATE"]).set_index("DATE")["CLOSE"]
+    vix.index = vix.index.date
+    return np.array([float(vix.get(d, np.nan)) for d in days])
+
+
 # ---------------------------------------------------------------- stats
 
 def summ(x) -> dict:
@@ -464,6 +500,14 @@ def run_all(data: Path = HERE / "data"):
             r["underlying_after_2bp"] = {p: {**summ(u[u.period == p].und_bp / 1e4), "avg_bp": float(u[u.period == p].und_bp.mean())}
                                          for p in ("2005-14", "2015-20", "2025-26") if (u.period == p).any()}
         r["corr_with_D_mid-1c"] = corr_with(trades[(name, "mid-1c")], trades[("D", "mid-1c")]) if name != "D" else 1.0
+        if name in ("D", "F1", "F3"):
+            vc = pd.concat([vega_check(name, days, M, vp, vix_same_day(days, data), COSTS["mid-1c"])
+                            for days, M, vp in sets], ignore_index=True)
+            r["vega_check_mid-1c"] = {p: {"n": int((vc.period == p).sum()),
+                                          "avg_prior_vix": float(vc[vc.period == p].ret_prior_vix.mean() * 100),
+                                          "avg_day_vix": float(vc[vc.period == p].ret_day_vix.mean() * 100),
+                                          "t_day_vix": summ(vc[vc.period == p].ret_day_vix).get("t", float("nan"))}
+                                      for p in ("2005-14", "2015-20", "2025-26")}
         r["decision"] = decision(r["mid-1c"], r["natural"], r["breakeven_s"]["2005-14"])
         res[name] = r
         print(name, "done", flush=True)
@@ -495,6 +539,11 @@ def report(res: dict) -> str:
         be = r["breakeven_s"]
         L += ["", "Break-even premium scale s (mid-1c): " + ", ".join(f"{p} {_f(v, '.2f')}" for p, v in be.items()),
               f"Daily P&L correlation with book D (mid-1c): {_f(r['corr_with_D_mid-1c'], '.2f')}", ""]
+        for p, v in r.get("vega_check_mid-1c", {}).items():
+            L.append(f"- IV check, hold to 15:25 with no TP/stop, {p}: avg {v['avg_prior_vix']:+.2f}% marked at the prior "
+                     f"VIX close, {v['avg_day_vix']:+.2f}% (t {_f(v['t_day_vix'])}) marked at that day's VIX close")
+        if r.get("vega_check_mid-1c"):
+            L.append("")
         for p, u in r.get("underlying_after_2bp", {}).items():
             if u.get("n", 0) >= 3:
                 L.append(f"- Underlying only, {p}: n={u['n']} avg {u['avg_bp']:+.1f} bp, win {u['win']:.0f}%, t {u['t']:+.2f}")
