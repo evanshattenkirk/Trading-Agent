@@ -1,0 +1,2802 @@
+[
+ {
+  "day": "2026-09-14",
+  "print_share": {
+   "iex_prints": 20290,
+   "sip_prints": 551041,
+   "share": 0.0368,
+   "implied_tick": 5.3,
+   "by_bucket": {
+    "08:30": 0.0363,
+    "09:00": 0.0329,
+    "09:30": 0.0367,
+    "10:00": 0.0318,
+    "10:30": 0.0368,
+    "11:00": 0.0315,
+    "11:30": 0.0377,
+    "12:00": 0.0365,
+    "12:30": 0.0282,
+    "13:00": 0.0441,
+    "13:30": 0.0299,
+    "14:00": 0.032,
+    "14:30": 0.0508
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 2,
+    "net": -83.54,
+    "signals": 3,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": -83.54
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    }
+   },
+   "iex8": {
+    "trades": 3,
+    "net": 72.22,
+    "signals": 4,
+    "by_setup": {
+     "SWING": {
+      "n": 3,
+      "net": 72.22
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 17,
+      "alt": 19,
+      "matched": 16,
+      "recall": 0.941,
+      "precision": 0.842,
+      "jaccard": 0.8,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 175,
+      "alt": 94,
+      "matched": 87,
+      "recall": 0.497,
+      "precision": 0.926,
+      "jaccard": 0.478,
+      "median_lag_s": 8.4693
+     }
+    },
+    "state_agree": {
+     "1m": 0.9682,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.7516
+    },
+    "signals_vs_sip": {
+     "ref": 3,
+     "alt": 4,
+     "matched": 3,
+     "recall": 1.0,
+     "precision": 0.75,
+     "jaccard": 0.75,
+     "median_lag_s": 0.0,
+     "same_setup": 3,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 3,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 0.667,
+       "jaccard": 0.667,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 49.8999
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 2,
+     "alt": 3,
+     "matched": 2,
+     "recall": 1.0,
+     "precision": 0.667,
+     "jaccard": 0.667,
+     "median_lag_s": 0.0,
+     "same_setup": 2,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 3,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 0.667,
+       "jaccard": 0.667,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 2,
+    "net": 1.52,
+    "signals": 3,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 1.52
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 17,
+      "alt": 19,
+      "matched": 16,
+      "recall": 0.941,
+      "precision": 0.842,
+      "jaccard": 0.8,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 175,
+      "alt": 165,
+      "matched": 131,
+      "recall": 0.749,
+      "precision": 0.794,
+      "jaccard": 0.627,
+      "median_lag_s": 0.0127
+     }
+    },
+    "state_agree": {
+     "1m": 0.9682,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8355
+    },
+    "signals_vs_sip": {
+     "ref": 3,
+     "alt": 3,
+     "matched": 3,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": 0.0,
+     "same_setup": 3,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 32.037
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 2,
+     "alt": 2,
+     "matched": 2,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": 0.0,
+     "same_setup": 2,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "tick": 5
+   }
+  }
+ },
+ {
+  "day": "2026-09-15",
+  "print_share": {
+   "iex_prints": 21256,
+   "sip_prints": 472672,
+   "share": 0.045,
+   "implied_tick": 6.5,
+   "by_bucket": {
+    "08:30": 0.0448,
+    "09:00": 0.0421,
+    "09:30": 0.0368,
+    "10:00": 0.0351,
+    "10:30": 0.038,
+    "11:00": 0.0343,
+    "11:30": 0.0395,
+    "12:00": 0.049,
+    "12:30": 0.0394,
+    "13:00": 0.0499,
+    "13:30": 0.0497,
+    "14:00": 0.0496,
+    "14:30": 0.0642
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 7,
+    "net": -182.1,
+    "signals": 13,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": -95.3
+     },
+     "SCALP": {
+      "n": 6,
+      "net": -86.8
+     }
+    }
+   },
+   "iex8": {
+    "trades": 6,
+    "net": -176.8,
+    "signals": 15,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": -100.3
+     },
+     "SCALP": {
+      "n": 5,
+      "net": -76.5
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 12,
+      "alt": 12,
+      "matched": 12,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 4,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 0.75,
+      "jaccard": 0.75,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 144,
+      "alt": 108,
+      "matched": 95,
+      "recall": 0.66,
+      "precision": 0.88,
+      "jaccard": 0.605,
+      "median_lag_s": 3.1374
+     }
+    },
+    "state_agree": {
+     "1m": 0.9868,
+     "5m": 0.9825,
+     "15m": 1.0,
+     "144t": 0.826
+    },
+    "signals_vs_sip": {
+     "ref": 13,
+     "alt": 15,
+     "matched": 12,
+     "recall": 0.923,
+     "precision": 0.8,
+     "jaccard": 0.75,
+     "median_lag_s": 1.1071,
+     "same_setup": 12,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -43.5347
+      },
+      "SCALP": {
+       "ref": 11,
+       "alt": 13,
+       "matched": 10,
+       "recall": 0.909,
+       "precision": 0.769,
+       "jaccard": 0.714,
+       "median_lag_s": 4.9594
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 7,
+     "alt": 6,
+     "matched": 6,
+     "recall": 0.857,
+     "precision": 1.0,
+     "jaccard": 0.857,
+     "median_lag_s": 7.8539,
+     "same_setup": 6,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 6,
+       "alt": 5,
+       "matched": 5,
+       "recall": 0.833,
+       "precision": 1.0,
+       "jaccard": 0.833,
+       "median_lag_s": 8.0032
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 7,
+    "net": -187.1,
+    "signals": 21,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": -100.3
+     },
+     "SCALP": {
+      "n": 6,
+      "net": -86.8
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 12,
+      "alt": 12,
+      "matched": 12,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 4,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 0.75,
+      "jaccard": 0.75,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 144,
+      "alt": 137,
+      "matched": 112,
+      "recall": 0.778,
+      "precision": 0.818,
+      "jaccard": 0.663,
+      "median_lag_s": 0.0223
+     }
+    },
+    "state_agree": {
+     "1m": 0.9868,
+     "5m": 0.9825,
+     "15m": 1.0,
+     "144t": 0.8563
+    },
+    "signals_vs_sip": {
+     "ref": 13,
+     "alt": 21,
+     "matched": 13,
+     "recall": 1.0,
+     "precision": 0.619,
+     "jaccard": 0.619,
+     "median_lag_s": -10.2653,
+     "same_setup": 13,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -43.5347
+      },
+      "SCALP": {
+       "ref": 11,
+       "alt": 19,
+       "matched": 11,
+       "recall": 1.0,
+       "precision": 0.579,
+       "jaccard": 0.579,
+       "median_lag_s": -10.2653
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 7,
+     "alt": 7,
+     "matched": 7,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": -4.3925,
+     "same_setup": 7,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 6,
+       "alt": 6,
+       "matched": 6,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -5.7997
+      }
+     }
+    },
+    "tick": 6
+   }
+  }
+ },
+ {
+  "day": "2026-09-16",
+  "print_share": {
+   "iex_prints": 25115,
+   "sip_prints": 683115,
+   "share": 0.0368,
+   "implied_tick": 5.3,
+   "by_bucket": {
+    "08:30": 0.0495,
+    "09:00": 0.0402,
+    "09:30": 0.0293,
+    "10:00": 0.0282,
+    "10:30": 0.0348,
+    "11:00": 0.0352,
+    "11:30": 0.0416,
+    "12:00": 0.0398,
+    "12:30": 0.0355,
+    "13:00": 0.0361,
+    "13:30": 0.0326,
+    "14:00": 0.0343,
+    "14:30": 0.0419
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 8,
+    "net": -3.98,
+    "signals": 12,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": -14.3
+     },
+     "SCALP": {
+      "n": 7,
+      "net": 10.32
+     }
+    }
+   },
+   "iex8": {
+    "trades": 5,
+    "net": 147.8,
+    "signals": 6,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": 143.76
+     },
+     "SCALP": {
+      "n": 4,
+      "net": 4.04
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 16,
+      "alt": 15,
+      "matched": 15,
+      "recall": 0.938,
+      "precision": 1.0,
+      "jaccard": 0.938,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 3,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 204,
+      "alt": 140,
+      "matched": 131,
+      "recall": 0.642,
+      "precision": 0.936,
+      "jaccard": 0.615,
+      "median_lag_s": 11.1074
+     }
+    },
+    "state_agree": {
+     "1m": 0.9788,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.7612
+    },
+    "signals_vs_sip": {
+     "ref": 12,
+     "alt": 6,
+     "matched": 6,
+     "recall": 0.5,
+     "precision": 1.0,
+     "jaccard": 0.5,
+     "median_lag_s": 6.3593,
+     "same_setup": 5,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 1,
+       "matched": 1,
+       "recall": 0.5,
+       "precision": 1.0,
+       "jaccard": 0.5,
+       "median_lag_s": 1.5082
+      },
+      "SCALP": {
+       "ref": 10,
+       "alt": 5,
+       "matched": 4,
+       "recall": 0.4,
+       "precision": 0.8,
+       "jaccard": 0.364,
+       "median_lag_s": 6.3593
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 8,
+     "alt": 5,
+     "matched": 4,
+     "recall": 0.5,
+     "precision": 0.8,
+     "jaccard": 0.444,
+     "median_lag_s": 6.3593,
+     "same_setup": 3,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 0,
+       "recall": 0.0,
+       "precision": 0.0,
+       "jaccard": 0.0,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 7,
+       "alt": 4,
+       "matched": 3,
+       "recall": 0.429,
+       "precision": 0.75,
+       "jaccard": 0.375,
+       "median_lag_s": 5.6277
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 7,
+    "net": -43.68,
+    "signals": 11,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 7,
+      "net": -43.68
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 16,
+      "alt": 15,
+      "matched": 15,
+      "recall": 0.938,
+      "precision": 1.0,
+      "jaccard": 0.938,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 3,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 204,
+      "alt": 198,
+      "matched": 173,
+      "recall": 0.848,
+      "precision": 0.874,
+      "jaccard": 0.755,
+      "median_lag_s": 0.0076
+     }
+    },
+    "state_agree": {
+     "1m": 0.9788,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8584
+    },
+    "signals_vs_sip": {
+     "ref": 12,
+     "alt": 11,
+     "matched": 10,
+     "recall": 0.833,
+     "precision": 0.909,
+     "jaccard": 0.769,
+     "median_lag_s": -0.6237,
+     "same_setup": 9,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 1,
+       "matched": 1,
+       "recall": 0.5,
+       "precision": 1.0,
+       "jaccard": 0.5,
+       "median_lag_s": -0.6283
+      },
+      "SCALP": {
+       "ref": 10,
+       "alt": 10,
+       "matched": 8,
+       "recall": 0.8,
+       "precision": 0.8,
+       "jaccard": 0.667,
+       "median_lag_s": 1.1049
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 8,
+     "alt": 7,
+     "matched": 5,
+     "recall": 0.625,
+     "precision": 0.714,
+     "jaccard": 0.5,
+     "median_lag_s": 3.8243,
+     "same_setup": 4,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 0,
+       "matched": 0,
+       "recall": 0.0,
+       "precision": null,
+       "jaccard": 0.0,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 7,
+       "alt": 7,
+       "matched": 4,
+       "recall": 0.571,
+       "precision": 0.571,
+       "jaccard": 0.4,
+       "median_lag_s": 4.5196
+      }
+     }
+    },
+    "tick": 5
+   }
+  }
+ },
+ {
+  "day": "2026-09-17",
+  "print_share": {
+   "iex_prints": 25201,
+   "sip_prints": 531213,
+   "share": 0.0474,
+   "implied_tick": 6.8,
+   "by_bucket": {
+    "08:30": 0.0434,
+    "09:00": 0.0334,
+    "09:30": 0.0263,
+    "10:00": 0.0322,
+    "10:30": 0.0385,
+    "11:00": 0.0554,
+    "11:30": 0.063,
+    "12:00": 0.0749,
+    "12:30": 0.0639,
+    "13:00": 0.0633,
+    "13:30": 0.0488,
+    "14:00": 0.0543,
+    "14:30": 0.0527
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 2,
+    "net": 113.52,
+    "signals": 7,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": 98.82
+     },
+     "SCALP": {
+      "n": 1,
+      "net": 14.7
+     }
+    }
+   },
+   "iex8": {
+    "trades": 2,
+    "net": 83.52,
+    "signals": 5,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": 98.82
+     },
+     "SCALP": {
+      "n": 1,
+      "net": -15.3
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 11,
+      "alt": 12,
+      "matched": 11,
+      "recall": 1.0,
+      "precision": 0.917,
+      "jaccard": 0.917,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 2,
+      "alt": 2,
+      "matched": 2,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 170,
+      "alt": 128,
+      "matched": 106,
+      "recall": 0.624,
+      "precision": 0.828,
+      "jaccard": 0.552,
+      "median_lag_s": 4.0051
+     }
+    },
+    "state_agree": {
+     "1m": 0.9762,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8049
+    },
+    "signals_vs_sip": {
+     "ref": 7,
+     "alt": 5,
+     "matched": 5,
+     "recall": 0.714,
+     "precision": 1.0,
+     "jaccard": 0.714,
+     "median_lag_s": 0.952,
+     "same_setup": 5,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 3.4608
+      },
+      "SCALP": {
+       "ref": 6,
+       "alt": 4,
+       "matched": 4,
+       "recall": 0.667,
+       "precision": 1.0,
+       "jaccard": 0.667,
+       "median_lag_s": -0.7137
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 2,
+     "alt": 2,
+     "matched": 2,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": 0.5407,
+     "same_setup": 2,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 3.4608
+      },
+      "SCALP": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -2.3795
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 3,
+    "net": 3.22,
+    "signals": 7,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 23.52
+     },
+     "SCALP": {
+      "n": 1,
+      "net": -20.3
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 11,
+      "alt": 12,
+      "matched": 11,
+      "recall": 1.0,
+      "precision": 0.917,
+      "jaccard": 0.917,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 2,
+      "alt": 2,
+      "matched": 2,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 170,
+      "alt": 144,
+      "matched": 115,
+      "recall": 0.676,
+      "precision": 0.799,
+      "jaccard": 0.578,
+      "median_lag_s": 0.3932
+     }
+    },
+    "state_agree": {
+     "1m": 0.9762,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.817
+    },
+    "signals_vs_sip": {
+     "ref": 7,
+     "alt": 7,
+     "matched": 4,
+     "recall": 0.571,
+     "precision": 0.571,
+     "jaccard": 0.4,
+     "median_lag_s": 0.4919,
+     "same_setup": 4,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 2,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 0.5,
+       "jaccard": 0.5,
+       "median_lag_s": -5.0316
+      },
+      "SCALP": {
+       "ref": 6,
+       "alt": 5,
+       "matched": 3,
+       "recall": 0.5,
+       "precision": 0.6,
+       "jaccard": 0.375,
+       "median_lag_s": 3.3633
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 2,
+     "alt": 3,
+     "matched": 2,
+     "recall": 1.0,
+     "precision": 0.667,
+     "jaccard": 0.667,
+     "median_lag_s": -3.7055,
+     "same_setup": 2,
+     "by_setup": {
+      "SWING": {
+       "ref": 1,
+       "alt": 2,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 0.5,
+       "jaccard": 0.5,
+       "median_lag_s": -5.0316
+      },
+      "SCALP": {
+       "ref": 1,
+       "alt": 1,
+       "matched": 1,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -2.3795
+      }
+     }
+    },
+    "tick": 7
+   }
+  }
+ },
+ {
+  "day": "2026-09-18",
+  "print_share": {
+   "iex_prints": 19218,
+   "sip_prints": 497730,
+   "share": 0.0386,
+   "implied_tick": 5.6,
+   "by_bucket": {
+    "08:30": 0.0317,
+    "09:00": 0.0346,
+    "09:30": 0.0262,
+    "10:00": 0.0303,
+    "10:30": 0.0294,
+    "11:00": 0.0338,
+    "11:30": 0.0476,
+    "12:00": 0.0385,
+    "12:30": 0.0375,
+    "13:00": 0.0551,
+    "13:30": 0.0509,
+    "14:00": 0.0431,
+    "14:30": 0.0492
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 4,
+    "net": 4.8,
+    "signals": 24,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 30.4
+     },
+     "SCALP": {
+      "n": 2,
+      "net": -25.6
+     }
+    }
+   },
+   "iex8": {
+    "trades": 4,
+    "net": 19.8,
+    "signals": 20,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 25.4
+     },
+     "SCALP": {
+      "n": 2,
+      "net": -5.6
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 16,
+      "alt": 16,
+      "matched": 15,
+      "recall": 0.938,
+      "precision": 0.938,
+      "jaccard": 0.882,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 3,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 133,
+      "alt": 86,
+      "matched": 72,
+      "recall": 0.541,
+      "precision": 0.837,
+      "jaccard": 0.49,
+      "median_lag_s": 8.7249
+     }
+    },
+    "state_agree": {
+     "1m": 0.9679,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8075
+    },
+    "signals_vs_sip": {
+     "ref": 24,
+     "alt": 20,
+     "matched": 19,
+     "recall": 0.792,
+     "precision": 0.95,
+     "jaccard": 0.76,
+     "median_lag_s": 2.6548,
+     "same_setup": 18,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 4,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 0.75,
+       "jaccard": 0.75,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 21,
+       "alt": 16,
+       "matched": 15,
+       "recall": 0.714,
+       "precision": 0.938,
+       "jaccard": 0.682,
+       "median_lag_s": 10.1493
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 4,
+     "alt": 4,
+     "matched": 4,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": 1.3274,
+     "same_setup": 4,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 53.2508
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 4,
+    "net": 54.8,
+    "signals": 25,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 25.4
+     },
+     "SCALP": {
+      "n": 2,
+      "net": 29.4
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 16,
+      "alt": 16,
+      "matched": 15,
+      "recall": 0.938,
+      "precision": 0.938,
+      "jaccard": 0.882,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 3,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 133,
+      "alt": 116,
+      "matched": 96,
+      "recall": 0.722,
+      "precision": 0.828,
+      "jaccard": 0.627,
+      "median_lag_s": 0.3376
+     }
+    },
+    "state_agree": {
+     "1m": 0.9679,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8633
+    },
+    "signals_vs_sip": {
+     "ref": 24,
+     "alt": 25,
+     "matched": 21,
+     "recall": 0.875,
+     "precision": 0.84,
+     "jaccard": 0.75,
+     "median_lag_s": -0.0067,
+     "same_setup": 20,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 4,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 0.75,
+       "jaccard": 0.75,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 21,
+       "alt": 21,
+       "matched": 17,
+       "recall": 0.81,
+       "precision": 0.81,
+       "jaccard": 0.68,
+       "median_lag_s": -0.2689
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 4,
+     "alt": 4,
+     "matched": 4,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": 1.3274,
+     "same_setup": 4,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 50.4127
+      }
+     }
+    },
+    "tick": 6
+   }
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "print_share": {
+   "iex_prints": 24226,
+   "sip_prints": 618500,
+   "share": 0.0392,
+   "implied_tick": 5.6,
+   "by_bucket": {
+    "08:30": 0.0363,
+    "09:00": 0.0422,
+    "09:30": 0.0323,
+    "10:00": 0.0286,
+    "10:30": 0.0178,
+    "11:00": 0.0285,
+    "11:30": 0.0428,
+    "12:00": 0.0462,
+    "12:30": 0.0389,
+    "13:00": 0.0571,
+    "13:30": 0.0487,
+    "14:00": 0.0467,
+    "14:30": 0.0515
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 0,
+    "net": 0,
+    "signals": 0,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    }
+   },
+   "iex8": {
+    "trades": 0,
+    "net": 0,
+    "signals": 0,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 17,
+      "alt": 16,
+      "matched": 14,
+      "recall": 0.824,
+      "precision": 0.875,
+      "jaccard": 0.737,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 181,
+      "alt": 118,
+      "matched": 105,
+      "recall": 0.58,
+      "precision": 0.89,
+      "jaccard": 0.541,
+      "median_lag_s": 4.3448
+     }
+    },
+    "state_agree": {
+     "1m": 0.9468,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.798
+    },
+    "signals_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 0,
+    "net": 0,
+    "signals": 0,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 17,
+      "alt": 16,
+      "matched": 14,
+      "recall": 0.824,
+      "precision": 0.875,
+      "jaccard": 0.737,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 181,
+      "alt": 156,
+      "matched": 128,
+      "recall": 0.707,
+      "precision": 0.821,
+      "jaccard": 0.612,
+      "median_lag_s": -0.0392
+     }
+    },
+    "state_agree": {
+     "1m": 0.9468,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8372
+    },
+    "signals_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "tick": 6
+   }
+  }
+ },
+ {
+  "day": "2026-09-22",
+  "print_share": {
+   "iex_prints": 16247,
+   "sip_prints": 441780,
+   "share": 0.0368,
+   "implied_tick": 5.3,
+   "by_bucket": {
+    "08:30": 0.0343,
+    "09:00": 0.0375,
+    "09:30": 0.0281,
+    "10:00": 0.0312,
+    "10:30": 0.0232,
+    "11:00": 0.0339,
+    "11:30": 0.039,
+    "12:00": 0.0404,
+    "12:30": 0.0293,
+    "13:00": 0.0457,
+    "13:30": 0.0469,
+    "14:00": 0.0378,
+    "14:30": 0.0486
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 0,
+    "net": 0,
+    "signals": 0,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    }
+   },
+   "iex8": {
+    "trades": 0,
+    "net": 0,
+    "signals": 0,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 15,
+      "alt": 15,
+      "matched": 15,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 3,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 135,
+      "alt": 68,
+      "matched": 58,
+      "recall": 0.43,
+      "precision": 0.853,
+      "jaccard": 0.4,
+      "median_lag_s": 5.8369
+     }
+    },
+    "state_agree": {
+     "1m": 0.9794,
+     "5m": 1.0,
+     "15m": null,
+     "144t": 0.784
+    },
+    "signals_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 0,
+    "net": 0,
+    "signals": 0,
+    "by_setup": {
+     "SWING": {
+      "n": 0,
+      "net": 0
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 15,
+      "alt": 15,
+      "matched": 15,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 3,
+      "alt": 3,
+      "matched": 3,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 135,
+      "alt": 129,
+      "matched": 99,
+      "recall": 0.733,
+      "precision": 0.767,
+      "jaccard": 0.6,
+      "median_lag_s": 0.0703
+     }
+    },
+    "state_agree": {
+     "1m": 0.9794,
+     "5m": 1.0,
+     "15m": null,
+     "144t": 0.8552
+    },
+    "signals_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 0,
+     "alt": 0,
+     "matched": 0,
+     "recall": null,
+     "precision": null,
+     "jaccard": null,
+     "median_lag_s": null,
+     "same_setup": 0,
+     "by_setup": {
+      "SWING": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    },
+    "tick": 5
+   }
+  }
+ },
+ {
+  "day": "2026-09-23",
+  "print_share": {
+   "iex_prints": 22142,
+   "sip_prints": 590917,
+   "share": 0.0375,
+   "implied_tick": 5.4,
+   "by_bucket": {
+    "08:30": 0.0406,
+    "09:00": 0.0371,
+    "09:30": 0.0319,
+    "10:00": 0.0269,
+    "10:30": 0.0257,
+    "11:00": 0.0274,
+    "11:30": 0.0398,
+    "12:00": 0.033,
+    "12:30": 0.0293,
+    "13:00": 0.0358,
+    "13:30": 0.03,
+    "14:00": 0.0431,
+    "14:30": 0.0576
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 2,
+    "net": -131.54,
+    "signals": 12,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": -131.54
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    }
+   },
+   "iex8": {
+    "trades": 2,
+    "net": -21.54,
+    "signals": 10,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": -21.54
+     },
+     "SCALP": {
+      "n": 0,
+      "net": 0
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 18,
+      "alt": 17,
+      "matched": 17,
+      "recall": 0.944,
+      "precision": 1.0,
+      "jaccard": 0.944,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 5,
+      "alt": 5,
+      "matched": 5,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 175,
+      "alt": 113,
+      "matched": 97,
+      "recall": 0.554,
+      "precision": 0.858,
+      "jaccard": 0.508,
+      "median_lag_s": 13.9183
+     }
+    },
+    "state_agree": {
+     "1m": 0.9779,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.7501
+    },
+    "signals_vs_sip": {
+     "ref": 12,
+     "alt": 10,
+     "matched": 10,
+     "recall": 0.833,
+     "precision": 1.0,
+     "jaccard": 0.833,
+     "median_lag_s": 3.8356,
+     "same_setup": 10,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 3,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 9,
+       "alt": 7,
+       "matched": 7,
+       "recall": 0.778,
+       "precision": 1.0,
+       "jaccard": 0.778,
+       "median_lag_s": 40.1574
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 2,
+     "alt": 2,
+     "matched": 2,
+     "recall": 1.0,
+     "precision": 1.0,
+     "jaccard": 1.0,
+     "median_lag_s": 0.0,
+     "same_setup": 2,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 0,
+       "matched": 0,
+       "recall": null,
+       "precision": null,
+       "jaccard": null,
+       "median_lag_s": null
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 2,
+    "net": 23.46,
+    "signals": 13,
+    "by_setup": {
+     "SWING": {
+      "n": 1,
+      "net": 53.76
+     },
+     "SCALP": {
+      "n": 1,
+      "net": -30.3
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 18,
+      "alt": 17,
+      "matched": 17,
+      "recall": 0.944,
+      "precision": 1.0,
+      "jaccard": 0.944,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 5,
+      "alt": 5,
+      "matched": 5,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 175,
+      "alt": 170,
+      "matched": 128,
+      "recall": 0.731,
+      "precision": 0.753,
+      "jaccard": 0.59,
+      "median_lag_s": -0.3528
+     }
+    },
+    "state_agree": {
+     "1m": 0.9779,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8464
+    },
+    "signals_vs_sip": {
+     "ref": 12,
+     "alt": 13,
+     "matched": 11,
+     "recall": 0.917,
+     "precision": 0.846,
+     "jaccard": 0.786,
+     "median_lag_s": 3.092,
+     "same_setup": 11,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 2,
+       "matched": 2,
+       "recall": 0.667,
+       "precision": 1.0,
+       "jaccard": 0.667,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 9,
+       "alt": 11,
+       "matched": 9,
+       "recall": 1.0,
+       "precision": 0.818,
+       "jaccard": 0.818,
+       "median_lag_s": 5.9893
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 2,
+     "alt": 2,
+     "matched": 1,
+     "recall": 0.5,
+     "precision": 0.5,
+     "jaccard": 0.333,
+     "median_lag_s": 0.0,
+     "same_setup": 1,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 1,
+       "matched": 1,
+       "recall": 0.5,
+       "precision": 1.0,
+       "jaccard": 0.5,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 0,
+       "alt": 1,
+       "matched": 0,
+       "recall": null,
+       "precision": 0.0,
+       "jaccard": 0.0,
+       "median_lag_s": null
+      }
+     }
+    },
+    "tick": 5
+   }
+  }
+ },
+ {
+  "day": "2026-09-24",
+  "print_share": {
+   "iex_prints": 21506,
+   "sip_prints": 576513,
+   "share": 0.0373,
+   "implied_tick": 5.4,
+   "by_bucket": {
+    "08:30": 0.0406,
+    "09:00": 0.0287,
+    "09:30": 0.0281,
+    "10:00": 0.0365,
+    "10:30": 0.0317,
+    "11:00": 0.0316,
+    "11:30": 0.0421,
+    "12:00": 0.0397,
+    "12:30": 0.0297,
+    "13:00": 0.0323,
+    "13:30": 0.0337,
+    "14:00": 0.0339,
+    "14:30": 0.0559
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 9,
+    "net": -86.4,
+    "signals": 14,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 92.46
+     },
+     "SCALP": {
+      "n": 7,
+      "net": -178.86
+     }
+    }
+   },
+   "iex8": {
+    "trades": 6,
+    "net": 469.32,
+    "signals": 9,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 488.46
+     },
+     "SCALP": {
+      "n": 4,
+      "net": -19.14
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 15,
+      "alt": 15,
+      "matched": 14,
+      "recall": 0.933,
+      "precision": 0.933,
+      "jaccard": 0.875,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 4,
+      "alt": 3,
+      "matched": 3,
+      "recall": 0.75,
+      "precision": 1.0,
+      "jaccard": 0.75,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 158,
+      "alt": 91,
+      "matched": 75,
+      "recall": 0.475,
+      "precision": 0.824,
+      "jaccard": 0.431,
+      "median_lag_s": 3.2199
+     }
+    },
+    "state_agree": {
+     "1m": 0.9923,
+     "5m": 0.9853,
+     "15m": 1.0,
+     "144t": 0.7532
+    },
+    "signals_vs_sip": {
+     "ref": 14,
+     "alt": 9,
+     "matched": 9,
+     "recall": 0.643,
+     "precision": 1.0,
+     "jaccard": 0.643,
+     "median_lag_s": 50.9448,
+     "same_setup": 8,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 3,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 11,
+       "alt": 6,
+       "matched": 6,
+       "recall": 0.545,
+       "precision": 1.0,
+       "jaccard": 0.545,
+       "median_lag_s": 55.4338
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 9,
+     "alt": 6,
+     "matched": 5,
+     "recall": 0.556,
+     "precision": 0.833,
+     "jaccard": 0.5,
+     "median_lag_s": 50.9448,
+     "same_setup": 5,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0177
+      },
+      "SCALP": {
+       "ref": 7,
+       "alt": 4,
+       "matched": 3,
+       "recall": 0.429,
+       "precision": 0.75,
+       "jaccard": 0.375,
+       "median_lag_s": 59.9228
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 8,
+    "net": 285.72,
+    "signals": 12,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 488.46
+     },
+     "SCALP": {
+      "n": 6,
+      "net": -202.74
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 15,
+      "alt": 15,
+      "matched": 14,
+      "recall": 0.933,
+      "precision": 0.933,
+      "jaccard": 0.875,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 4,
+      "alt": 3,
+      "matched": 3,
+      "recall": 0.75,
+      "precision": 1.0,
+      "jaccard": 0.75,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 1,
+      "alt": 1,
+      "matched": 1,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "144t": {
+      "ref": 158,
+      "alt": 163,
+      "matched": 119,
+      "recall": 0.753,
+      "precision": 0.73,
+      "jaccard": 0.589,
+      "median_lag_s": -2.0927
+     }
+    },
+    "state_agree": {
+     "1m": 0.9923,
+     "5m": 0.9853,
+     "15m": 1.0,
+     "144t": 0.8267
+    },
+    "signals_vs_sip": {
+     "ref": 14,
+     "alt": 12,
+     "matched": 11,
+     "recall": 0.786,
+     "precision": 0.917,
+     "jaccard": 0.733,
+     "median_lag_s": 10.2543,
+     "same_setup": 10,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 3,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 11,
+       "alt": 9,
+       "matched": 8,
+       "recall": 0.727,
+       "precision": 0.889,
+       "jaccard": 0.667,
+       "median_lag_s": 27.622
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 9,
+     "alt": 8,
+     "matched": 7,
+     "recall": 0.778,
+     "precision": 0.875,
+     "jaccard": 0.7,
+     "median_lag_s": 10.2543,
+     "same_setup": 7,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0177
+      },
+      "SCALP": {
+       "ref": 7,
+       "alt": 6,
+       "matched": 5,
+       "recall": 0.714,
+       "precision": 0.833,
+       "jaccard": 0.625,
+       "median_lag_s": 44.9897
+      }
+     }
+    },
+    "tick": 5
+   }
+  }
+ },
+ {
+  "day": "2026-09-25",
+  "print_share": {
+   "iex_prints": 19252,
+   "sip_prints": 530094,
+   "share": 0.0363,
+   "implied_tick": 5.2,
+   "by_bucket": {
+    "08:30": 0.0382,
+    "09:00": 0.0362,
+    "09:30": 0.025,
+    "10:00": 0.0212,
+    "10:30": 0.0289,
+    "11:00": 0.0351,
+    "11:30": 0.0408,
+    "12:00": 0.0386,
+    "12:30": 0.0362,
+    "13:00": 0.0415,
+    "13:30": 0.0347,
+    "14:00": 0.0441,
+    "14:30": 0.0507
+   }
+  },
+  "variants": {
+   "sip144": {
+    "trades": 9,
+    "net": -320.34,
+    "signals": 17,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": -240.54
+     },
+     "SCALP": {
+      "n": 7,
+      "net": -79.8
+     }
+    }
+   },
+   "iex8": {
+    "trades": 5,
+    "net": -73.32,
+    "signals": 6,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 21.46
+     },
+     "SCALP": {
+      "n": 3,
+      "net": -94.78
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 19,
+      "alt": 19,
+      "matched": 18,
+      "recall": 0.947,
+      "precision": 0.947,
+      "jaccard": 0.9,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 4,
+      "alt": 4,
+      "matched": 4,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 142,
+      "alt": 84,
+      "matched": 70,
+      "recall": 0.493,
+      "precision": 0.833,
+      "jaccard": 0.449,
+      "median_lag_s": 9.6405
+     }
+    },
+    "state_agree": {
+     "1m": 0.9768,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.7551
+    },
+    "signals_vs_sip": {
+     "ref": 17,
+     "alt": 6,
+     "matched": 6,
+     "recall": 0.353,
+     "precision": 1.0,
+     "jaccard": 0.353,
+     "median_lag_s": -0.5086,
+     "same_setup": 6,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 3,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": 0.0
+      },
+      "SCALP": {
+       "ref": 14,
+       "alt": 3,
+       "matched": 3,
+       "recall": 0.214,
+       "precision": 1.0,
+       "jaccard": 0.214,
+       "median_lag_s": -1.0172
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 9,
+     "alt": 5,
+     "matched": 5,
+     "recall": 0.556,
+     "precision": 1.0,
+     "jaccard": 0.556,
+     "median_lag_s": -1.0172,
+     "same_setup": 5,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -8.666
+      },
+      "SCALP": {
+       "ref": 7,
+       "alt": 3,
+       "matched": 3,
+       "recall": 0.429,
+       "precision": 1.0,
+       "jaccard": 0.429,
+       "median_lag_s": -1.0172
+      }
+     }
+    }
+   },
+   "iexN": {
+    "trades": 9,
+    "net": -111.34,
+    "signals": 16,
+    "by_setup": {
+     "SWING": {
+      "n": 2,
+      "net": 21.46
+     },
+     "SCALP": {
+      "n": 7,
+      "net": -132.8
+     }
+    },
+    "cross_up": {
+     "1m": {
+      "ref": 19,
+      "alt": 19,
+      "matched": 18,
+      "recall": 0.947,
+      "precision": 0.947,
+      "jaccard": 0.9,
+      "median_lag_s": 0.0
+     },
+     "5m": {
+      "ref": 4,
+      "alt": 4,
+      "matched": 4,
+      "recall": 1.0,
+      "precision": 1.0,
+      "jaccard": 1.0,
+      "median_lag_s": 0.0
+     },
+     "15m": {
+      "ref": 0,
+      "alt": 0,
+      "matched": 0,
+      "recall": null,
+      "precision": null,
+      "jaccard": null,
+      "median_lag_s": null
+     },
+     "144t": {
+      "ref": 142,
+      "alt": 155,
+      "matched": 117,
+      "recall": 0.824,
+      "precision": 0.755,
+      "jaccard": 0.65,
+      "median_lag_s": 0.4733
+     }
+    },
+    "state_agree": {
+     "1m": 0.9768,
+     "5m": 1.0,
+     "15m": 1.0,
+     "144t": 0.8377
+    },
+    "signals_vs_sip": {
+     "ref": 17,
+     "alt": 16,
+     "matched": 13,
+     "recall": 0.765,
+     "precision": 0.812,
+     "jaccard": 0.65,
+     "median_lag_s": -4.928,
+     "same_setup": 13,
+     "by_setup": {
+      "SWING": {
+       "ref": 3,
+       "alt": 3,
+       "matched": 3,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -17.332
+      },
+      "SCALP": {
+       "ref": 14,
+       "alt": 13,
+       "matched": 10,
+       "recall": 0.714,
+       "precision": 0.769,
+       "jaccard": 0.588,
+       "median_lag_s": -2.4483
+      }
+     }
+    },
+    "taken_vs_sip": {
+     "ref": 9,
+     "alt": 9,
+     "matched": 8,
+     "recall": 0.889,
+     "precision": 0.889,
+     "jaccard": 0.8,
+     "median_lag_s": -6.9169,
+     "same_setup": 8,
+     "by_setup": {
+      "SWING": {
+       "ref": 2,
+       "alt": 2,
+       "matched": 2,
+       "recall": 1.0,
+       "precision": 1.0,
+       "jaccard": 1.0,
+       "median_lag_s": -8.666
+      },
+      "SCALP": {
+       "ref": 7,
+       "alt": 7,
+       "matched": 6,
+       "recall": 0.857,
+       "precision": 0.857,
+       "jaccard": 0.75,
+       "median_lag_s": -6.9169
+      }
+     }
+    },
+    "tick": 5
+   }
+  }
+ }
+]
