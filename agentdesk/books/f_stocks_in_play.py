@@ -58,6 +58,23 @@ def rvol5(today_vol, hist_vols: list) -> float | None:
     return today_vol / base if base > 0 else None
 
 
+# ------------------------------------------------------------------ universe (07:30 CT)
+def universe(daily: dict[str, list[dict]], sp500, cfg: dict) -> dict[str, dict]:
+    """Section 3 universe from daily bars through yesterday: the top N S&P 500 names by 20-day average dollar volume
+    plus the extras, then prior close >= min_price, ATR14 >= min_atr and 20-day dollar volume >= the floor.
+    Names with fewer than 20 daily bars are left out (new listings enter once they have 20)."""
+    u = cfg["universe"]
+    info = {}
+    for s, bars in daily.items():
+        if len(bars) < 20:
+            continue
+        info[s] = {"atr": atr14(bars), "dv20": sum(b["c"] * b["v"] for b in bars[-20:]) / 20, "close": bars[-1]["c"]}
+    top = sorted((s for s in info if s in sp500), key=lambda s: -info[s]["dv20"])[:u["top_sp500_by_dollar_vol"]]
+    names = set(top) | {s for s in u.get("extra", []) if s in info}
+    return {s: info[s] for s in names if info[s]["close"] >= u["min_price"] and info[s]["atr"] is not None
+            and info[s]["atr"] >= u["min_atr"] and info[s]["dv20"] >= u["min_dollar_vol_20d"]}
+
+
 # ------------------------------------------------------------------ scan
 @dataclass
 class ScanRow:
@@ -91,6 +108,17 @@ class ScanResult:
     rows: list[ScanRow]
     picks: list[ScanRow]
     shorts: list[ScanRow]
+
+
+def scan_row(sym: str, info: dict, bars: list[dict], past_vols: list) -> ScanRow | None:
+    """The opening-range row for one name from its 09:30-09:34 ET 1-minute bars (t = minutes after midnight ET).
+    No bars: None (the name is dropped, never guessed)."""
+    bs = sorted((b for b in bars if 570 <= b["t"] < 575), key=lambda b: b["t"])
+    if not bs:
+        return None
+    vol = sum(b["v"] for b in bs)
+    return ScanRow(sym, rvol5(vol, past_vols), bs[0]["o"], bs[-1]["c"], max(b["h"] for b in bs),
+                   min(b["l"] for b in bs), vol, info["atr"], info["dv20"])
 
 
 def rank_candidates(rows: list[ScanRow], cfg: dict) -> ScanResult:
@@ -245,3 +273,18 @@ def bar_entry_then_stop(bar: dict, or_high: float, limit: float, atr: float, cfg
         return None
     stop = stop_price(fill, atr, cfg)
     return fill, stop, (_dn(stop, slip_bp) if bar["l"] <= stop else None)
+
+
+def bar_short_entry_fill(bar: dict, or_low: float, slip_bp: float = 0.0) -> float | None:
+    """Would-be short (logged only): sell-stop at the OR low; a gap below fills at the open."""
+    if bar["l"] >= or_low:
+        return None
+    return _dn(min(or_low, bar["o"]), slip_bp)
+
+
+def bar_short_stop_fill(bar: dict, stop: float, slip_bp: float = 0.0) -> float | None:
+    if bar["o"] >= stop:
+        return _up(bar["o"], slip_bp)
+    if bar["h"] >= stop:
+        return _up(stop, slip_bp)
+    return None

@@ -254,16 +254,8 @@ def universe_for_day(today: date, data, sp500, extras, cfg) -> dict[str, dict]:
 
 
 def scan_day(uni: dict, or_bars: dict, hist: list[dict], cfg) -> F.ScanResult:
-    rows = []
-    for s, info in uni.items():
-        bs = sorted((b for b in or_bars.get(s, []) if OR_START <= b["t"] < SCAN), key=lambda b: b["t"])
-        if not bs:
-            continue
-        vol = sum(b["v"] for b in bs)
-        past = [h[s] for h in hist if s in h]
-        rows.append(F.ScanRow(s, F.rvol5(vol, past), bs[0]["o"], bs[-1]["c"], max(b["h"] for b in bs),
-                              min(b["l"] for b in bs), vol, info["atr"], info["dv20"]))
-    return F.rank_candidates(rows, cfg)
+    rows = [F.scan_row(s, info, or_bars.get(s, []), [h[s] for h in hist if s in h]) for s, info in uni.items()]
+    return F.rank_candidates([r for r in rows if r is not None], cfg)
 
 
 # ------------------------------------------------------------------ one day

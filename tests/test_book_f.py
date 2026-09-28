@@ -274,3 +274,63 @@ def test_rh_inspect_equity_section_reviews_and_never_places():
     assert not any(t.startswith(("place_", "cancel_")) for t in tools)
     rev = next(a for t, a in rh.calls if t == "review_equity_order")
     assert rev["quantity"] == "1" and rev["symbol"] == "SPY"
+
+
+# ------------------------------------------------------------------ universe and scan rows (live path)
+def _daily(n, px=100.0, rng=2.0, vol=2_000_000):
+    return [{"d": date(2026, 8, 1), "o": px, "h": px + rng / 2, "l": px - rng / 2, "c": px, "v": vol}] * n
+
+
+def test_universe_top_n_plus_extras_then_filters():
+    data = {"BIG": _daily(25, vol=5_000_000), "SMALL": _daily(25, vol=500_000), "CHEAP": _daily(25, px=8, vol=5e7),
+            "CALM": _daily(25, rng=0.2, vol=5_000_000), "NEW": _daily(10, vol=5_000_000), "NVDA": _daily(25, vol=5e6),
+            "OTHER": _daily(25, vol=9e6)}                 # not in the S&P list and not an extra
+    cfg = {**CFG, "universe": {**CFG["universe"], "extra": ["NVDA"]}}
+    uni = F.universe(data, sp500={"BIG", "SMALL", "CHEAP", "CALM", "NEW"}, cfg=cfg)
+    assert set(uni) == {"BIG", "NVDA"}
+    assert uni["BIG"] == {"atr": pytest.approx(2.0), "dv20": pytest.approx(5e8), "close": 100.0}
+
+
+def test_scan_row_from_the_opening_five_minutes():
+    bars = [{"t": 570 + i, "o": 100 + i * 0.1, "h": 100.3 + i * 0.1, "l": 99.9, "c": 100.1 + i * 0.1, "v": 600}
+            for i in range(5)]
+    r = F.scan_row("AAA", {"atr": 2.0, "dv20": 5e8, "close": 99}, bars + [{"t": 575, "o": 1, "h": 999, "l": 1, "c": 1, "v": 9}],
+                   [1000] * 14)
+    assert (r.open, r.close, r.or_high, r.or_low, r.vol5) == (100, pytest.approx(100.5), pytest.approx(100.7), 99.9, 3000)
+    assert r.rvol5 == pytest.approx(3.0) and r.direction == "green"
+    assert F.scan_row("AAA", {"atr": 2.0, "dv20": 5e8, "close": 99}, [], [1000] * 14) is None
+
+
+def test_research_universe_matches_the_live_rule():
+    import importlib.util
+    import random
+    from datetime import timedelta
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("sfi", Path(__file__).resolve().parent.parent / "research" / "strategy_f_intraday.py")
+    R = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(R)
+    rnd = random.Random(3)
+    ds = [date(2025, 1, 1) + timedelta(days=i) for i in range(60)]
+    data = {}
+    for s in [f"S{i}" for i in range(12)] + ["NVDA"]:
+        px = rnd.uniform(5, 300)
+        data[s] = [{"d": d, "o": px, "h": px * (1 + rnd.uniform(0, 0.04)), "l": px * (1 - rnd.uniform(0, 0.04)),
+                    "c": px * (1 + rnd.uniform(-0.02, 0.02)), "v": rnd.uniform(1e5, 2e7)} for d in ds]
+    sp = {f"S{i}" for i in range(12)}
+    cfg = {**CFG, "universe": {**CFG["universe"], "top_sp500_by_dollar_vol": 6, "extra": ["NVDA"]}}
+    today = ds[-1]
+    live = F.universe({s: [b for b in bs if b["d"] < today] for s, bs in data.items()}, sp, cfg)
+    back = R.universe_for_day(today, data, sp, ["NVDA"], cfg)
+    assert set(live) == set(back)
+    for s in live:
+        assert live[s]["atr"] == pytest.approx(back[s]["atr"]) and live[s]["dv20"] == pytest.approx(back[s]["dv20"])
+
+
+# ------------------------------------------------------------------ shadow shorts (log only)
+def test_short_bar_rules_mirror_the_long_ones():
+    assert F.bar_short_entry_fill(B(100.5, 100.6, 100.0, 100.2), or_low=100.0) is None          # touch only
+    assert F.bar_short_entry_fill(B(100.5, 100.6, 99.8, 99.9), or_low=100.0) == pytest.approx(100.0)
+    assert F.bar_short_entry_fill(B(99.5, 99.9, 99.2, 99.4), or_low=100.0) == pytest.approx(99.5)   # gap down: open
+    assert F.bar_short_stop_fill(B(101.0, 101.2, 100.9, 101.1), stop=100.5) == pytest.approx(101.0)
+    assert F.bar_short_stop_fill(B(100.2, 100.6, 100.1, 100.3), stop=100.5) == pytest.approx(100.5)
+    assert F.bar_short_stop_fill(B(100.2, 100.4, 100.1, 100.3), stop=100.5) is None
