@@ -15,7 +15,7 @@ import sys
 import webbrowser
 from datetime import date
 
-from .config import expand, load_config
+from .config import expand, load_config, set_tick_bar_for_feed
 
 
 def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
@@ -32,10 +32,9 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         quotes = SimQuotes(feed)
     elif provider == "alpaca":
         from .feeds.alpaca import AlpacaFeed, AlpacaQuotes
-        if cfg["data"]["alpaca"]["feed"] == "iex" and cfg["strategy"].get("tick_bar_size_iex"):
-            cfg["strategy"]["tick_bar_effective"] = cfg["strategy"]["tick_bar_size_iex"]
-            logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)",
-                                                   cfg["strategy"]["tick_bar_size_iex"])
+        n = set_tick_bar_for_feed(cfg, cfg["data"]["alpaca"]["feed"])
+        if n != cfg["strategy"]["tick_bar_size"]:
+            logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)", n)
         feed = AlpacaFeed(cfg)
         quotes = AlpacaQuotes(cfg)
     elif provider == "massive":
