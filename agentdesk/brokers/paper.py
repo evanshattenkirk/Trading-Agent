@@ -10,6 +10,8 @@ _ids = itertools.count(1)
 
 class PaperBroker(Broker):
     name = "paper"
+    combo_model = "mid_offset"      # mid_offset | natural (books.fills.model)
+    combo_cents = 0.01              # $ per leg off mid (mid_offset)
 
     def __init__(self, quotes, slippage: float = 0.0):
         self.quotes = quotes
@@ -31,3 +33,20 @@ class PaperBroker(Broker):
         if side == "sell" and limit - q.bid <= 0.01:
             return OrderResult("filled", qty, round(limit, 2), oid)
         return OrderResult("unfilled", 0, 0.0, oid, f"limit {limit:.2f} vs {q.bid:.2f}/{q.ask:.2f}")
+
+    async def submit_combo(self, legs, contracts, qty: int, limit: float, credit: bool, opening: bool, now: float) -> OrderResult:
+        """Multi-leg paper fill. The fair price is mid -/+ combo_cents per leg, never worse than natural; a limit at
+        or through it fills there, a less aggressive one rests unfilled. All-or-nothing."""
+        from ..books.combo import ComboQuote, paper_fair
+        qs = [await self.quotes.quote(c) for c in contracts]
+        if any(q is None for q in qs):
+            return OrderResult("rejected", message="no quote on a leg")
+        cq = ComboQuote(legs, qs)
+        fair = paper_fair(cq, credit, opening, self.combo_model, self.combo_cents)
+        receiving = credit == opening
+        marketable = limit <= fair + 1e-9 if receiving else limit >= fair - 1e-9
+        oid = f"paper-{next(_ids)}"
+        extra = {"mid": cq.mid(credit), "natural": cq.natural(credit, opening)}
+        if marketable:
+            return OrderResult("filled", qty, fair, oid, raw=extra)
+        return OrderResult("unfilled", 0, 0.0, oid, f"limit {limit:.2f} vs fair {fair:.2f}", raw=extra)
