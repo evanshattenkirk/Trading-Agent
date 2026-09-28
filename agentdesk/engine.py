@@ -68,6 +68,7 @@ class Engine:
         self._errors = 0            # consecutive failed background tasks (broker/API errors)
         self._last_reconcile = 0.0
         self._mismatches = 0
+        self.books = None           # BookHost for paper books B/C/D (books/host.py); None when none is enabled
 
     # ------------------------------------------------------------------ lifecycle
     async def run(self) -> None:
@@ -83,6 +84,10 @@ class Engine:
         if stale:
             self.risk.halt(f"{len(stale)} option position(s) already open in the account at startup; close them in the app, then restart")
             self.bus.emit("log", self.feed.now(), level="warn", msg=self.risk.st.halt_reason)
+        if self.books:
+            if self.risk.st.halted:
+                self.books.halt_all(self.risk.st.halt_reason)
+            await self.books.start()
         self.set_agent(self.feed.now(), "arriving", "Booting up. Loading history...")
         if self.l2 and self.l2.enabled and self.l2_rh is not None and not self.inline:
             asyncio.create_task(self.l2.run_live(self.l2_rh, lambda st: self._on_l2(st, st.ts)))
@@ -194,6 +199,8 @@ class Engine:
         if self.open and now - self._last_manage >= poll:
             self._last_manage = now
             await self._run(self.manage(now), "manage")
+        if self.books:
+            await self._run(self.books.on_second(now), "books")
         self._watchdog(now)
 
     def _new_day(self, d, now: float) -> None:
@@ -256,6 +263,8 @@ class Engine:
         """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions."""
         first = not (self.risk.st.halted and self.risk.st.flatten_all)
         self.risk.halt(f"SAFETY: {reason}", flatten=True)
+        if self.books:
+            self.books.halt_all(f"SAFETY: {reason}", flatten=True)
         if not first:
             return
         log.error("SAFETY HALT: %s", reason)
@@ -272,10 +281,12 @@ class Engine:
 
     def _watchdog(self, now: float) -> None:
         stale = self.wd["quote_stale_sec"]
-        for pos, _ in self.open:
+        held = [p for p, _ in self.open] + (self.books.positions() if self.books else [])
+        for pos in held:
             age = now - pos.last_quote_ts
             if age > stale:
-                self._trip(f"no fresh quote for {pos.contract.label} in {age:.0f}s, stop can't be checked", now)
+                label = getattr(pos, "label", None) or pos.contract.label
+                self._trip(f"no fresh quote for {label} in {age:.0f}s, stop can't be checked", now)
                 break
         rs = self.wd["reconcile_sec"]
         if self.broker.live and rs and now - self._last_reconcile >= rs and not self._busy.locked() \
@@ -337,6 +348,8 @@ class Engine:
                 es = self.sig.evaluate(now, self.price or b.c)
                 if es:
                     await self._run(self.enter(es), "entry")
+        if self.books and b.tf in ("1m", "5m"):
+            await self._run(self.books.on_bar(b), "books")
 
     def _levels_payload(self) -> list:
         px = self.price or 0
@@ -596,6 +609,8 @@ class Engine:
             except Exception as ex:             # keep going: the other positions and the cancels still matter
                 log.exception("kill: exit %s failed", pos.contract.label)
                 self.bus.emit("log", now, level="error", msg=f"kill: exit {pos.contract.label} failed: {ex}")
+        if self.books:
+            await self.books.kill(now)
         await self._cancel_all_quietly()
         self.bus.emit("risk", now, risk=self.risk.to_dict())
 
@@ -603,6 +618,8 @@ class Engine:
         now = self.feed.now()
         for pos, plan in list(self.open):
             await self.exit(pos, plan, ExitIntent(pos.qty, reason, urgent=True), now)
+        if self.books:
+            await self.books.flatten(reason, now)
 
     def pause(self, on: bool) -> None:
         self.risk.st.paused = on
@@ -649,4 +666,5 @@ class Engine:
             "l2": ({"book": self.l2.latest.to_dict() if self.l2.latest else None, "mode": self.l2.mode}
                    if self.l2 else None),
             "config": {k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")},
+            "books": self.books.snapshot() if self.books else None,
         }

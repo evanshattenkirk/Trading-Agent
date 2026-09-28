@@ -17,7 +17,20 @@ from datetime import date
 from .config import expand, load_config
 
 
+def check_live_promotion(cfg, mode: str) -> None:
+    """Live mode needs exactly one promoted book (paper_only: false). Only book A has a live order path in this
+    build, so A is the only book that can be promoted (HANDOFF sections 10.8 and 12)."""
+    if mode != "live":
+        return
+    promoted = [k for k, v in (cfg.get("books") or {}).items()
+                if isinstance(v, dict) and v.get("enabled") and v.get("paper_only") is False]
+    if promoted != ["A_macd_calls"]:
+        raise SystemExit("Refusing live mode: set paper_only: false on exactly one book, and only A_macd_calls has a "
+                         f"live order path. Promoted now: {promoted or 'none'}.")
+
+
 def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
+    check_live_promotion(cfg, mode)
     from .brokers.paper import PaperBroker
     from .bus import Bus
     from .crew import Crew
@@ -33,6 +46,8 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         from .feeds.alpaca import AlpacaFeed, AlpacaQuotes
         if cfg["data"]["alpaca"]["feed"] == "iex" and cfg["strategy"].get("tick_bar_size_iex"):
             cfg["strategy"]["tick_bar_effective"] = cfg["strategy"]["tick_bar_size_iex"]
+            if isinstance(cfg.get("books", {}).get("C_orb_bull_put"), dict):
+                cfg["books"]["C_orb_bull_put"]["reset_volume_on_live"] = True
             logging.getLogger("agentdesk").warning("IEX feed: 144t series built from %s IEX prints (approximation)",
                                                    cfg["strategy"]["tick_bar_size_iex"])
         feed = AlpacaFeed(cfg)
@@ -75,6 +90,11 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
         engine.simbook = SimBook(seed)
     elif rh is not None:
         engine.l2_rh = rh
+    from .books.host import BookHost
+    from .books.vol import RobinhoodVix, SimVix
+    vix = SimVix(feed) if provider == "sim" else (RobinhoodVix(rh) if rh is not None else None)
+    host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
+    engine.books = host if host.enabled else None
     return engine, bus
 
 

@@ -191,8 +191,8 @@ class BookHost:
     def _vix1d_flag(self, d) -> bool | None:
         crew = self.e.crew
         b = (crew.briefs.get("vol") if crew else None) or {}
-        if b.get("day") != str(d) or "vix1d_flag" not in b:
-            return None
+        if "vix1d_flag" not in b or not b.get("ts") or session_date(b["ts"]) != d:
+            return None             # crew briefs carry the time they were given; only today's answer counts
         return bool(b["vix1d_flag"])
 
     async def _ensure_vix(self, now: float) -> None:

@@ -48,7 +48,9 @@ DESKS = {
     "macro": Desk("macro", "Macro", "US economic calendar and data surprises today: CPI, PPI, NFP, jobless claims, ISM, retail sales, GDP, PCE, consumer sentiment. Times in CT, consensus vs prior, and what a miss does to SPY."),
     "rates": Desk("rates", "Rates", "Treasury market: 2Y and 10Y yields and their change today, curve shape, Treasury auctions today, and whether rates are a headwind or tailwind for equities intraday."),
     "fed": Desk("fed", "Fed Watch", "Federal Reserve: FOMC decision/minutes/presser timing if today, Fed speakers scheduled today with CT times, fed-funds futures pricing shifts."),
-    "vol": Desk("vol", "Vol", "Volatility: VIX level and change, VIX9D vs VIX term structure, SPY 0DTE expected move from the ATM straddle if available, and whether the tape favors trend or chop."),
+    "vol": Desk("vol", "Vol", "Volatility: VIX level and change, VIX9D vs VIX term structure, SPY 0DTE expected move from the ATM straddle if available, and whether the tape favors trend or chop."
+                 " Also report vix1d_flag: true when VIX1D is more than 3 points above VIX, false when it isn't; leave it"
+                 " out if you can't find VIX1D (book B skips the day on true)."),
     "quant": Desk("quant", "Quant", "Reviews the engine's own trades today: win rate, avg win/loss, which setup and time windows are working, whether the market is chopping the MACD triggers.", uses_web=False),
     "risk": Desk("risk", "Risk", "Deterministic risk manager.", uses_web=False),
     "tape": Desk("tape", "Tape", "Level 2 order book reader.", uses_web=False),
