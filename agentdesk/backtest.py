@@ -140,7 +140,7 @@ async def _trades_cached(day: date, feed: str):
     import numpy as np
     cache = Path(os.path.expanduser("~/.agentdesk/cache"))
     cache.mkdir(parents=True, exist_ok=True)
-    f = cache / f"SPY_trades_{feed}_{day}.npz"
+    f = cache / f"SPY_trades_{feed}_{day}_clean.npz"      # bad prints dropped at download (feeds/prints.py)
     if not f.exists():
         start = datetime.fromtimestamp(at_ct(day, time(8, 30)), timezone.utc)
         end = datetime.fromtimestamp(at_ct(day, time(15, 0)), timezone.utc)
