@@ -79,3 +79,32 @@ A candidate is recommended for a paper book only if all hold:
 4. At least 1 lot fits the $300 per-position cap.
 At most two are recommended. Every recommendation still needs the real-quote replay (ThetaData) before paper
 promotion; F1 and F2 can run on the same-day-expiry pull, F3 and F4 need next-day expiry quotes as well.
+
+## Addendum 1 (2026-09-28, after the first F1-F4 run, before any G run)
+
+### Two metric fixes found in the first run (they change no rule or trade)
+- **Break-even s** is now computed on the fixed set of trades taken at s = 1. The first run re-applied the $0.10
+  minimum credit at every s, so the trade set shrank as s fell and the search returned its lower bound (0.40)
+  for F1, F2 and F4. The s = 0.75 table rows still re-apply the minimum credit, because real cheaper premium would
+  also skip those days.
+- **Capacity** is now per trade, `floor($300 / that trade's max loss)`, and "fits the cap" means the median trade
+  fits at least 1 lot. The first run divided by the single largest max loss in the whole period (for F3 a $755
+  debit in 2008), which reported 0 lots although about 90% of F3's debits are under $3. Days where no lot fits
+  are counted as not traded in `$ per year at cap`.
+
+### New candidates G1 and G2 (registered before they were run)
+Both are directional calendar/regime effects on daily data, expressed as a **$5-wide call debit spread** (long
+`round(S)` call, short +$5 call) that expires on the exit session. Debit spreads largely cancel the variance
+premium, so these are the least model-dependent option tests here. Multi-day legs are priced on a trading-day
+clock: each whole session ahead adds `m_on^2 v + m_rth^2 v`. Entry at the 15:55 ET bar close (k=76); exit at the
+exit session's 15:25 ET bar close (k=70), before the 15:30 ET short-leg rule. No take-profit or stop. One position
+at a time. Fills and fees as above. The underlying's own return over the same window (minus 2 bp) is reported too,
+since it needs no option model.
+- **G1. Turn of the month** (Lakonishok & Smidt 1988; McConnell & Xu 2008): enter at the close of the
+  second-to-last trading session of the month, exit on the third trading session of the new month. Sessions are
+  counted from the data's own session list.
+- **G2. VIX stretch rebound** (buy after fear spikes): enter at the close of session t when the prior VIX close
+  (t-1) is above 1.20x the average of the 10 VIX closes before it; exit on session t+5.
+
+The decision rule is unchanged and now covers seven tests (F1, F2, F2-trend, F3, F4, G1, G2); the bar stays
+|t| > 2.86, which is already stricter than a Bonferroni bar for seven tests (about 2.69).
