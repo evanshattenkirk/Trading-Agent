@@ -3,7 +3,8 @@
 review_equity_order first, always. Shadow stops there and fills on paper. Live (refused unless live_enabled is true
 and Evan set robinhood.account_number) then calls place_equity_order with a ref_id, polls get_equity_orders and
 cancels on timeout. Orders are limit, gfd, regular hours, whole-share quantity as a string. Argument names follow
-the option tools and go through fit_args, so unknown keys are dropped; check them with `rh-inspect`.
+the server schema (limit_price, not the option tools' price) and go through fit_args, so unknown keys are
+dropped; check them with `rh-inspect`.
 Book F is paper_only, so in this build nothing here places a real order.
 """
 from __future__ import annotations
@@ -22,7 +23,7 @@ log = logging.getLogger("agentdesk.robinhood_equity")
 
 def equity_order_args(account: str, symbol: str, side: str, qty: int, limit: float) -> dict:
     return {"account_number": account, "symbol": symbol, "side": side, "quantity": str(int(qty)),
-            "price": f"{limit:.2f}", "type": "limit", "time_in_force": "gfd", "market_hours": "regular_hours"}
+            "limit_price": f"{limit:.2f}", "type": "limit", "time_in_force": "gfd", "market_hours": "regular_hours"}
 
 
 class RobinhoodEquityBroker:
@@ -122,7 +123,7 @@ async def inspect_equity(rh, acct: str) -> None:
     from .robinhood import redact_account
     print("\nEquity (book F):")
     try:
-        t = await rh.call("get_equity_tradability", {"symbols": ["NVDA", "AAPL", "MU"]})
+        t = await rh.call("get_equity_tradability", {"account_number": acct, "symbols": ["NVDA", "AAPL", "MU"]})
         print("get_equity_tradability:", redact_account(json.dumps(t, default=str), acct)[:1200])
     except Exception as ex:
         print(f"get_equity_tradability failed: {ex}")
