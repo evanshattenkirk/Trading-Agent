@@ -6,4 +6,4 @@ __pycache__/
 *.db
 research/data/
 .DS_Store
-data/thetadata/
+data/
