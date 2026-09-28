@@ -51,7 +51,8 @@ def create_app(engine, bus) -> FastAPI:
     @app.post("/api/resume")
     async def resume():
         if engine.risk.st.halted:
-            return JSONResponse({"ok": False, "error": f"halted: {engine.risk.st.halt_reason}. Restart to clear."}, 409)
+            return JSONResponse({"ok": False, "error": f"halted: {engine.risk.st.halt_reason}. To clear it, restart with --clear-halt "
+                                 "(today's P&L, trade count and loss limit carry over)."}, 409)
         engine.pause(False)
         return {"ok": True}
 

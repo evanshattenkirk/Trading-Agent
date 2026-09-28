@@ -69,6 +69,10 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     bus = Bus()
     journal = Journal(expand(cfg["journal_path"]) if mode != "sim" else None)
     engine = Engine(cfg, feed, quotes, broker, bus, journal, mode)
+    if mode != "sim":                          # today's risk state survives a restart (sim days are synthetic)
+        from .risk import RiskStore
+        engine.risk.store = RiskStore(expand(cfg["risk"].get("state_path", "~/.agentdesk/risk_state_{mode}.json")
+                                             .format(mode=mode)))
     engine.crew = Crew(engine, cfg)
     from .l2 import L2Monitor, SimBook
     engine.l2 = L2Monitor(cfg, symbol=cfg["symbol"])
@@ -86,6 +90,7 @@ def cmd_run(args) -> None:
     cfg = load_config(args.config)
     mode = args.mode or cfg["mode"]
     engine, bus = build(cfg, mode, args.speed, args.seed, args.day)
+    engine.risk.clear_halt_on_restore = args.clear_halt
     app = create_app(engine, bus)
     host, port = cfg["server"]["host"], cfg["server"]["port"]
 
@@ -187,6 +192,8 @@ def main() -> None:
     r.add_argument("--seed", type=int, default=21)
     r.add_argument("--day", default=None, help="sim only: YYYY-MM-DD")
     r.add_argument("--no-browser", action="store_true")
+    r.add_argument("--clear-halt", action="store_true",
+                   help="lift today's saved halt (kill switch, safety halt); day P&L, trade count and limits carry over")
     r.set_defaults(fn=cmd_run)
 
     rec = sub.add_parser("record-demo")
