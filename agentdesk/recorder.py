@@ -244,6 +244,7 @@ class RecorderDaemon:
                 self.fails, backoff = 0, 5.0
                 if once:
                     log.info("one poll: %d rows", n)
+                    await self.disconnect()
                     return
                 self.meter.flush()
                 await asyncio.sleep(max(0.5, every - (time.time() - now)))
@@ -252,6 +253,7 @@ class RecorderDaemon:
                 log.warning("poll failed (%d in a row): %s", self.fails, str(ex)[:300])
                 self.meter.flush()
                 if once:
+                    await self.disconnect()
                     raise
                 if self.fails >= 3:
                     await self.disconnect()
