@@ -38,7 +38,7 @@ def test_books_trade_in_sim_and_journal_rows_are_tagged():
     for seed in SEEDS:
         e = run_day(seed, True)
         rows = e.journal.trades()
-        assert {r["book"] for r in rows} <= {"A", "B", "C", "D"}
+        assert {r["book"] for r in rows} <= {"A", "B", "C", "D", "F"}      # F: book F (stocks in play)
         assert sum(1 for r in rows if r["book"] == "A") == len(e.closed)
         combo = [r for r in rows if r["book"] != "A"]
         books_traded |= {r["book"] for r in combo}

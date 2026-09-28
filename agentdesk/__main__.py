@@ -94,7 +94,10 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     from .books.vol import RobinhoodVix, SimVix
     vix = SimVix(feed) if provider == "sim" else (RobinhoodVix(rh) if rh is not None else None)
     host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
-    engine.books = host if host.enabled else None
+    from .books.f_host import build_f
+    from .books.group import HostGroup
+    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed))
+    engine.books = group if group.enabled else None
     return engine, bus
 
 
