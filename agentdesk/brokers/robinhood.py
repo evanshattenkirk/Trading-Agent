@@ -528,4 +528,6 @@ async def inspect_main(cfg, out: str) -> None:
             print("review_option_order (simulation, nothing placed):")
             rev = await rh.call("review_option_order", order_args(acct, legs, 1, max(0.01, qt.bid), True))
             print(json.dumps(rev, indent=2, default=str)[:3000])
+    from .robinhood_equity import inspect_equity
+    await inspect_equity(rh, acct)
     await rh.close()

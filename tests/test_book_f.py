@@ -149,3 +149,128 @@ def test_entry_and_stop_in_the_same_bar_assume_the_stop_hit():
     assert out == pytest.approx((100.0, 99.75, 99.75))          # (entry, stop, exit): stopped in the entry bar
     b2 = B(99.9, 100.3, 99.8, 100.2)
     assert F.bar_entry_then_stop(b2, 100.0, 100.05, 2.5, CFG) == pytest.approx((100.0, 99.75, None))
+
+
+# ------------------------------------------------------------------ equity brokers
+import asyncio
+
+from f_fakes import FakeEquityQuotes, FakeRH
+
+
+def run(c):
+    return asyncio.run(c)
+
+
+def test_paper_buy_fills_at_max_of_trigger_and_ask_plus_1bp():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    qs = FakeEquityQuotes(now=1000.0)
+    qs.set("NVDA", 99.98, 100.01, ts=999.0)
+    b = PaperEquityBroker(qs)
+    r = run(b.buy("NVDA", 5, limit=100.05, trigger=100.0, now=1000.0))
+    assert r.status == "filled" and r.filled_qty == 5 and r.avg_price == pytest.approx(100.01 * 1.0001)
+
+
+def test_paper_buy_through_the_limit_stays_unfilled():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    qs = FakeEquityQuotes(now=1000.0)
+    qs.set("NVDA", 100.2, 100.3, ts=1000.0)
+    r = run(PaperEquityBroker(qs).buy("NVDA", 5, limit=100.05, trigger=100.0, now=1000.0))
+    assert r.status == "unfilled" and r.filled_qty == 0
+
+
+def test_paper_sell_fills_at_min_of_stop_and_bid_minus_1bp():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    qs = FakeEquityQuotes(now=1000.0)
+    qs.set("NVDA", 99.70, 99.72, ts=1000.0)
+    r = run(PaperEquityBroker(qs).sell("NVDA", 5, limit=99.0, now=1000.0, stop=99.75))
+    assert r.status == "filled" and r.avg_price == pytest.approx(99.70 * 0.9999)
+    qs.set("NVDA", 99.90, 99.92, ts=1000.0)
+    r = run(PaperEquityBroker(qs).sell("NVDA", 5, limit=99.0, now=1000.0, stop=99.75))
+    assert r.avg_price == pytest.approx(99.75 * 0.9999)
+
+
+def test_paper_stale_or_missing_quote_fails_closed():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    qs = FakeEquityQuotes(now=1000.0)
+    qs.set("NVDA", 99.98, 100.01, ts=994.0)                   # 6 s old
+    b = PaperEquityBroker(qs)
+    assert run(b.buy("NVDA", 5, 100.05, 100.0, now=1000.0)).status == "rejected"
+    assert run(b.buy("AMD", 5, 100.05, 100.0, now=1000.0)).status == "rejected"
+    assert run(b.sell("NVDA", 5, 99.0, now=1000.0)).status == "rejected"
+
+
+def test_paper_bar_stop_uses_the_gap_rule():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    b = PaperEquityBroker(FakeEquityQuotes())
+    assert b.bar_stop({"o": 98.0, "h": 98.5, "l": 97.5, "c": 98.2}, 99.0) == pytest.approx(98.0 * 0.9999)
+    assert b.bar_stop({"o": 99.5, "h": 99.8, "l": 98.9, "c": 99.2}, 99.0) == pytest.approx(99.0 * 0.9999)
+    assert b.bar_stop({"o": 99.5, "h": 99.8, "l": 99.1, "c": 99.2}, 99.0) is None
+
+
+def _rh_cfg(live_enabled=False, account=None):
+    return {"live_enabled": live_enabled, "robinhood": {"account_number": account}}
+
+
+def test_equity_broker_refuses_live_without_live_enabled_and_an_account_number():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    from agentdesk.brokers.robinhood_equity import RobinhoodEquityBroker
+    paper = PaperEquityBroker(FakeEquityQuotes())
+    for cfg in (_rh_cfg(False, "123456"), _rh_cfg(True, None), _rh_cfg(False, None)):
+        with pytest.raises(SystemExit):
+            RobinhoodEquityBroker(FakeRH(), paper, live=True, cfg=cfg)
+    RobinhoodEquityBroker(FakeRH(), paper, live=True, cfg=_rh_cfg(True, "123456"))
+
+
+def test_shadow_reviews_every_order_and_never_places():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    from agentdesk.brokers.robinhood_equity import RobinhoodEquityBroker
+    qs = FakeEquityQuotes(now=1000.0)
+    qs.set("NVDA", 99.98, 100.01, ts=1000.0)
+    rh = FakeRH()
+    b = RobinhoodEquityBroker(rh, PaperEquityBroker(qs), live=False, cfg=_rh_cfg())
+    r = run(b.buy("NVDA", 5, 100.05, 100.0, now=1000.0))
+    s = run(b.sell("NVDA", 5, 99.0, now=1000.0))
+    assert r.status == "filled" and s.status == "filled"
+    assert [c[0] for c in rh.calls] == ["review_equity_order", "review_equity_order"]
+    a = rh.calls[0][1]
+    assert a["type"] == "limit" and a["time_in_force"] == "gfd" and a["market_hours"] == "regular_hours"
+    assert a["quantity"] == "5" and a["side"] == "buy" and a["symbol"] == "NVDA" and a["price"] == "100.05"
+
+
+def test_live_places_after_review_and_polls_until_filled():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    from agentdesk.brokers.robinhood_equity import RobinhoodEquityBroker
+    rh = FakeRH(order_states=[("filled", 5, 100.02)])
+    b = RobinhoodEquityBroker(rh, PaperEquityBroker(FakeEquityQuotes()), live=True, cfg=_rh_cfg(True, "123456"),
+                              poll_s=0)
+    r = run(b.buy("NVDA", 5, 100.05, 100.0, now=1000.0))
+    assert [c[0] for c in rh.calls][:2] == ["review_equity_order", "place_equity_order"]
+    assert rh.calls[1][1].get("ref_id")
+    assert r.status == "filled" and r.filled_qty == 5 and r.avg_price == pytest.approx(100.02)
+
+
+def test_live_cancels_on_timeout():
+    from agentdesk.brokers.paper_equity import PaperEquityBroker
+    from agentdesk.brokers.robinhood_equity import RobinhoodEquityBroker
+    rh = FakeRH(order_states=[("confirmed", 0, 0)] * 3 + [("cancelled", 0, 0)])
+    b = RobinhoodEquityBroker(rh, PaperEquityBroker(FakeEquityQuotes()), live=True, cfg=_rh_cfg(True, "123456"),
+                              poll_s=0, fill_timeout=0)
+    r = run(b.buy("NVDA", 5, 100.05, 100.0, now=1000.0))
+    assert "cancel_equity_order" in [c[0] for c in rh.calls] and r.status == "unfilled"
+
+
+def test_rh_inspect_equity_section_reviews_and_never_places():
+    from agentdesk.brokers.robinhood_equity import inspect_equity
+
+    class RH(FakeRH):
+        async def call(self, tool, args):
+            self.calls.append((tool, dict(args)))
+            return {"results": [{"symbol": "SPY", "bid_price": "500.00", "tradable": True}]}
+
+    rh = RH()
+    run(inspect_equity(rh, "123456"))
+    tools = [c[0] for c in rh.calls]
+    assert "get_equity_tradability" in tools and "review_equity_order" in tools
+    assert not any(t.startswith(("place_", "cancel_")) for t in tools)
+    rev = next(a for t, a in rh.calls if t == "review_equity_order")
+    assert rev["quantity"] == "1" and rev["symbol"] == "SPY"
