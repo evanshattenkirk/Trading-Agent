@@ -77,7 +77,9 @@ class QuotePanel:
         for (r, k), g in df.groupby(["right", "strike"]):
             g = g.drop_duplicates("minute", keep="last").set_index("minute").reindex(self.minutes).ffill()
             self.q[(r, float(k))] = (g.bid.to_numpy(), g.ask.to_numpy())
-        self.last_minute = int(df.minute.max()) if len(df) else 0
+        # last minute any quote changed: ThetaData keeps emitting stale rows to 16:00 on 13:00-close days
+        chg = df.sort_values("minute").groupby(["right", "strike"])[["bid", "ask"]].diff().abs().sum(axis=1) > 0
+        self.last_minute = int(df.loc[chg, "minute"].max()) if chg.any() else (int(df.minute.max()) if len(df) else 0)
 
     def ba(self, right: str, strike: float, minute: int):
         v = self.q.get((right, float(strike)))
@@ -159,7 +161,7 @@ def replay(p: QuotePanel, legs, entry: int, close: int, model: str, width: float
         d = _value(p, legs, t, model, opening=False)
         if d is None:
             continue
-        v = d + fees
+        v = min(d, width) + fees      # never pay more than the width: holding to expiry caps the loss there
         if v <= cr * tp:
             exit_min, why = t, "take 50%"
             break
@@ -170,7 +172,7 @@ def replay(p: QuotePanel, legs, entry: int, close: int, model: str, width: float
         d = _value(p, legs, close, model, opening=False)
         if d is None:
             return None
-        v = d + fees
+        v = min(d, width) + fees
     pnl = cr - v
     return {"credit": cr, "risk": width - cr, "pnl": pnl, "ret": pnl / (width - cr), "why": why,
             "exit_minute": exit_min}
