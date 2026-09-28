@@ -55,3 +55,60 @@ class FakeRH:
         if tool == "get_equity_positions":
             return {"positions": self.positions}
         raise AssertionError(f"unexpected tool {tool}")
+
+
+class FakeData:
+    """EquityData for tests: a day's opening ranges, bars and quotes, set by hand."""
+
+    def __init__(self, day):
+        from datetime import timedelta
+        self.day, self.sp, self.daily, self.or_bars, self.hist, self.bars, self.qs = day, set(), {}, {}, {}, {}, {}
+        self.fail_quotes, self.calls = False, []
+        ds, d = [], day
+        while len(ds) < 30:
+            d -= timedelta(days=1)
+            if d.weekday() < 5:
+                ds.append(d)
+        self.dates = sorted(ds)
+
+    def add(self, sym, o, c, or_high, or_low, vol5, hist_vol, atr, px=100.0, sp=True):
+        if sp:
+            self.sp.add(sym)
+        self.daily[sym] = [{"d": d, "o": px, "h": px + atr / 2, "l": px - atr / 2, "c": px, "v": 2_000_000}
+                           for d in self.dates]
+        mids = [o + (c - o) * i / 4 for i in range(5)]
+        self.or_bars[sym] = [{"t": 570 + i, "o": mids[i - 1] if i else o, "h": or_high if i == 2 else max(mids[i], o),
+                              "l": or_low if i == 1 else min(mids[i], o), "c": mids[i], "v": vol5 / 5} for i in range(5)]
+        self.hist[sym] = hist_vol
+
+    def set_quote(self, sym, bid, ask, ts, last=None):
+        self.qs[sym] = Q(bid, ask, last if last is not None else round((bid + ask) / 2, 4), ts)
+
+    def add_bar(self, sym, t, o, h, l, c, v=1000):
+        self.bars.setdefault(sym, []).append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v})
+
+    async def sp500(self):
+        self.calls.append("sp500")
+        return sorted(self.sp)
+
+    async def daily_bars(self, symbols, day):
+        self.calls.append("daily")
+        return {s: [b for b in self.daily[s] if b["d"] < day] for s in symbols if s in self.daily}
+
+    async def tradable(self, symbols):
+        return set(symbols)
+
+    async def or_volumes(self, symbols, dates):
+        self.calls.append("or_volumes")
+        return {d: {s: self.hist[s] for s in symbols if s in self.hist} for d in dates}
+
+    async def minute_bars(self, symbols, day, start, end):
+        self.calls.append("minute_bars")
+        src = {s: self.or_bars.get(s, []) + self.bars.get(s, []) for s in symbols}
+        return {s: [b for b in bs if start <= b["t"] < end] for s, bs in src.items() if bs}
+
+    async def quotes(self, symbols):
+        self.calls.append("quotes")
+        if self.fail_quotes:
+            raise RuntimeError("quotes down (test)")
+        return {s: self.qs[s] for s in symbols if s in self.qs}

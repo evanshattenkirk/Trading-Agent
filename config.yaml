@@ -134,6 +134,14 @@ books:
   C_bear_puts:     {enabled: false, paper_only: true,  note: "failed its backtest; stays off until a pre-registered filter set passes out-of-sample"}
   D_iron_condor:   {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, short_em_mult: 0.9, em_rth_mult: 0.80, wings: 2, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:25", quiet_filter: true, quiet_window_min: 30, quiet_lookback_days: 14, vwap_max_pct: 0.0012}
   E_earnings_iv:   {enabled: true,  paper_only: true,  max_debit: 500, max_debit_e2: 250, max_open: 3, structures: [straddle_t3, calendar_t10], never_hold_through_announcement: true}
+  # Book F (docs/BOOK_F_HANDOFF.md): large-cap stocks in play, long whole shares, paper only. Section 3 rules are frozen.
+  F_stocks_in_play: {enabled: true,  paper_only: true,  instrument: shares, scan_et: "09:35", rvol5_min: 2.0, top_n: 5, first_candle: green, entry_cutoff_et: "10:30",
+                     stop_atr_frac: 0.10, exit_et: "15:55", risk_per_trade: 25, max_notional: 1000, max_positions: 5, daily_loss: 75,
+                     universe: {min_price: 10, min_atr: 0.50, min_dollar_vol_20d: 100000000, top_sp500_by_dollar_vol: 130,
+                                extra: [NVDA, AMD, AVGO, MU, TSM, ARM, MRVL, SMCI, WDC, STX, MSFT, META, GOOGL, AMZN, AAPL, ORCL, PLTR, TSLA]},
+                     news_tag: observe, shorts: log_only,
+                     prep_et: "08:30", max_quote_age_s: 5, max_sends: 3, cache_dir: ~/.agentdesk/cache/f, max_calls_per_s: 20}
+  F2_momentum_hold: {enabled: false, paper_only: true, note: "multi-day hold after a high-volume up day: no edge in the 2013-18 daily test (best t 1.31 vs Bonferroni 2.96)"}
 
 calendar:
   # 12:00 CT closes: entries stop 11:20, flatten 11:40. Full-day holidays need no entry (no prints = no trades).

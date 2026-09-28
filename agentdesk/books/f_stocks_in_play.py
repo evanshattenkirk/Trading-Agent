@@ -190,6 +190,7 @@ class FPos:
     exit_px: float | None = None
     exit_reason: str | None = None
     fills: list = field(default_factory=list)
+    fees: float = 0.0
 
     @property
     def label(self) -> str:
