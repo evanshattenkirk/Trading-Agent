@@ -83,6 +83,15 @@ any desk revise its size vote after hearing the others. Keep it terse and numeri
  "votes": {"<desk>": 0.5-1.25},        // revised votes, only for desks that changed
  "proposals": [ ...same shape as in the briefs, include "desk" ... ]}   // usually empty"""
 
+PREMARKET_DESKS = ["macro", "rates", "fed", "vol"]
+
+
+def clock_label(hm: str) -> str:
+    """'08:15' -> '8:15'"""
+    t = hhmm(hm)
+    return f"{t.hour}:{t.minute:02d}"
+
+
 HUDDLE_SPOTS = [(80, 84), (112, 84), (78, 98), (114, 98), (90, 102), (102, 102), (96, 104)]
 
 
@@ -98,6 +107,8 @@ class Crew:
         self.day = None
         self.queue: asyncio.Queue = asyncio.Queue()
         self._worker: asyncio.Task | None = None
+        self.prep: dict[str, dict] = {}                     # briefs the premarket desks wrote at their desks
+        self.prep_tasks: dict[str, asyncio.Task] = {}       # ... and the ones still researching
         self._client = None
         self.directive = {"size_mult": 1.0, "blackouts": [], "summary": "", "votes": {}}
         self.conviction = {"mult": 1.0, "checks": [], "ts": 0}
@@ -112,10 +123,15 @@ class Crew:
         d = session_date(now)
         if d != self.day:
             self.day, self.ran = d, set()
+            self._drop_prep()
             self._load_config_events(now)
         t = ct_time(now)
         sch = self.cfg["schedule"]
-        plan = [("premarket", ["macro", "rates", "fed", "vol"]), ("midday", ["vol", "rates", "macro"]),
+        if "arrive" in sch and "arrive" not in self.ran and t >= hhmm(sch["arrive"]) and ct(now).weekday() < 5:
+            self.ran.add("arrive")
+            if t < hhmm(sch["premarket"]):          # started after the huddle time: the huddle briefs in full
+                await self._catch_up(PREMARKET_DESKS, now)
+        plan = [("premarket", PREMARKET_DESKS), ("midday", ["vol", "rates", "macro"]),
                 ("late", ["fed", "vol"]), ("postclose", ["quant", "vol"])]
         for slot, desks in plan:
             if slot not in self.ran and t >= hhmm(sch[slot]) and ct(now).weekday() < 5:
@@ -148,6 +164,52 @@ class Crew:
         if st.halted:
             await self._dispatch("halt", ["risk", "quant"], now)
 
+    # ------------------------------------------------------------ premarket catch-up
+    async def _catch_up(self, desks: list[str], now: float) -> None:
+        """Desks arrive and research at their own desks. Their briefs wait for the premarket huddle.
+        Online, each desk researches in its own task so a slow one can't hold up the others or the huddle."""
+        e, bus = self.e, self.e.bus
+        e.set_agent(now, "coffee", f"Team's in. Catching up; huddle at {clock_label(self.cfg['schedule']['premarket'])}.")
+        bus.emit("crew", now, desk=desks[0], phase="say", who="agent", to="all",
+                 text=f"Morning. Catch up at your desks; huddle at {clock_label(self.cfg['schedule']['premarket'])}.")
+        for k in desks:
+            if self.offline:
+                await self._prepare(k, now)
+            else:
+                self.prep_tasks[k] = asyncio.create_task(self._prepare(k, now))
+
+    async def _prepare(self, key: str, now: float) -> dict:
+        try:
+            b = await self._brief(key, "premarket", now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            log.warning("crew %s catch-up failed: %s", key, ex)
+            b = self._finish(self._offline_brief(key, now, "premarket"))
+        b["prepared_ts"] = now
+        self.prep[key] = b
+        self.prep_tasks.pop(key, None)
+        self.e.bus.emit("crew", self.e.feed.now(), desk=key, phase="say", who=key,
+                        text=f"{DESKS[key].name}: ready for the huddle.")
+        return b
+
+    def _drop_prep(self) -> None:
+        for t in self.prep_tasks.values():
+            t.cancel()
+        self.prep, self.prep_tasks = {}, {}
+
+    async def _huddle_brief(self, key: str, slot: str, now: float) -> dict:
+        """The premarket huddle uses what each desk prepared at arrival. A desk still researching attends with its
+        offline read, so the huddle never slips past the open."""
+        if slot == "premarket" and key in self.prep:
+            return self.prep.pop(key)
+        if slot == "premarket" and key in self.prep_tasks:
+            self.prep_tasks.pop(key).cancel()
+            b = self._finish(self._offline_brief(key, now, slot))
+            b["notes"] = ["Still researching at huddle time; using my offline read."] + list(b.get("notes") or [])
+            return b
+        return await self._brief(key, slot, now)
+
     async def _dispatch(self, slot: str, desks: list[str], now: float) -> None:
         if self.offline:
             await self._consult(slot, desks, now)
@@ -173,7 +235,7 @@ class Crew:
             bus.emit("crew", now, desk=k, phase="walk", slot=slot, spot=i)
         pitched = []
         for k in desks:
-            b = await self._brief(k, slot, now)
+            b = await self._huddle_brief(k, slot, now)
             self.briefs[k] = {**b, "ts": now, "slot": slot}
             e.journal.record_brief(str(self.day), now, k, b)
             bus.emit("crew", now, desk=k, phase="say", who=k, to="agent", text=b.get("headline", ""))
@@ -204,7 +266,8 @@ class Crew:
         if self.e.risk.st.halted:
             return "Done for the day. Thanks, team."
         if slot == "postclose":
-            return "Good session. Journal's saved; see everyone at 7:45."
+            back = self.cfg["schedule"].get("arrive") or self.cfg["schedule"]["premarket"]
+            return f"Good session. Journal's saved; see everyone at {clock_label(back)}."
         if cut:
             return f"Size to {int(self.e.risk.st.size_mult * 100)}% on {', '.join(DESKS[k].name for k in cut)}'s call."
         if len(up) == len(VOTERS_FOR_SIZE_UP):
@@ -305,6 +368,9 @@ class Crew:
             b = await self._llm(key, now)
         if b is None:
             b = self._offline_brief(key, now, slot)
+        return self._finish(b)
+
+    def _finish(self, b: dict) -> dict:
         b["day"] = str(self.day)
         b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0))
         b["cooldown_minutes"] = max(0, min(30, int(b.get("cooldown_minutes") or 0)))

@@ -121,7 +121,7 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 - **Reactions:**
   - The agent types on orders, jumps with $ particles on wins, and slumps under a rain cloud on losses.
   - An alarm light flashes on the kill switch.
-  - Lights dim after the close, with "Zzz / BACK AT 7:30" overnight.
+  - Lights dim after the close, with "Zzz / BACK AT 8:15" overnight.
   - Tape reads live depth on its monitor.
 
 ---
@@ -130,14 +130,15 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 
 | Desk | Huddles | Brings |
 |---|---|---|
-| Macro | 07:45, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE |
-| Rates | 07:45, 11:30 | 2Y/10Y moves, curve, auctions |
-| Fed Watch | 07:45, 13:15 | FOMC, Fed speakers |
-| Vol | 07:45, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; **also runs book E's IV screen** (section 7E) |
+| Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE |
+| Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y/10Y moves, curve, auctions |
+| Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC, Fed speakers |
+| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; **also runs book E's IV screen** (section 7E) |
 | Quant | loss reviews, 15:05 | Our stats; per-day and permanent tweak proposals |
 | Risk | loss reviews, halts | Deterministic risk manager's view |
 | Tape | loss reviews, big walls | Level 2 read; comments on walls of at least 25k shares near price (at most once every 20 min) |
 
+- **Premarket (Evan, 2026-09-28).** At 08:15 CT (`crew.schedule.arrive`) Macro, Rates, Fed and Vol arrive and research at their own desks, in parallel. At 08:25 CT (`crew.schedule.premarket`) they huddle with the agent using those briefs, so the meeting ends before the 08:30 open. A desk still researching at 08:25 attends with its offline read and says so; the huddle never waits. If the engine starts after 08:25, the premarket huddle briefs in full as before.
 - **Research.** With an Anthropic key, Macro/Rates/Fed/Vol research with Claude plus web search, returning JSON briefs: headline, bias, confidence, events, vote, notes, proposals. Without a key, everything runs offline from config events and the data.
 - **Roundtable.** After the briefs, desks talk **to each other**: Rates checks Macro against bonds, Vol prices Fed risk, Risk grills Quant after losses. Any desk can revise its vote. With a key this is one extra LLM call per huddle; otherwise it's templated.
 - **Size votes (0.5–1.25×).**
@@ -252,6 +253,7 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
 
 **Read:** the entire edge is the variance risk premium, meaning how rich real 0DTE premium is versus the move that follows. At IV 0.60 (little premium) it disappears.
 - Vilkov's real-quote study (SPX 0DTE, 2016–2026, net of half-spreads + 0.5 bp) puts the short straddle/strangle at only **about +1.2 bp/day net**. Treat the table above as an upper bound.
+  - **Correction (2026-09-28):** Vilkov's repo corrected its cost model in August 2026 (`KNOWN-ISSUES.md`; the half-spread had been charged at 1/100 of its true size). After the fix, a short iron fly/condor entered at 10:00 ET and held to settlement has Sharpe **−0.56 at mid** and **−2.67 net** on SPXW. The +1.2 bp/day figure above is out of date. SPY 0DTE quotes are about 1¢ wide (~0.13 bp of spot) versus ~1.7 bp for SPXW, so the cost drag doesn't transfer directly. The negative result at mid does carry over as a warning, though B uses take-profits, stops and early closes. The real-quote check (section 10, step 7a) decides B; see `research/historical-option-data.md` in the project files.
 - **The go/no-go number:** the real opening ATM straddle cost vs the realized move afterwards, computed from `option_quotes` after 4+ weeks of paper.
 
 ### C. ChatGPT's bullish 30-min ORB → $2 bull-put credit spread (paper book C, as requested)
@@ -323,7 +325,7 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 - Evidence for the calendar version is practitioner-only.
 
 **Rules (paper):**
-- **Universe:** about 30 liquid large caps with weekly options and an ATM spread no wider than 5% of mid. Not SPY. Screen daily with `get_earnings_calendar` (31-day window) at the 07:45 CT huddle; the Vol desk owns it.
+- **Universe:** about 30 liquid large caps with weekly options and an ATM spread no wider than 5% of mid. Not SPY. Screen daily with `get_earnings_calendar` (31-day window) at the 08:15 CT catch-up; the Vol desk owns it.
 - **E1, short-dated straddle:** buy the ATM straddle in the first expiry **after** earnings with 4–10 DTE, at the close **3 trading days before** the announcement. Sell at the close before the announcement: the day before for pre-market reporters, the same day for after-close reporters. Take profit +20%, stop −30%.
 - **E2, calendar (the spread combo):** at **T−10 to T−8** trading days, sell the ATM weekly expiring before earnings and buy the same-strike weekly expiring after, as one 2-leg debit order. Exit at T−1 (T−0 for after-close reporters). Take profit +15%, stop −30%.
 - **Both:**
@@ -349,6 +351,15 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 
 The directional edges decayed after publication. The only effect that is modeled-positive in every period is premium selling.
 - Real-quote literature: Vilkov, SSRN 4641356, as accessible on 2026-09-27. Net of costs: put ratio spread Sharpe 0.93, top-3 basket 0.82, short straddle/strangle about +1.2 bp/day, directional spreads negative. The claim that no 0DTE strategy survives costs could not be verified.
+  - **Correction (2026-09-28):** after Vilkov's August 2026 cost fix, **no structure keeps a positive net Sharpe** on SPXW 0DTE (10:00 ET entry, held to settlement, 2016–2026):
+
+    | Structure | Sharpe at mid | Net, as first published | Net, corrected |
+    |---|---|---|---|
+    | Put ratio spread | +1.06 | +0.84 | **−0.61** |
+    | Long strangle/straddle | −0.27 | −0.51 | **−0.97** |
+    | Iron butterfly/condor (short vol) | −0.56 | −0.96 | **−2.67** |
+
+    The conditional put ratio (0.93) is now −0.75, and the top-3 basket (0.82) is now −0.82. So "no 0DTE strategy survives costs" now holds for SPXW. For SPY, whose spreads are about 10× tighter, it is open until the real-quote replay. This strengthens the case for the real-quote checks in section 10, step 7, before any promotion.
 - Beckmeyer, Branger & Gayda: retail 0DTE traders lost about $241k/day on average. Multi-leg, premium-collecting trades did better than single-leg debits.
 - Low-turnover references on S&P 2005–2020 (price only): buy and hold Sharpe 0.44 (max DD −57%); 200-day trend 0.45 (−22%); VIX-scaled exposure 0.63 (needs leverage).
 

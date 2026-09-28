@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: tools/install_recorder.sh fills in __APP__ and __HOME__ and loads it as a per-user LaunchAgent.
+     The recorder idles outside weekdays 08:25-15:05 CT, so the job simply stays up; KeepAlive restarts it after
+     a crash, RunAtLoad starts it at login and after a reboot. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agentdesk.recorder</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__APP__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>agentdesk</string>
+    <string>--config</string>
+    <string>__APP__/src/config.yaml</string>
+    <string>record-quotes</string>
+  </array>
+  <key>WorkingDirectory</key><string>__APP__/src</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Standard</string>
+  <key>StandardOutPath</key><string>__HOME__/.agentdesk/recorder/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.agentdesk/recorder/launchd.err.log</string>
+</dict>
+</plist>
