@@ -45,7 +45,7 @@ Risk limits: −$400 daily loss halts trading. After +$600, giving back 40% of t
 
 The day's P&L, trade count, cooldown, pause and any halt (kill switch, safety halt, loss limit) are saved in `~/.agentdesk/risk_state_<mode>.json`, so restarting the engine the same day doesn't reset them. `run --clear-halt` lifts a saved halt; the P&L and limits still apply.
 
-The dashboard controls (pause, flatten, kill, approve) need the link printed in the terminal, which carries a new token each run (or set `AGENTDESK_TOKEN` in `.env`). Ctrl-C or SIGTERM stops the engine within a few seconds and sends no orders; in live mode open positions are left in the account and logged.
+The dashboard controls (pause, flatten, kill, approve) need the link printed in the terminal, which carries a new token each run (or set `AGENTDESK_TOKEN` in `.env`). Ctrl-C or SIGTERM first sells every open position (book A and the paper books, up to 8 s), then stops the engine within a few seconds; anything still open after that is logged. A second Ctrl-C exits at once without selling.
 
 ## Robinhood account prerequisites
 

@@ -14,6 +14,7 @@ class Leg:
     strike: float
     side: str               # side at open: "sell" | "buy"
     ratio: int = 1
+    dte: int = 0            # expiry in calendar days after today's session (G's long leg: 1)
 
 
 @dataclass
@@ -24,6 +25,7 @@ class OrderIntent:
     reason: str
     lots: int | None = None         # fixed lots (B, D)
     budget: float | None = None     # size from max loss: floor(budget / max loss per lot) (C)
+    max_price: float | None = None  # skip when the expected fill is above this debit per share (G)
     meta: dict = field(default_factory=dict)
 
 
@@ -53,6 +55,7 @@ class MarketContext:
 
 class Strategy:
     name = "strategy"
+    holidays: frozenset = frozenset()   # calendar.holidays, set by build_books
 
     def __init__(self, cfg: dict):
         self.c = cfg

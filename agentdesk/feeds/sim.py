@@ -7,6 +7,7 @@ with a 0DTE skew. This proves the machinery works; it says nothing about edge.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 import random
 from datetime import date, datetime, time, timedelta
@@ -133,6 +134,8 @@ class SimQuotes(QuoteSource):
     async def quote(self, contract) -> Quote | None:
         close = at_ct(self.feed.day, time(15, 0))
         t_left = max(0.0, close - self.feed.t) + 900       # SPY 0DTE trades until 15:15 CT
+        with contextlib.suppress(ValueError):          # a later expiry (book G's long leg): one more session a day
+            t_left += max(0, (date.fromisoformat(contract.expiry) - self.feed.day).days) * 23400
         bid, ask = quote_from_model(self.feed.px, contract.strike, t_left, self.feed.base_iv, contract.right)
         return Quote(bid, ask, self.feed.t)
 

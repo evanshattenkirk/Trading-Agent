@@ -26,12 +26,13 @@ class FakeQuotes(QuoteSource):
         self.now = now
         self.calls = 0
 
-    def set(self, right, strike, bid, ask, ts=None):
-        self.book[(right, float(strike))] = (bid, ask, ts)
+    def set(self, right, strike, bid, ask, ts=None, expiry=None):
+        """expiry=None quotes every expiry at that strike; an expiry quotes only that one (calendars)."""
+        self.book[(right, float(strike)) + ((expiry,) if expiry else ())] = (bid, ask, ts)
 
     async def quote(self, c):
         self.calls += 1
-        v = self.book.get((c.right, float(c.strike)))
+        v = self.book.get((c.right, float(c.strike), c.expiry)) or self.book.get((c.right, float(c.strike)))
         if v is None:
             return None
         b, a, ts = v

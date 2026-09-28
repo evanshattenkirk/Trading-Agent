@@ -13,7 +13,7 @@ SEEDS = (21, 7)
 def run_day(seed, books_on):
     cfg = copy.deepcopy(CFG)
     if not books_on:
-        for k in ("B_iron_fly", "C_orb_bull_put", "D_iron_condor"):
+        for k in ("B_iron_fly", "C_orb_bull_put", "D_iron_condor", "G_call_calendar"):
             cfg["books"][k]["enabled"] = False
     engine, bus = build(cfg, "sim", 0, seed, "2026-09-28")
     engine.inline = True
@@ -38,7 +38,7 @@ def test_books_trade_in_sim_and_journal_rows_are_tagged():
     for seed in SEEDS:
         e = run_day(seed, True)
         rows = e.journal.trades()
-        assert {r["book"] for r in rows} <= {"A", "B", "C", "D", "F"}      # F: book F (stocks in play)
+        assert {r["book"] for r in rows} <= {"A", "B", "C", "D", "F", "G"}      # F: book F (stocks in play); G: call calendar (F3)
         assert sum(1 for r in rows if r["book"] == "A") == len(e.closed)
         combo = [r for r in rows if r["book"] != "A"]
         books_traded |= {r["book"] for r in combo}

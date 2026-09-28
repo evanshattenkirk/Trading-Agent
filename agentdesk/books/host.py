@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import time
+from datetime import time, timedelta
 
 from ..brokers.paper import PaperBroker
 from ..clock import ct_time, is_rth, session_date
@@ -31,13 +31,17 @@ LIVE_FIELDS = ("id", "book", "qty", "mark", "peak", "unrealized", "realized", "f
 
 
 def strategy_class(key: str):
+    from .call_calendar import CallCalendar
     from .iron_condor import IronCondor
     from .iron_fly import IronFly
     from .orb_bull_put import OrbBullPut
-    return {"B_iron_fly": IronFly, "C_orb_bull_put": OrbBullPut, "D_iron_condor": IronCondor}.get(key)
+    return {"B_iron_fly": IronFly, "C_orb_bull_put": OrbBullPut, "D_iron_condor": IronCondor,
+            "G_call_calendar": CallCalendar}.get(key)
 
 
 def build_books(cfg) -> list[Book]:
+    from ..desks import holidays
+    hol = frozenset(holidays(cfg))
     out = []
     for key, bc in (cfg.get("books") or {}).items():
         cls = strategy_class(key) if isinstance(bc, dict) else None
@@ -45,7 +49,9 @@ def build_books(cfg) -> list[Book]:
             continue
         if bc.get("paper_only") is not True:
             raise SystemExit(f"books.{key}: only a paper path exists for this book; set paper_only: true")
-        out.append(Book(key, bc, cls(bc)))
+        strat = cls(bc)
+        strat.holidays = hol
+        out.append(Book(key, bc, strat))
     return out
 
 
@@ -275,8 +281,9 @@ class BookHost:
         book.entering = True
         try:
             try:
-                exp = str(session_date(now))
-                cs = [await self.e.broker.resolve(Contract(self.e.symbol, exp, float(l.strike), l.right)) for l in it.legs]
+                d = session_date(now)
+                cs = [await self.e.broker.resolve(Contract(self.e.symbol, str(d + timedelta(days=l.dte)), float(l.strike),
+                                                           l.right)) for l in it.legs]
                 cq = await self._quote(it.legs, cs, now, opening=True)
             except Exception:
                 book.strategy.entry_failed(now)     # nothing was sent: B/D may retry inside their grace window
@@ -287,6 +294,8 @@ class BookHost:
             fair = paper_fair(cq, it.credit, True, self.f["model"], self.f["cents_per_leg"] / 100)
             if it.credit and fair <= 0:
                 return self._skip(book, now, "no credit at the expected fill")
+            if it.max_price is not None and fair > it.max_price:
+                return self._skip(book, now, f"debit ${fair:.2f} above the ${it.max_price:.2f} cap")
             per_lot = round(((it.width - fair) if it.credit else fair) * 100, 2)
             lots, size_why = self.account.size(per_lot, it.lots, it.budget, min(1.0, self.e.risk.st.size_mult))
             if lots < 1:
@@ -312,6 +321,9 @@ class BookHost:
             if "stop_debit_x_credit" in c:
                 pos.stop = round(pos.entry * c["stop_debit_x_credit"], 2)
                 pos.target = round(pos.entry * (1 - c["take_profit_pct"]), 2)
+            elif not it.credit and "stop_pct" in c:
+                pos.stop = round(pos.entry * (1 - c["stop_pct"]), 2)
+                pos.target = round(pos.entry * (1 + c["take_profit_pct"]), 2)
             pos.meta["plan"] = book.strategy.plan(pos)
             if res.status == "partial":
                 book.blocked = f"partial fill {res.filled_qty}/{lots}: reconcile before new orders"

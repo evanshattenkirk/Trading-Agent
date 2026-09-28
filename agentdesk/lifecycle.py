@@ -1,8 +1,10 @@
 """Run the dashboard server and the engine together, and shut both down cleanly on Ctrl-C or SIGTERM.
 
-Shutdown never flattens or sends orders. It stops the engine loop, closes the dashboard (open websockets
-included), closes the broker/data sessions with a timeout each, and exits. A second Ctrl-C or SIGTERM, or
-shutdown taking longer than `hard_exit_sec`, exits the process immediately.
+Shutdown sells what is open first (Evan, 2026-09-28: "sell them, dont leave them open"): book A and every paper
+book are flattened through engine.flatten("shutdown") while the engine, quotes and broker are still running, with
+`flatten_timeout` to finish. Then it stops the engine loop, closes the dashboard (open websockets included), closes
+the broker/data sessions with a timeout each, and exits. Whatever is still open after the timeout is logged. A
+second Ctrl-C or SIGTERM, or shutdown taking longer than `hard_exit_sec`, exits the process immediately.
 """
 from __future__ import annotations
 
@@ -37,7 +39,8 @@ def _hard_exit(code: int, why: str) -> None:
 
 
 async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, grace: float = 3.0,
-                close_timeout: float = 3.0, hard_exit_sec: float | None = 15.0) -> threading.Timer | None:
+                close_timeout: float = 3.0, hard_exit_sec: float | None = 25.0,
+                flatten_timeout: float = 8.0) -> threading.Timer | None:
     """Serve until `stop` is set (by SIGINT/SIGTERM when handlers can be installed), then shut down.
     Returns the armed hard-exit timer so the caller can cancel it once asyncio.run() has returned."""
     loop = asyncio.get_running_loop()
@@ -47,7 +50,7 @@ async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, g
     def on_signal(sig) -> None:
         if stop.is_set():
             _hard_exit(130, f"second {signal.Signals(sig).name}")
-        log.warning("%s received: shutting down (no orders are sent)", signal.Signals(sig).name)
+        log.warning("%s received: selling open positions, then shutting down (again to exit now)", signal.Signals(sig).name)
         stop.set()
 
     if threading.current_thread() is threading.main_thread():
@@ -70,7 +73,7 @@ async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, g
             timer = threading.Timer(hard_exit_sec, _hard_exit, (1, f"shutdown took longer than {hard_exit_sec:g}s"))
             timer.daemon = True
             timer.start()
-        await shutdown(engine, server, srv, eng, closers, grace, close_timeout, before)
+        await shutdown(engine, server, srv, eng, closers, grace, close_timeout, before, flatten_timeout)
         for sig in installed:
             loop.remove_signal_handler(sig)
     return timer
@@ -82,8 +85,8 @@ def _report_engine_exit(t: asyncio.Task) -> None:
 
 
 async def shutdown(engine, server, srv: asyncio.Task, eng: asyncio.Task, closers, grace: float,
-                   close_timeout: float, keep=frozenset()) -> None:
-    _warn_open_positions(engine)
+                   close_timeout: float, keep=frozenset(), flatten_timeout: float = 8.0) -> None:
+    await _sell_open_positions(engine, flatten_timeout)
     engine.stop()
     server.should_exit = True
     eng.cancel()
@@ -108,15 +111,28 @@ async def shutdown(engine, server, srv: asyncio.Task, eng: asyncio.Task, closers
     log.info("shutdown complete")
 
 
-def _warn_open_positions(engine) -> None:
-    held = [p for p, _ in getattr(engine, "open", [])]
+def _held(engine) -> list[str]:
+    a = [f"{p.qty}x {p.contract.label}" for p, _ in getattr(engine, "open", None) or []]
+    books = getattr(engine, "books", None)
+    return a + [getattr(p, "label", str(p)) for p in (books.positions() if books else [])]
+
+
+async def _sell_open_positions(engine, timeout: float) -> None:
+    held = _held(engine)
     if not held:
         return
-    names = ", ".join(f"{p.qty}x {p.contract.label}" for p in held)
-    if getattr(engine.broker, "live", False):
-        log.error("Shutting down with LIVE positions open and no engine stop: %s. Manage them in the Robinhood app.", names)
-    else:
-        log.warning("Shutting down with open %s positions (not journaled, nothing sent): %s", engine.mode, names)
+    log.warning("Shutdown: selling %d open position(s): %s", len(held), ", ".join(held))
+    try:
+        await asyncio.wait_for(engine.flatten("shutdown"), timeout)
+    except asyncio.TimeoutError:
+        log.error("Shutdown flatten did not finish within %gs", timeout)
+    except Exception:
+        log.exception("Shutdown flatten failed")
+    left = _held(engine)
+    if left:
+        where = "Close them in the Robinhood app" if getattr(getattr(engine, "broker", None), "live", False) \
+            else "paper, not journaled"
+        log.error("Shutting down with positions still open: %s. %s.", ", ".join(left), where)
 
 
 def _name(fn) -> str:
