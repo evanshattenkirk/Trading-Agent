@@ -11,6 +11,7 @@ class Book:
         self.open: list = []
         self.skips: deque = deque(maxlen=30)
         self.errors = 0
+        self.error_ts = None        # time of the last error (host: one failure per tick keeps the count)
         self.entering = False
         self.reset_day()
 
