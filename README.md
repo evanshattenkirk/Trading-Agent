@@ -18,7 +18,7 @@ Before writing this bot, I spent seven years trading my own taxable Robinhood ac
 - Max drawdown **−49.75%** (Sep 2022); margin used in 68 of 88 months
 - One top-up in Aug 2022, about **5%** of total capital, added a month before that trough
 
-This is the account where I take concentrated risk on purpose; retirement accounts are funded separately at lower risk. AgentDesk is my attempt to translate that playbook into explicit rules an agent can run, under limits the discretionary account never had: a $400 daily loss limit, a $1,500 cap on open risk, and paper trading until a book earns promotion. The translation is still being tested. The first out-of-sample tests of the MACD rules aren't statistically significant yet (see `research/`), which is why every book stays in paper.
+This is the account where I take concentrated risk on purpose; retirement accounts are funded separately at lower risk. AgentDesk is my attempt to translate that playbook into explicit rules an agent can run, under limits the discretionary account never had: a $400 daily loss limit, a $2,500 cap on open risk, and paper trading until a book earns promotion. The translation is still being tested. The first out-of-sample tests of the MACD rules aren't statistically significant yet (see `research/`), which is why every book stays in paper.
 
 *Figures are self-reported from broker statements and not audited. Nothing here is investment advice.*
 
@@ -30,11 +30,11 @@ This is the account where I take concentrated risk on purpose; retirement accoun
 - **Safety you can test.** A daily loss limit that counts open P&L at the bid, per-book halts, a stale-quote watchdog, day risk state that survives restarts, every position sold on Ctrl-C, and dashboard controls behind a per-run token with Origin and Host checks. `risk.py`, `lifecycle.py`, `server.py`
 - **Research that reports its failures.** Rules are pre-registered before results, split in-sample and out-of-sample, and re-run at taker fills. Most candidates fail, and the write-ups say so. `research/`
 - **Cost-aware model use.** Prompt-cache breakpoints on every Claude call, about 3 web-search calls a day, and a per-desk tally of tokens and estimated cost.
-- **569 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
+- **571 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
 
 ## Strategy books
 
-All books run side by side on one paper account: $10,000 balance, $1,500 cap on open risk, $0.04 fee per option leg.
+All books run side by side on one paper account: $10,000 balance, $2,500 cap on open risk, $0.04 fee per option leg.
 
 | Book | What it trades | Status | Evidence so far |
 |---|---|---|---|
@@ -188,7 +188,7 @@ Robinhood's intraday history for past 0DTE contracts comes back gap-filled, so i
 
 Books B (iron fly), C (ORB bull-put), D (iron condor) and G (call calendar) run next to book A in every mode, always on paper: fills are simulated at mid minus 1¢ per leg (never worse than the natural price) and each fill logs both. In shadow mode the first price of each order also goes to `review_option_order`; nothing is ever placed. Settings live under `books:` in `config.yaml` (`paper_only: true` is required).
 
-- Account: $10,000 paper balance, $1,500 cap on the sum of open max losses (book A's open debit counts), $300 max loss per B/C/D position, C sized from a $400 budget (the lower wins).
+- Account: $10,000 paper balance, $2,500 cap on the sum of open max losses (book A's open debit counts), $300 max loss per B/C/D position, C sized from a $400 budget (the lower wins).
 - Each book has its own trades, P&L and halt. A book that keeps erroring halts and flattens itself; the kill switch, safety halts and the 14:40 CT flatten cover every book.
 - The journal's `trades` table has a `book` column (A–G) plus `legs` and `max_loss`.
 - Dashboard: the chips next to the header stats switch between ALL and each book. The Day P&L, the position card (legs, credit, mark, take profit, stop, max loss) and the trades table follow the selection.
@@ -216,6 +216,7 @@ Book E buys the implied-volatility run-up into an earnings report and always sel
 - **C, call spreads:** on F1's scan (green first candle, RVOL5 ≥ 2), bought when the stock breaks the opening-range high before 10:30 ET; held up to 3 trading days, with a first-day stop below the opening-range low.
 - **P, put spreads:** at 15:40 ET on a name up ≥ 3% on ≥ 1.8× its average volume, held to the next day's 15:40 ET.
 - **Structure:** the nearest expiry 5–12 days out, long leg at the money, short leg one straddle-width out; take profit at 2× the debit, stop at 0.5×. Never held through a report. Paper fills sit 35% of the way from mid to natural.
+- **Limits:** $750 max debit per spread, 3 open, 3 new a day; a −$300 day blocks new entries.
 - F2 holds overnight like E: positions persist in `f2_positions` and are not sold at shutdown. Every candidate, traded or not, is logged in `f2_decisions` with each leg's IV, the skew between them and ATM IV ÷ realized vol.
 - F2 is idle in the simulator (no single-name option data there).
 

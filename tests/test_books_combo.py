@@ -89,6 +89,6 @@ def test_config_has_one_explicit_stop_field():
     books = load_config()["books"]
     for k in ("B_iron_fly", "D_iron_condor"):
         assert books[k]["stop_debit_x_credit"] == 2.0 and "stop_x_credit" not in books[k]
-    assert books["account"] == {"paper_balance": 10000, "open_risk_cap": 1500, "per_position_max_loss": 300,
+    assert books["account"] == {"paper_balance": 10000, "open_risk_cap": 2500, "per_position_max_loss": 300,
                                 "fee_per_leg": 0.04}
     assert books["fills"]["model"] == "mid_offset" and books["fills"]["cents_per_leg"] == 1
