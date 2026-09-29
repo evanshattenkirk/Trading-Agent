@@ -41,11 +41,11 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 - Robinhood throttles near 240 calls/min per account, shared with the recorder. The engine keeps to `robinhood.call_budget` (120/min, 3/s; `RobinhoodMCP` paces every call and pauses 2-8 s after a RATE_LIMITED, which never counts toward a book halt or the engine's safety halt), polls Level 2 every 3 s, and quotes every open B/C/D/G leg in one call per second. The recorder has no budget and paces itself.
 
 ## Robinhood facts verified 2026-09-27
-- Agentic account ••••6452, limited_margin, **option_level_3**, $500 cash. Show only the last 4 digits in anything user-facing.
+- Agentic account: limited_margin, **option_level_3**, a small cash balance. Show only the last 4 digits in anything user-facing, and never commit the number, its last 4 digits or the balance to this public repo.
 - `review_option_order` accepted a 2-leg credit spread. Multi-leg orders need `direction`. Arg shapes are in `brokers/robinhood.py` (`order_args`, `fit_args`), and schemas have additionalProperties:false.
 - SPY 0DTE `sellout_datetime` = 14:45 CT. Same-day opens are allowed until 3:30 PM ET; at-risk closeout starts 3:30 PM ET (3:45 for SPY). The engine flattens at 14:40 CT and 5 min before each contract's sellout. Short legs are never held into 3:30 PM ET.
 - `get_option_historicals` returns only gap-filled bars for expired 0DTE contracts, so it can't be used for option backtests.
-- $500 is too small for the default sizing. See the HANDOFF section 11 table, and ask Evan before changing any size or risk value.
+- The current cash balance is too small for the default sizing. See the HANDOFF section 11 table, and ask Evan before changing any size or risk value.
 
 ## Research (research/, reproducible)
 - 11 published intraday strategies: none significant out-of-sample. Evan's MACD proxy: t 0.23 / 1.69 / 0.39.

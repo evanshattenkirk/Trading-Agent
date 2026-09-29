@@ -26,7 +26,7 @@
 - **The PDT rule is gone.** FINRA Notice 26-10 took effect June 4, 2026, and Robinhood adopted it, so intraday round trips aren't counted.
 - **No stock shorting** at Robinhood.
 - **Fractional shares** only go through market orders in regular hours, so F uses **whole shares with marketable limit orders**.
-- Agentic account ••••6452 (show only the last 4 digits anywhere user-facing).
+- Agentic account only; never show its number or last 4 digits in anything committed to this public repo.
 
 ---
 

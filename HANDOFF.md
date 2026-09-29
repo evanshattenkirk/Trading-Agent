@@ -1,5 +1,7 @@
 # AgentDesk: final handoff (v3, 2026-09-27)
 
+> **Historical build record.** This is the handoff the project started from (v3, 2026-09-27). Much of it has since been built and some of it superseded; current status lives in `README.md` and `CLAUDE.md`.
+
 This is the complete record of what was built, verified, tested and decided in the claude.ai sessions, plus the build plan for Claude Code. Read all of it before editing code. `CLAUDE.md` is the short version.
 
 **Evan's standing decisions**
@@ -17,7 +19,7 @@ This is the complete record of what was built, verified, tested and decided in t
 |---|---|
 | Engine, strategy A, exits, risk, crew, Level 2, proposals, dashboard, pixel office, simulator, backtester | Built. 25 tests pass. Verified end to end in the simulator and against the local server |
 | Robinhood MCP client | Argument shapes match the live server's schemas. The engine has not yet signed in from the Mac (`rh-inspect`) |
-| Agentic account | ••••6452, `limited_margin`, **Level 3**, $500 cash. A 2-leg SPY credit spread passed `review_option_order` (section 2) |
+| Agentic account | `limited_margin`, **Level 3**, a small cash balance. A 2-leg SPY credit spread passed `review_option_order` (section 2) |
 | Strategy A (Evan's MACD calls) | Implemented and runs in paper |
 | Strategies B, C, D, E | Spec'd and backtested (E from literature only). **Claude Code builds these as paper books (section 9)** |
 | Real-quote recorders | 0DTE SPY calls and puts, ATM±10, every 10 s, into `journal.option_quotes` |
@@ -28,7 +30,7 @@ This is the complete record of what was built, verified, tested and decided in t
 ## 2. Broker facts (verified live on 2026-09-27)
 
 - **Accounts.**
-  - Agentic ••••6452 is the only one the agent can trade (`agentic_allowed` is true). Type `limited_margin`: it can reuse unsettled funds but can't borrow. `option_level_3`, $500 cash.
+  - The Agentic account is the only one the agent can trade (`agentic_allowed` is true). Type `limited_margin`: it can reuse unsettled funds but can't borrow. `option_level_3`, a small cash balance.
   - The main (non-agentic) account is Level 3 but not agent-tradable.
 - **Multi-leg works.** `review_option_order` on the Agentic account accepted this order with no `order_checks` alerts:
   - Order: SPY 2026-09-28 sell-to-open 760P / buy-to-open 758P, `direction:"credit"`, limit 0.30.
@@ -420,7 +422,7 @@ The directional edges decayed after publication. The only effect that is modeled
    Done when the tests pass and the sim dashboard loads.
 2. **Connectivity.**
    - Create a free Alpaca account and put the keys in `.env`.
-   - Run `python -m agentdesk rh-inspect`: it signs in, confirms ••••6452 is Level 3, and runs the review simulation.
+   - Run `python -m agentdesk rh-inspect`: it signs in, confirms the Agentic account is Level 3, and runs the review simulation.
    - Done when `rh-inspect` prints a review with no errors and the IEX stream shows SPY prints.
 3. **Book A paper.** `python -m agentdesk run --mode paper` during market hours. Done after 1 full session with bars, signals, L2 logs and `option_quotes` recorded, and no errors in the log.
    - *Note (2026-09-28):* this gate proves the plumbing only. Book A's results on the IEX feed don't count toward promotion (see section 3). Its evidence is the weekly SIP replay.
