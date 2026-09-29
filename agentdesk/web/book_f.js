@@ -1,4 +1,4 @@
-/* Book F (stocks in play) on the dashboard: a side card with the day's scan and positions, and the Tape desk's
+/* Book F1 (stocks in play, shares) on the dashboard: a side card with the day's scan and positions, and the Tape desk's
    monitor showing the picks. Self-contained: it reads /api/state once and listens on its own /ws connection, so
    app.js and office.js stay unchanged. Every F fill is paper. */
 (function () {
@@ -18,7 +18,7 @@
     card.id = 'f-card';
     card.setAttribute('aria-labelledby', 'h-f');
     card.innerHTML =
-      '<div class="card-h"><h2 id="h-f">Book F · stocks in play</h2><span class="pill" id="f-state">Waiting</span></div>' +
+      '<div class="card-h"><h2 id="h-f">Book F1 · stocks in play</h2><span class="pill" id="f-state">Waiting</span></div>' +
       '<div class="f-strip" id="f-strip"></div>' +
       '<div class="f-scroll"><table class="grid f-grid"><thead><tr><th>Sym</th><th class="r">RVOL5</th><th>1st</th>' +
       '<th class="r">OR hi</th><th class="r">ATR</th><th>Tag</th><th>Status</th><th class="r">R</th></tr></thead>' +

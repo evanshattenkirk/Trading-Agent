@@ -81,14 +81,14 @@ DESKS = {
     "postmortem": Desk("postmortem", "Post-mortem", "Audits the day's trades against the rules; writes the daily file.", uses_web=False),
 }
 VOTERS_FOR_SIZE_UP = ("macro", "vol")
-BOOK_LETTERS = ("A", "B", "C", "D", "E", "F", "G")
+BOOK_LETTERS = ("A", "B", "C", "D", "E", "F1", "F2", "G")
 # Which books each desk's size vote reaches (crew.vote_books overrides). A desk with no entry (Risk, Tape, Earnings,
 # Post-mortem) still cuts book A, as every vote did before; Rates and Fed (INFO_ONLY) reach no book.
 DEFAULT_VOTE_BOOKS = {"macro": ["A", "C"], "vol": ["A", "B", "C", "D", "G"], "quant": ["A"], "ops": ["A"]}
 BOOKS_TEXT = ("The desk runs paper books: A long SPY 0DTE calls on MACD/RSI triggers (4-5 contracts, flat by 14:40 CT);"
               " B iron fly sold at 08:45 CT; C bull-put spreads after a bullish opening-range break; D iron condor sold at"
               " 09:00 CT on quiet days; G SPY call calendar at 09:00 CT; E pre-earnings single-name straddles and calendars"
-              " held for days; F large-cap stock longs (logging only).")
+              " held for days; F1 stock longs on opening-range breakouts (flat by the close); F2 single-name call and put debit spreads held up to 3 days.")
 # $ per million tokens (input, output) by model prefix; cache reads cost 0.1x input, cache writes 1.25x.
 PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0),
           "claude-opus-5-5": (4.0, 20.0)}

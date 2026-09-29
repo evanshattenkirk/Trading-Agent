@@ -1,5 +1,7 @@
 # Book F handoff: large-cap "stocks in play" (for Claude Code)
 
+> **2026-09-29:** book F is now **F1** (config key `F1_stocks_in_play`). Its v2 changes (all liquid US stocks, a stop at the opening-range low, the published stop kept as a shadow) are pre-registered in `research/strategy_f1_prereg.md`. The disabled multi-day hold is now `F0_momentum_hold`, and **F2** is a new debit-spread book (`research/strategy_f2_prereg.md`). The rules below are the original section 3 spec, which the replication backtest still runs.
+
 **Task:** fold strategy F into AgentDesk as a paper-only book, and run its replication backtest.
 **From:** the claude.ai research session, 2026-09-27. **Owner:** Evan.
 **Read first:** `CLAUDE.md`, then `HANDOFF.md` sections 2, 5, 7F, 9, 10 and 12. This file is the build brief for F only. Where they conflict, HANDOFF.md's safety rules win.

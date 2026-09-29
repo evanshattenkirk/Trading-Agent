@@ -1,9 +1,16 @@
-"""Equity data for book F (docs/BOOK_F_HANDOFF.md section 4.2).
+"""Equity data for book F1 (docs/BOOK_F_HANDOFF.md section 4.2; F1 v2 in research/strategy_f1_prereg.md).
 
-RobinhoodEquityData (paper/shadow): everything from the Robinhood MCP, so RVOL5 uses one volume source
-(get_equity_historicals 1-minute bars) both for today and for the 14-day base. Up to 10 symbols per call, at most
-`max_calls_per_s` calls per second, calls counted per minute. Cached under ~/.agentdesk/cache/f/:
-  constituents.csv (weekly), daily/DATE.json (the morning's daily bars), or/DATE.json (09:30-09:34 volume per name).
+RobinhoodEquityData (paper/shadow): RVOL5 uses one volume source for today and for the 14-day base:
+  bars_source: robinhood   get_equity_historicals 1-minute bars (up to 10 symbols per call, at most
+                           `max_calls_per_s` calls per second, counted per minute)
+  bars_source: alpaca_sip  Alpaca's consolidated (SIP) 1-minute bars, many symbols per call. Needs the paid
+                           Algo Trader Plus plan for today's bars; the free plan serves SIP only 15 minutes late
+The two sources never share a cache (or/ and or_sip/), so RVOL5 is never a mix.
+The broad universe (universe.source: all_us) comes from the NASDAQ Trader symbol directory (common stocks and ADRs;
+ETFs, test issues, warrants, rights, units and preferreds dropped) and Alpaca daily bars, which are free once 15
+minutes old. Without Alpaca keys or the directory, us_daily() returns {} and F1 keeps the S&P universe.
+Cached under ~/.agentdesk/cache/f/: constituents.csv and us_symbols.json (weekly), daily/DATE.json,
+us_daily/DATE.json, or/DATE.json or or_sip/DATE.json (09:30-09:34 volume per name).
 A symbol with no data is dropped, never guessed.
 
 SimEquityData: a deterministic synthetic session for `--mode sim` (its own random generator, so book A's sim day
@@ -30,6 +37,74 @@ from ..brokers.base import RateLimited
 
 log = logging.getLogger("agentdesk.f_data")
 CONSTITUENTS_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+SYMBOL_DIRS = ("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+               "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt")
+ALPACA_BARS = "https://data.alpaca.markets/v2/stocks/bars"
+NOT_COMMON = ("warrant", " right", " rights", " unit", " units", "preferred", " notes", "debenture", "depositary share representing")
+
+
+def parse_symbol_dir(text: str) -> set[str]:
+    """Common stocks and ADRs from a NASDAQ Trader symbol file (nasdaqlisted.txt or otherlisted.txt): ETFs, test
+    issues, warrants, rights, units and preferreds are dropped, and so are symbols with characters other than
+    letters and one dot (BRK.B stays)."""
+    lines = [l for l in text.splitlines() if l.strip() and not l.startswith("File Creation Time")]
+    if not lines:
+        return set()
+    head = [h.strip() for h in lines[0].split("|")]
+    col = {h: i for i, h in enumerate(head)}
+    sym_i = col.get("Symbol", col.get("ACT Symbol"))
+    if sym_i is None:
+        return set()
+    out = set()
+    for l in lines[1:]:
+        f = l.split("|")
+        if len(f) < len(head):
+            continue
+        get = lambda k: f[col[k]].strip() if k in col else ""
+        sym, name = get(head[sym_i]).upper(), get("Security Name").lower()
+        if get("Test Issue") == "Y" or get("ETF") == "Y" or any(w in name for w in NOT_COMMON):
+            continue
+        if sym and sym.replace(".", "", 1).isalpha():
+            out.add(sym)
+    return out
+
+
+async def alpaca_bars(symbols: list[str], timeframe: str, start: str, end: str, feed: str = "sip",
+                      http=None, per_call: int = 200) -> dict[str, list[dict]]:
+    """Alpaca multi-symbol bars, raw {symbol: [{t, o, h, l, c, v}]}. Paged; a 429 or 5xx backs off and retries.
+    `http` is an httpx.AsyncClient-like object (tests pass a fake)."""
+    import httpx
+    from .alpaca import _headers
+    own = http is None
+    c = http or httpx.AsyncClient(headers=_headers(), timeout=60)
+    out: dict[str, list[dict]] = {}
+    try:
+        for grp in _chunks(sorted(symbols), per_call):
+            token = None
+            while True:
+                params = {"symbols": ",".join(grp), "timeframe": timeframe, "start": start, "end": end, "feed": feed,
+                          "adjustment": "split", "limit": 10000, "sort": "asc"}
+                if token:
+                    params["page_token"] = token
+                for i in range(6):
+                    r = await c.get(ALPACA_BARS, params=params)
+                    if r.status_code == 429 or r.status_code >= 500:
+                        await asyncio.sleep(min(2 ** i, 20))
+                        continue
+                    r.raise_for_status()
+                    break
+                else:
+                    raise RuntimeError(f"Alpaca bars kept failing ({r.status_code})")
+                j = r.json()
+                for sym, bs in (j.get("bars") or {}).items():
+                    out.setdefault(sym, []).extend(bs)
+                token = j.get("next_page_token")
+                if not token:
+                    break
+    finally:
+        if own:
+            await c.aclose()
+    return out
 
 
 def _chunks(xs, n):
@@ -117,6 +192,59 @@ class RobinhoodEquityData:
                     return []
         return sorted({row["Symbol"].strip() for row in csv.DictReader(io.StringIO(p.read_text()))})
 
+    async def us_symbols(self) -> list[str]:
+        """Every listed US common stock and ADR (NASDAQ Trader symbol directory), cached a week."""
+        p = self.dir / "us_symbols.json"
+        cached = self._read(p) if p.exists() else None
+        if cached and time.time() - p.stat().st_mtime < 7 * 86400:
+            return cached
+        try:
+            import httpx
+            syms: set[str] = set()
+            async with httpx.AsyncClient(timeout=30) as c:
+                for url in SYMBOL_DIRS:
+                    r = await c.get(url)
+                    r.raise_for_status()
+                    syms |= parse_symbol_dir(r.text)
+            if len(syms) < 1000:
+                raise RuntimeError(f"only {len(syms)} symbols parsed")
+            out = sorted(syms)
+            self._write(p, out)
+            return out
+        except Exception as ex:
+            log.warning("US symbol directory download failed (%s); %s", ex, "using the cached copy" if cached else "no broad universe")
+            return cached or []
+
+    async def us_daily(self, day: date) -> dict[str, list[dict]]:
+        """Daily bars through yesterday for every US common stock with a close >= min_price and a 14-day average
+        volume >= min_avg_volume, from Alpaca (free: these bars are more than 15 minutes old). {} when Alpaca keys
+        or the symbol directory are missing, so the caller falls back to the S&P universe."""
+        path = self.dir / "us_daily" / f"{day}.json"
+        cached = self._read(path)
+        if cached is None:
+            syms = await self.us_symbols()
+            if not syms:
+                return {}
+            u = self.c.get("universe", {})
+            start = (datetime.combine(day, datetime.min.time()) - timedelta(days=50)).strftime("%Y-%m-%dT00:00:00Z")
+            end = (datetime.combine(day, datetime.min.time()) - timedelta(days=1)).strftime("%Y-%m-%dT23:59:59Z")
+            try:
+                raw = await alpaca_bars(syms, "1Day", start, end, feed="sip")
+            except (Exception, SystemExit) as ex:                  # _headers() exits without keys
+                log.warning("Alpaca daily bars for the broad universe failed (%s); F1 keeps the S&P universe", ex)
+                return {}
+            cached = {}
+            for s, bs in raw.items():
+                rows = [{"d": b["t"][:10], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"], "v": b["v"]}
+                        for b in bs if b["t"][:10] < str(day)]
+                if len(rows) >= 20 and rows[-1]["c"] >= u.get("min_price", 0) \
+                        and sum(r["v"] for r in rows[-14:]) / 14 >= u.get("min_avg_volume", 0):
+                    cached[s] = rows
+            self._write(path, cached)
+            for old in sorted((self.dir / "us_daily").glob("*.json"))[:-5]:     # keep the last 5 days
+                old.unlink(missing_ok=True)
+        return {s: [{**b, "d": date.fromisoformat(b["d"])} for b in bs] for s, bs in cached.items()}
+
     async def daily_bars(self, symbols: list[str], day: date) -> dict[str, list[dict]]:
         path = self.dir / "daily" / f"{day}.json"
         cached = self._read(path) or {}
@@ -159,8 +287,9 @@ class RobinhoodEquityData:
 
     async def or_volumes(self, symbols: list[str], dates: list[date]) -> dict[date, dict[str, float]]:
         out = {}
+        sub = "or_sip" if self.sip else "or"          # never mix volume sources in one RVOL5 base
         for d in dates:
-            path = self.dir / "or" / f"{d}.json"
+            path = self.dir / sub / f"{d}.json"
             vols = self._read(path) or {}
             todo = [s for s in symbols if s not in vols]
             if todo:
@@ -174,7 +303,13 @@ class RobinhoodEquityData:
         return out
 
     # ------------------------------------------------------------ intraday
+    @property
+    def sip(self) -> bool:
+        return self.c.get("bars_source") == "alpaca_sip"
+
     async def minute_bars(self, symbols: list[str], day: date, start: int, end: int) -> dict[str, list[dict]]:
+        if self.sip:
+            return await self._sip_minute_bars(symbols, day, start, end)
         out = {}
         for grp in _chunks(symbols, 10):
             try:
@@ -193,6 +328,24 @@ class RobinhoodEquityData:
                         rows.append({"t": m, **_ohlcv(b)})
                 if rows:
                     out[s] = rows
+        return out
+
+    async def _sip_minute_bars(self, symbols: list[str], day: date, start: int, end: int) -> dict[str, list[dict]]:
+        try:
+            raw = await alpaca_bars(symbols, "1Min", _utc(day, start), _utc(day, end), feed="sip")
+        except (Exception, SystemExit) as ex:   # SystemExit: no Alpaca keys
+            log.warning("Alpaca SIP minute bars failed (%s); dropping %d names", ex, len(symbols))
+            return {}
+        out = {}
+        for s, bs in raw.items():
+            rows = []
+            for b in bs:
+                t = datetime.fromisoformat(b["t"].replace("Z", "+00:00")).astimezone(F.ET)
+                m = t.hour * 60 + t.minute
+                if t.date() == day and start <= m < end:
+                    rows.append({"t": m, "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"], "v": b["v"]})
+            if rows:
+                out[s] = rows
         return out
 
     async def quotes(self, symbols: list[str]) -> dict[str, F.Q]:
@@ -303,6 +456,10 @@ class SimEquityData:
     async def daily_bars(self, symbols, day):
         self._build(day)
         return {s: list(self._daily[s]) for s in symbols if s in self._daily}
+
+    async def us_daily(self, day):
+        self._build(day)
+        return {s: list(bs) for s, bs in self._daily.items()}
 
     async def tradable(self, symbols):
         return set(symbols)

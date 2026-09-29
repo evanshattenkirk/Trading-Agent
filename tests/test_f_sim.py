@@ -13,7 +13,7 @@ SEEDS = (21, 7)
 
 def run_day(seed, f_on=True, others_on=True, day="2026-09-28"):
     cfg = copy.deepcopy(CFG)
-    cfg["books"]["F_stocks_in_play"]["enabled"] = f_on
+    cfg["books"]["F1_stocks_in_play"]["enabled"] = f_on
     if not others_on:
         for k in ("B_iron_fly", "C_orb_bull_put", "D_iron_condor", "G_call_calendar"):
             cfg["books"][k]["enabled"] = False
@@ -47,7 +47,7 @@ def test_f_scans_trades_and_is_flat_by_the_close():
         e = run_day(seed)
         f = e.books.fhost
         assert f.scanned and f.fj.scans()                          # the scan ran and every row was journaled
-        rows = [r for r in e.journal.trades() if r["book"] == "F"]
+        rows = [r for r in e.journal.trades() if r["book"] == "F1"]
         assert len(rows) == len(f.book.closed) == len(f.fj.trades())
         assert not f.book.open and not e.books.positions()        # nothing held overnight
         assert all(r["exit_reason"] for r in rows)

@@ -63,6 +63,7 @@ class EHost:
         self.book = Book(KEY, self.c, EarningsIV(self.c))
         self.account = account or AccountRisk((cfg.get("books") or {}).get("account"))
         self.other_risk = lambda: sum(p.entry * 100 * p.qty for p, _ in self.e.open)     # A (+ others via HostGroup)
+        self.books_changed = lambda now: None      # HostGroup: refresh the dashboard's book strip
         self.f = {**FILLS, **((cfg.get("books") or {}).get("fills") or {})}
         self.broker = PaperBroker(chains)
         self.broker.combo_model, self.broker.combo_cents = self.f["model"], self.f["cents_per_leg"] / 100
@@ -303,6 +304,7 @@ class EHost:
         self.ej.save(pos, now)
         self.ej.decision(**rec, outcome="opened", reason=res.status, lots=res.filled_qty)
         self.e.bus.emit("book_position", now, pos=pos.to_dict(), event="open", size_note=size_why)
+        self.books_changed(now)
 
     async def _refresh_events(self, now: float) -> None:
         """Move an open position's exit when the report date moved (spec E-Q7): the nearest calendar row wins."""
@@ -427,6 +429,7 @@ class EHost:
         self.e.journal.record_trade(str(session_date(now)), self.e.mode, pos, book="E")
         self.ej.save(pos, now)
         self.e.bus.emit("book_closed", now, pos=pos.to_dict(), net=round(net, 2))
+        self.books_changed(now)
 
     # ------------------------------------------------------------ engine controls
     def halt_all(self, reason: str, flatten: bool = False) -> None:

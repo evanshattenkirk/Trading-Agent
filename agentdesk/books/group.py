@@ -1,4 +1,4 @@
-"""HostGroup: the one `engine.books` object when book F (FHost) and book E (EHost) run next to the B/C/D/G BookHost.
+"""HostGroup: the one `engine.books` object when books F1 (FHost), E (EHost) and F2 (F2Host) run next to BookHost.
 
 The engine keeps calling start / on_bar / on_second / kill / flatten / halt_all / positions / snapshot on one object.
 Every host shares one AccountRisk (paper equity, open-risk cap, global halt): F's and E's open risk is added to
@@ -11,9 +11,9 @@ import asyncio
 
 
 class HostGroup:
-    def __init__(self, bookhost=None, fhost=None, ehost=None):
-        self.bookhost, self.fhost, self.ehost = bookhost, fhost, ehost
-        self.extras = [h for h in (fhost, ehost) if h is not None]
+    def __init__(self, bookhost=None, fhost=None, ehost=None, f2host=None):
+        self.bookhost, self.fhost, self.ehost, self.f2host = bookhost, fhost, ehost, f2host
+        self.extras = [h for h in (fhost, ehost, f2host) if h is not None]
         self.hosts = [h for h in (bookhost, *self.extras) if h is not None]
         self._inline = True
         if len(self.hosts) > 1:
@@ -25,10 +25,12 @@ class HostGroup:
             if bookhost is not None:
                 bookhost.open_risk = lambda: base() + sum(x.open_risk() for x in self.extras)
                 bookhost.extra_books = [x.book for x in self.extras]
+        for h in self.extras:
+            h.books_changed = self.emit_books
 
     @classmethod
-    def of(cls, bookhost=None, fhost=None, ehost=None):
-        return cls(bookhost if bookhost is not None and bookhost.enabled else None, fhost, ehost)
+    def of(cls, bookhost=None, fhost=None, ehost=None, f2host=None):
+        return cls(bookhost if bookhost is not None and bookhost.enabled else None, fhost, ehost, f2host)
 
     @property
     def enabled(self) -> bool:
@@ -87,6 +89,16 @@ class HostGroup:
         h = self.extras[0]
         return h.other_risk() + h.open_risk()
 
+    def emit_books(self, now: float) -> None:
+        """Refresh the dashboard's book strip after an F1, E or F2 open or close (BookHost does this itself for
+        B/C/D/G)."""
+        if self.bookhost:
+            self.bookhost._emit_books(now)
+            return
+        snap = self.snapshot()
+        self.hosts[0].e.bus.emit("books", now, account=snap["account"],
+                                 books=[{k: v for k, v in b.items() if k not in ("open", "closed")} for b in snap["books"]])
+
     def snapshot(self) -> dict:
         if self.bookhost:
             snap = self.bookhost.snapshot()
@@ -97,4 +109,6 @@ class HostGroup:
         snap["books"] = list(snap["books"]) + [h.book.to_dict() for h in self.extras]
         if self.fhost:
             snap["f"] = self.fhost.detail()
+        if self.f2host:
+            snap["f2"] = self.f2host.detail()
         return snap

@@ -42,7 +42,7 @@ class NewsTagger:
     @property
     def online(self) -> bool:
         crew = self.e.crew
-        return bool(crew is not None and not crew.offline and self.cfg["books"]["F_stocks_in_play"].get("news_tag") == "observe")
+        return bool(crew is not None and not crew.offline and self.cfg["books"]["F1_stocks_in_play"].get("news_tag") == "observe")
 
     def start(self, now: float, picks: list, runners: list, done) -> None:
         syms = [r.symbol for r in picks + runners]
@@ -59,7 +59,7 @@ class NewsTagger:
             tags = await self._ask(now, picks, runners)
         except Exception as ex:
             log.warning("news tag failed: %s", ex)
-            self.e.bus.emit("log", self.e.feed.now(), level="warn", msg=f"book F news tag failed: {ex}")
+            self.e.bus.emit("log", self.e.feed.now(), level="warn", msg=f"book F1 news tag failed: {ex}")
             tags = {}
         syms = [r.symbol for r in picks + runners]
         out = {s: clean_tag(tags.get(s, {"catalyst": "unknown", "priced_in": "unknown"})) for s in syms}

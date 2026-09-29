@@ -1,10 +1,11 @@
 """Book F tables in the engine's SQLite journal (docs/BOOK_F_HANDOFF.md section 4.4).
 
   f_scans          every scanned name: RVOL5, first candle, OR high/low, ATR14, rank, picked, news tag, why not picked
-  f_trades         every F position, open or closed, with its R multiple. Open rows are the restart check: a row
-                   still open from an earlier session, or after the exit time, means shares were held too long
+  f_trades         every F1 position, open or closed, with its R multiple. Open rows are the restart check: a row
+                   still open from an earlier session, or after the exit time, means shares were held too long.
+                   F1 v2 adds the shadow of the published 0.10 x ATR stop (shadow_stop/hit/pnl) and observe-only tags
   f_shadow_shorts  would-be shorts on red first candles (hypothetical P&L; never an order)
-F trades also go into `trades` with book = 'F' (pnl_pct there is the R multiple: the basis is the initial risk).
+F trades also go into `trades` with book = 'F1' (pnl_pct there is the R multiple: the basis is the initial risk).
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ CREATE TABLE IF NOT EXISTS f_scans (
 CREATE TABLE IF NOT EXISTS f_trades (
   id TEXT PRIMARY KEY, session TEXT, mode TEXT, symbol TEXT, qty INTEGER, entry REAL, stop REAL, atr REAL,
   or_high REAL, rvol5 REAL, rank INTEGER, ai INTEGER, opened_ts REAL, status TEXT, closed_ts REAL, exit_px REAL,
-  exit_reason TEXT, pnl REAL, risk REAL, r REAL, news TEXT, fills TEXT
+  exit_reason TEXT, pnl REAL, risk REAL, r REAL, news TEXT, fills TEXT, shadow_stop REAL, shadow_hit INTEGER,
+  shadow_pnl REAL, tags TEXT
 );
 CREATE TABLE IF NOT EXISTS f_shadow_shorts (
   id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT, symbol TEXT, rvol5 REAL, rank INTEGER, or_low REAL, atr REAL,
@@ -33,6 +35,11 @@ class FJournal:
     def __init__(self, db: sqlite3.Connection):
         self.db = db
         self.db.executescript(SCHEMA)
+        have = {r[1] for r in self.db.execute("PRAGMA table_info(f_trades)")}
+        for col, typ in (("shadow_stop", "REAL"), ("shadow_hit", "INTEGER"), ("shadow_pnl", "REAL"), ("tags", "TEXT")):
+            if col not in have:                          # journals written before F1 v2
+                self.db.execute(f"ALTER TABLE f_trades ADD COLUMN {col} {typ}")
+        self.db.commit()
 
     def _rows(self, sql: str, args=()) -> list[dict]:
         cur = self.db.execute(sql, args)
@@ -69,14 +76,17 @@ class FJournal:
         from .f_stocks_in_play import AI_LIST
         self.db.execute(
             "INSERT OR REPLACE INTO f_trades (id,session,mode,symbol,qty,entry,stop,atr,or_high,rvol5,rank,ai,opened_ts,status,"
-            "risk,news,fills) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "risk,news,fills,shadow_stop,shadow_hit,tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (p.id, session, mode, p.symbol, p.qty, p.entry, p.stop, p.atr, p.or_high, p.rvol5, p.rank,
-             int(p.symbol in AI_LIST), p.opened_ts, "open", p.risk, json.dumps(p.news), json.dumps(p.fills)))
+             int(p.symbol in AI_LIST), p.opened_ts, "open", p.risk, json.dumps(p.news), json.dumps(p.fills),
+             getattr(p, "shadow_stop", None), int(getattr(p, "shadow_hit", False)), json.dumps(getattr(p, "tags", {}))))
         self.db.commit()
 
     def close_position(self, p) -> None:
-        self.db.execute("UPDATE f_trades SET status=?, closed_ts=?, exit_px=?, exit_reason=?, pnl=?, r=?, fills=? WHERE id=?",
-                        ("closed", p.closed_ts, p.exit_px, p.exit_reason, p.pnl, p.r_multiple, json.dumps(p.fills), p.id))
+        self.db.execute("UPDATE f_trades SET status=?, closed_ts=?, exit_px=?, exit_reason=?, pnl=?, r=?, fills=?, "
+                        "shadow_hit=?, shadow_pnl=? WHERE id=?",
+                        ("closed", p.closed_ts, p.exit_px, p.exit_reason, p.pnl, p.r_multiple, json.dumps(p.fills),
+                         int(getattr(p, "shadow_hit", False)), getattr(p, "shadow_pnl", None), p.id))
         self.db.commit()
 
     def open_rows(self) -> list[dict]:
@@ -106,15 +116,16 @@ class FJournal:
 
 
 class TradeRow:
-    """Adapter so Journal.record_trade can store an F position in `trades` (book 'F')."""
+    """Adapter so Journal.record_trade can store an F position in `trades` (book 'F1')."""
 
     def __init__(self, p):
         self.p = p
-        self.setup, self.qty_initial, self.entry = "F", p.qty, p.entry
+        self.setup, self.qty_initial, self.entry = "F1", p.qty, p.entry
         self.opened_ts, self.closed_ts, self.realized, self.fees = p.opened_ts, p.closed_ts, p.pnl, 0.0
         self.peak, self.exit_reason, self.l2 = None, p.exit_reason, None
         self.strike_reason = f"OR high {p.or_high:.2f}, RVOL5 {p.rvol5 or 0:.2f}, rank {p.rank}"
-        self.entry_reasons = [f"{p.qty} sh, stop {p.stop:.2f} (0.10 x ATR {p.atr:.2f}), risk ${p.risk:.2f}"]
+        self.entry_reasons = [f"{p.qty} sh, stop {p.stop:.2f} (ATR {p.atr:.2f}), risk ${p.risk:.2f}"
+                              + (f"; published-rule stop {p.shadow_stop:.2f} tracked as a shadow" if getattr(p, "shadow_stop", None) else "")]
         self.fills, self.risk_basis = p.fills, p.risk
 
     def to_dict(self) -> dict:

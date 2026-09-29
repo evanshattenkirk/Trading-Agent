@@ -5,7 +5,7 @@
   python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
   python -m agentdesk record-quotes [--once|--status|--report|--probe]   standalone 0DTE quote recorder (read-only)
-  python -m agentdesk f-report [--since YYYY-MM-DD]                      book F paper record
+  python -m agentdesk f-report [--since YYYY-MM-DD]                      books F1 and F2 paper record
   python -m agentdesk iv-snapshot                                        book E's end-of-day ATM IV for the universe, now (read-only)
 """
 from __future__ import annotations
@@ -99,10 +99,12 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     vix = SimVix(feed) if provider == "sim" else (RobinhoodVix(rh) if rh is not None else None)
     host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
     from .books.f_host import build_f
+    from .books.f2_host import build_f2
     from .books.group import HostGroup
     from .books.e_host import build_e
-    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed),
-                         build_e(engine, cfg, rh=rh, mode=mode, provider=provider, vix=vix))
+    fhost = build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed)
+    group = HostGroup.of(host, fhost, build_e(engine, cfg, rh=rh, mode=mode, provider=provider, vix=vix),
+                         build_f2(engine, cfg, rh=rh, mode=mode, provider=provider, fhost=fhost))
     engine.books = group if group.enabled else None
     engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
     return engine, bus
@@ -210,10 +212,14 @@ def cmd_record_quotes(args) -> None:
 
 def cmd_f_report(args) -> None:
     import sqlite3
+    from .books.f2_journal import F2Journal
     from .books.f_journal import FJournal
-    from .books.f_report import build_report, format_report
+    from .books.f_report import build_f2_report, build_report, format_f2_report, format_report
     cfg = load_config(args.config)
-    print(format_report(build_report(FJournal(sqlite3.connect(str(expand(cfg["journal_path"])))), args.since)))
+    db = sqlite3.connect(str(expand(cfg["journal_path"])))
+    print(format_report(build_report(FJournal(db), args.since)))
+    print()
+    print(format_f2_report(build_f2_report(F2Journal(db), args.since)))
 
 
 def cmd_f_clear_stale(args) -> None:
@@ -280,7 +286,7 @@ def main() -> None:
     rq.add_argument("--rates", default="1,2,4,8", help="probe steps, calls per second")
     rq.set_defaults(fn=cmd_record_quotes)
 
-    fr = sub.add_parser("f-report", help="book F paper record: win rate, mean R, PF, t, splits, shadow shorts")
+    fr = sub.add_parser("f-report", help="books F1 and F2 paper record: win rate, mean R, PF, t, splits, shadows")
     fr.add_argument("--since", default=None, help="YYYY-MM-DD")
     fr.set_defaults(fn=cmd_f_report)
 

@@ -169,14 +169,39 @@ books:
                               comm: [GOOGL, META, NFLX, DIS], discretionary: [AMZN, TSLA, HD],
                               financials: [JPM, V, MA, BAC], health: [UNH, LLY, JNJ], energy: [XOM],
                               staples: [COST, WMT, PG, KO, PEP]}}      # GICS; a name missing here can't trade
-  # Book F (docs/BOOK_F_HANDOFF.md): large-cap stocks in play, long whole shares, paper only. Section 3 rules are frozen.
-  F_stocks_in_play: {enabled: true,  paper_only: true,  instrument: shares, scan_et: "09:35", rvol5_min: 2.0, top_n: 5, first_candle: green, entry_cutoff_et: "10:30",
-                     stop_atr_frac: 0.10, exit_et: "15:55", risk_per_trade: 25, max_notional: 1000, max_positions: 5, daily_loss: 75,
-                     universe: {min_price: 10, min_atr: 0.50, min_dollar_vol_20d: 100000000, top_sp500_by_dollar_vol: 130,
-                                extra: [NVDA, AMD, AVGO, MU, TSM, ARM, MRVL, SMCI, WDC, STX, MSFT, META, GOOGL, AMZN, AAPL, ORCL, PLTR, TSLA]},
-                     news_tag: observe, shorts: log_only,
-                     prep_et: "08:30", max_quote_age_s: 5, max_sends: 3, cache_dir: ~/.agentdesk/cache/f, max_calls_per_s: 20}
-  F2_momentum_hold: {enabled: false, paper_only: true, note: "multi-day hold after a high-volume up day: no edge in the 2013-18 daily test (best t 1.31 vs Bonferroni 2.96)"}
+  # Book F1 (was F): stocks in play, long whole shares, paper only. docs/BOOK_F_HANDOFF.md section 3 plus the F1 v2
+  # changes pre-registered in research/strategy_f1_prereg.md: all liquid US stocks (source: all_us), the top 10 by
+  # RVOL5 armed, a stop at the opening-range low (clamped to 0.10-0.50 x ATR14; the published 0.10 x ATR stop is
+  # tracked as a shadow), and names with an opening range wider than 0.50 x ATR14 skipped. Sizes and limits unchanged.
+  # bars_source: robinhood caps the universe at max_names (the 09:35 scan is 1 call per 10 names); after buying
+  # Alpaca Algo Trader Plus, set bars_source: alpaca_sip and the cap is lifted.
+  F1_stocks_in_play: {enabled: true,  paper_only: true,  instrument: shares, scan_et: "09:35", rvol5_min: 2.0, top_n: 10, first_candle: green, entry_cutoff_et: "10:30",
+                      stop_mode: or_low, stop_atr_frac: 0.10, stop_atr_min: 0.10, stop_atr_max: 0.50, max_or_atr: 0.50,
+                      exit_et: "15:55", risk_per_trade: 25, max_notional: 1000, max_positions: 5, daily_loss: 75, bars_source: robinhood,
+                      universe: {source: all_us, max_names: 400, min_price: 10, min_atr: 0.50, min_avg_volume: 1000000,
+                                 min_dollar_vol_20d: 25000000, top_sp500_by_dollar_vol: 130,
+                                 extra: [NVDA, AMD, AVGO, MU, TSM, ARM, MRVL, SMCI, WDC, STX, MSFT, META, GOOGL, AMZN, AAPL, ORCL, PLTR, TSLA]},
+                      news_tag: observe, shorts: log_only,
+                      prep_et: "08:30", max_quote_age_s: 5, max_sends: 3, cache_dir: ~/.agentdesk/cache/f, max_calls_per_s: 20}
+  # F0 (was F2_momentum_hold): the multi-day shares hold, disabled after its daily test. F2 is now the debit-spread book.
+  F0_momentum_hold: {enabled: false, paper_only: true, note: "multi-day hold after a high-volume up day: no edge in the 2013-18 daily test (best t 1.31 vs Bonferroni 2.96)"}
+  # Book F2: single-name call and put debit spreads, paper only (research/strategy_f2_prereg.md; Evan, 2026-09-29).
+  # C: call spread on F1's opening-range breakout (F2's names, green, RVOL5 >= 2), bought on the OR-high break before
+  # 10:30 ET, held up to 3 days. P: put spread at 15:40 ET on a name up >= 3% on >= 1.8x average volume, held to the
+  # next day's 15:40 ET. Nearest expiry 5-12 days out; long leg at the money, short leg one straddle-width out (>= 2
+  # strikes); skip above 60% debit/width. Exits: 2x debit or 80% of width, stop 0.5x debit, C's day-1 stop below the
+  # OR low, the time exit. Never held through a report. Limits proposed 2026-09-29: $200 max debit, 3 open, -$300 day.
+  F2_debit_spreads: {enabled: true, paper_only: true,
+                     universe: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, AVGO, TSLA, JPM, V, MA, UNH, XOM, LLY, COST, NFLX,
+                                AMD, ORCL, CRM, ADBE, BAC, WMT, HD, DIS, INTC, QCOM, MU, PLTR, SMCI, ARM, MRVL, COIN,
+                                UBER, SHOP],
+                     rvol5_min: 2.0, max_armed_c: 3, entry_cutoff_et: "10:30", trigger_poll_sec: 2,
+                     entry_p_et: "15:40", up_pct_p: 3.0, vol_ratio_p: 1.8, max_new_p: 2,
+                     hold_days_c: 3, exit_et_c: "15:30", exit_et_p: "15:40",
+                     dte: [5, 12], width_straddle_x: 1.0, min_steps: 2, max_debit_width: 0.60,
+                     max_leg_spread_pct: 0.08, tick_exempt: 0.05, fill_frac: 0.35,
+                     take_profit_x: 2.0, take_profit_width: 0.80, stop_x: 0.50,
+                     max_debit: 200, max_open: 3, max_new_day: 3, daily_loss: 300, poll_sec: 5, require_calendar: true}
   # Book G = research candidate F3 (research/strategies_new_prereg.md, rules frozen; Evan approved paper 2026-09-28).
   # 0DTE/1DTE SPY ATM call calendar, Mon-Thu when the next session is tomorrow. Correlates 0.84 with D: one bet, compare side by side.
   G_call_calendar: {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, max_debit: 3.00, take_profit_pct: 0.25, stop_pct: 0.35, close_ct: "14:25"}

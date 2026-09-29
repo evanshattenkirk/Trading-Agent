@@ -232,7 +232,7 @@ def test_votes_reach_only_the_books_their_topic_affects():
     assert r.st.size_mult == 0.5                        # book A's multiplier, as before
     c.briefs["macro"]["size_multiplier"], c.briefs["vol"]["size_multiplier"] = 1.0, 0.75
     c._apply(e.feed.now())
-    assert r.book_mult("B") == 0.75 and r.book_mult("A") == 0.75 and r.book_mult("E") == 1.0 and r.book_mult("F") == 1.0
+    assert r.book_mult("B") == 0.75 and r.book_mult("A") == 0.75 and r.book_mult("E") == 1.0 and r.book_mult("F1") == 1.0
     assert c.cut_by("B") == ["vol"] and c.cut_by("E") == []
 
 

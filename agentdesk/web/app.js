@@ -269,11 +269,11 @@
       case 'f_position':          // book F holds shares: its positions ride with the combos for the strip, position card and trades
         if (e.event === 'closed') {
           S.combos.delete(e.pos.id); S.bookClosed.push({ ...e.pos, net: e.pos.pnl });
-          feedPush(e.ts, 'sell', `Book F closed ${e.pos.symbol} · ${e.pos.exit_reason} · ${money(e.pos.pnl, 2)}`);
+          feedPush(e.ts, 'sell', `Book ${e.pos.book} closed ${e.pos.symbol} · ${e.pos.exit_reason} · ${money(e.pos.pnl, 2)}`);
           mark('pos', 'trades', 'header');
         } else {
           S.combos.set(e.pos.id, e.pos);
-          if (e.event === 'open') feedPush(e.ts, 'buy', `Book F bought ${e.pos.qty} ${e.pos.symbol} @ ${px(e.pos.entry)} · stop ${px(e.pos.stop)}`);
+          if (e.event === 'open') feedPush(e.ts, 'buy', `Book ${e.pos.book} bought ${e.pos.qty} ${e.pos.symbol} @ ${px(e.pos.entry)} · stop ${px(e.pos.stop)}`);
           mark('pos', 'office', 'header');
         }
         break;
@@ -296,7 +296,7 @@
   /* ------------------------------------------------------------------ books */
   const aOpenPnl = () => [...S.positions.values()].reduce((a, p) => a + (p.unrealized || 0), 0);
   const combosOf = (k) => [...S.combos.values()].filter((p) => p.book === k);
-  const isShares = (p) => p.book === 'F';
+  const isShares = (p) => p.book === 'F1' || p.book === 'F';     // F: journal rows from before F1
   const pnlPct = (p) => (p.pnl_pct != null ? Number(p.pnl_pct) : p.entry && p.mark != null ? (p.mark / p.entry - 1) * 100 : 0);
   const posName = (p) => (isShares(p) ? `${p.qty}× ${p.symbol}` : p.setup);
   function bookPnl(k) {
@@ -388,7 +388,7 @@
     const combos = [...S.combos.values()];
     if (act === 'ALL' && !S.positions.size && combos.length) return renderCombo(combos[0], combos[0].book);
     renderAPosition(act === 'ALL' ? combos.map((c) => (isShares(c)
-      ? `<p class="note">Book F · ${esc(posName(c))} · entry ${px(c.entry)} · mark ${px(c.mark)} · <span class="${cls(c.unrealized)}">${money(c.unrealized)}</span></p>`
+      ? `<p class="note">Book ${esc(c.book)} · ${esc(posName(c))} · entry ${px(c.entry)} · mark ${px(c.mark)} · <span class="${cls(c.unrealized)}">${money(c.unrealized)}</span></p>`
       : `<p class="note">Book ${esc(c.book)} · ${esc(c.setup)} · ${c.credit ? 'credit' : 'debit'} ${px(c.entry)} · mark ${px(c.mark)} · <span class="${cls(c.total_pnl)}">${money(c.total_pnl)}</span></p>`)).join('') : '');
   }
 
@@ -424,9 +424,9 @@
 
   function renderShares(p) {        // book F: long whole shares, one card per name; the rest are listed underneath
     const body = $('pos-body'), pill = $('pos-setup');
-    const others = combosOf('F').filter((x) => x.id !== p.id);
+    const others = combosOf(p.book).filter((x) => x.id !== p.id);
     const pct = pnlPct(p);
-    pill.textContent = `Book F · ${combosOf('F').length} open`; pill.className = 'pill acc';
+    pill.textContent = `Book ${p.book} · ${combosOf(p.book).length} open`; pill.className = 'pill acc';
     body.innerHTML = `
       <div class="pos-title"><span class="c">${esc(posName(p))}</span><span class="p ${cls(pct)}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span></div>
       <div class="kv">

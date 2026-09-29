@@ -6,7 +6,7 @@ An options trading desk for SPY that runs on Robinhood's Agentic Trading MCP. En
 
 **Status:** every strategy book runs on paper. Nothing trades live. A book reaches real money only through the promotion ladder below, one book at a time, at one contract.
 
-![AgentDesk dashboard during a simulated session: SPY chart with MACD and RSI, per-book P&L chips, signal gate, book F scan, and the pixel-art office where the research crew meets](docs/img/dashboard.png)
+![AgentDesk dashboard during a simulated session: SPY chart with MACD and RSI, per-book P&L chips, signal gate, book F1's scan, and the pixel-art office where the research crew meets](docs/img/dashboard.png)
 
 ## Background
 
@@ -30,7 +30,7 @@ This is the account where I take concentrated risk on purpose; retirement accoun
 - **Safety you can test.** A daily loss limit that counts open P&L at the bid, per-book halts, a stale-quote watchdog, day risk state that survives restarts, every position sold on Ctrl-C, and dashboard controls behind a per-run token with Origin and Host checks. `risk.py`, `lifecycle.py`, `server.py`
 - **Research that reports its failures.** Rules are pre-registered before results, split in-sample and out-of-sample, and re-run at taker fills. Most candidates fail, and the write-ups say so. `research/`
 - **Cost-aware model use.** Prompt-cache breakpoints on every Claude call, about 3 web-search calls a day, and a per-desk tally of tokens and estimated cost.
-- **525 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
+- **569 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
 
 ## Strategy books
 
@@ -38,12 +38,13 @@ All books run side by side on one paper account: $10,000 balance, $1,500 cap on 
 
 | Book | What it trades | Status | Evidence so far |
 |---|---|---|---|
-| **A** | Evan's MACD 0DTE calls: 15m and 5m MACD above signal as the filter, 1m or 144-tick cross-up as the trigger, RSI 30–70 | Paper; the only book with a live code path | The MACD proxy isn't significant out of sample (t 0.23 / 1.69 / 0.39). Results on the free IEX feed aren't evidence, so A is judged by a weekly replay on full SIP prints |
+| **A** | Evan's MACD 0DTE calls: 15m and 5m MACD above signal as the filter, 1m or 144-tick cross-up as the trigger, RSI 30–70 | Paper; the only book allowed to go live | The MACD proxy isn't significant out of sample (t 0.23 / 1.69 / 0.39). Results on the free IEX feed aren't evidence, so A is judged by a weekly replay on full SIP prints |
 | **B** | 0DTE SPY iron fly at 08:45 CT, $5 wings, take profit 50% | Paper | Relies on the variance risk premium, modeled from VIX. Real-quote replay: `research/bd_real_quotes.py` |
 | **C** | Bullish 30-minute opening-range breakout → $2 bull-put spread | Paper | Negative in backtest (−3 bp a trade, t −5.75 in-sample). Kept on paper to confirm |
 | **D** | 10:00 ET iron condor, shorts at 0.9× the expected move, quiet-day filter | Paper | Modeled positive at taker fills with the entry-time filter; turns mixed (0.0% / −3.7% / +4.1% across three periods) if implied vol is 40% below the model (`research/d_quiet_check.py`) |
 | **E** | Pre-earnings IV run-up: ATM straddle at T−3, call calendar at T−10, always sold before the report | Paper; holds positions across days | No quote backtest yet |
-| **F** | Large-cap stocks in play: opening-range breakout on high relative volume, long shares | Paper, logging only | Replication 2016–2026 fails: PF 0.66, t −10.5 (`research/strategy_f_intraday.md`) |
+| **F1** | Stocks in play: opening-range breakout on high relative volume, long shares, now across all liquid US stocks with a stop at the opening-range low | Paper | The large-cap version fails its 2016–2026 replication (PF 0.66, t −10.5, `research/strategy_f_intraday.md`); the v2 rules are pre-registered (`research/strategy_f1_prereg.md`) and wait for the broad-universe backtest |
+| **F2** | Single-name debit spreads: call spreads on F1-style breakouts, put spreads fading high-volume up days; held up to 3 days | Paper | Puts rest on the one significant effect in F's research (high-volume up days reverse next day, t −3.9); calls are the weaker-evidence leg. No option history yet (`research/strategy_f2_prereg.md`) |
 | **G** | 0DTE/1DTE SPY ATM call calendar at 09:00 CT | Paper | The only one of seven pre-registered candidates to pass (modeled). Needs a real-quote replay before promotion |
 
 A bearish-puts mirror of C is built but disabled until a pre-registered filter passes out of sample.
@@ -204,9 +205,21 @@ Book E buys the implied-volatility run-up into an earnings report and always sel
 - The IV data comes from the standalone quote recorder: from 13:30 CT it lists strikes (≤ 0.5 calls/s), and from 14:50 CT it records the ATM IV per name (≤ 1 call/s) into `journal.iv_history`. `python -m agentdesk iv-snapshot` runs that pass once by hand.
 - The paper session and the recorder run as launchd jobs from pinned copies of the code; after updating, redeploy both with `tools/install_recorder.sh && tools/install_paper.sh`.
 
-## Book F: stocks in play (paper)
+## Books F1 and F2: stocks in play (paper)
 
-Long whole shares on a 5-minute opening-range breakout in large caps with high relative volume. The brief is `docs/BOOK_F_HANDOFF.md`. `python -m agentdesk f-report` shows its paper record, and `research/strategy_f_intraday.py` is its replication backtest (a fail; F runs only as a logging experiment).
+**F1** buys whole shares on a 5-minute opening-range breakout in stocks with high opening relative volume (the brief is `docs/BOOK_F_HANDOFF.md`; the v2 changes are in `research/strategy_f1_prereg.md`):
+- The universe is every liquid US common stock (NASDAQ Trader symbol list plus Alpaca daily bars), capped at the top 400 by dollar volume while the 09:35 scan runs on Robinhood minute bars. `bars_source: alpaca_sip` lifts the cap once the SIP feed is bought.
+- The stop sits at the opening-range low, clamped to 0.10–0.50 × ATR14. The published 0.10 × ATR stop is tracked on every trade as a shadow, and a name whose opening range is wider than 0.50 × ATR14 is skipped.
+- Sizes are unchanged: $25 risk, $1,000 notional, 5 open, −$75 day.
+
+**F2** buys single-name debit spreads on 34 names with liquid weekly options (`research/strategy_f2_prereg.md`):
+- **C, call spreads:** on F1's scan (green first candle, RVOL5 ≥ 2), bought when the stock breaks the opening-range high before 10:30 ET; held up to 3 trading days, with a first-day stop below the opening-range low.
+- **P, put spreads:** at 15:40 ET on a name up ≥ 3% on ≥ 1.8× its average volume, held to the next day's 15:40 ET.
+- **Structure:** the nearest expiry 5–12 days out, long leg at the money, short leg one straddle-width out; take profit at 2× the debit, stop at 0.5×. Never held through a report. Paper fills sit 35% of the way from mid to natural.
+- F2 holds overnight like E: positions persist in `f2_positions` and are not sold at shutdown. Every candidate, traded or not, is logged in `f2_decisions` with each leg's IV, the skew between them and ATM IV ÷ realized vol.
+- F2 is idle in the simulator (no single-name option data there).
+
+`python -m agentdesk f-report` shows both books' paper records. `research/strategy_f_intraday.py` is the original replication backtest; `--universe broad` runs F1 v2. F2's backtest on real option quotes (`research/f2_real_quotes.py`) is ready to run once single-name option history is bought (`research/README.md`).
 
 ## Things to know before real money
 
@@ -224,13 +237,14 @@ agentdesk/   engine.py strategy.py indicators.py bars.py strikes.py levels.py ex
              brokers/   paper, robinhood (options), paper_equity, robinhood_equity
              feeds/     sim, alpaca, massive, prints (bad-print filter), f_data
              books/     host, account, group, fills, plus one module per book (iron_fly, orb_bull_put,
-                        iron_condor, call_calendar, e_host / earnings_iv, f_host / f_stocks_in_play)
+                        iron_condor, call_calendar, e_host / earnings_iv, f_host / f_stocks_in_play (F1),
+                        f2_host / f2_spreads (F2))
              recorder.py iv_recorder.py l2.py backtest.py journal.py
 reporting/   weekly_quant.py: per-book weekly report and promotion gates
 research/    pre-registered strategy studies, real-quote replays, IEX vs SIP comparison (research/README.md)
 tests/       pytest suite
 tools/       build_demo.py, launchd installers for the paper session and the quote recorder
-docs/        design specs and implementation plans (docs/superpowers/), the book F brief
+docs/        design specs and implementation plans (docs/superpowers/), the book F (now F1) brief
 ```
 
 ## Built with Claude Code

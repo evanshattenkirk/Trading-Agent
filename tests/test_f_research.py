@@ -254,3 +254,38 @@ def test_pipeline_pulls_backtests_and_writes_the_report(tmp_path):
     assert t["primary"]["trades"] == 1 and "sensitivity" in t
     md = (tmp_path / "strategy_f_intraday.md").read_text()
     assert md.startswith("**PASS**") or md.startswith("**FAIL**")
+
+
+# ------------------------------------------------------------------ F1 v2 on the broad universe
+def test_v2_day_uses_the_or_low_stop_and_primary_keeps_the_atr_stop():
+    bars = [bar(575, 99.9, 100.3, 99.9, 100.2), bar(576, 100.1, 100.1, 99.5, 99.6)] + flat_day(99.6, start=577)
+    p = pick(or_high=100.0, atr=2.0)                       # OR low 99.0 (0.5 ATR below the fill: at the cap)
+    [old] = R.simulate_day([p], {"AAA": bars}, CFG, slip_bp=0)
+    [new] = R.simulate_day([p], {"AAA": bars}, {**CFG, **{k: R.PRIMARY_V2[k] for k in ("stop_mode", "stop_atr_min", "stop_atr_max")}}, slip_bp=0)
+    assert old["why"] == "stop" and old["exit"] == pytest.approx(99.8)
+    assert new["stop"] == pytest.approx(99.0) and new["why"] == "exit 15:55"
+
+
+def test_broad_universe_ignores_the_sp_list_and_applies_the_floors():
+    data = {"BIG": daily(40, vol=5_000_000), "THIN": daily(40, vol=500_000), "CHEAP": daily(40, px=8, vol=9e6),
+            "NEW": daily(10, vol=5_000_000)}
+    uni = R.universe_for_day_broad(days(40)[-1], data, set(), [], R.PRIMARY_V2)
+    assert set(uni) == {"BIG"}                             # THIN < 1M shares, CHEAP < $10, NEW < 20 bars
+
+
+def test_broad_pipeline_pulls_per_day_universes_and_writes_the_f1_report(tmp_path):
+    ds = days(40)
+    store = R.Store(tmp_path / "cache")
+    h = R.AlpacaHistory(FakeAlpaca(ds), per_min=10**6)
+    syms = ["HOT", "COLD", "SPY"]
+    R.pull_daily(store, h, syms, ds[0], ds[-1])
+    data = {s: store.read_daily(s) for s in syms}
+    R.pull_or_windows_broad(store, h, data, [], ds, R.PRIMARY_V2)
+    R.pull_candidate_days(store, h, data, set(), [], ds, loose={**R.PRIMARY_V2, **R.LOOSEST_V2},
+                          uni_fn=R.universe_for_day_broad)
+    assert "HOT" in store.read_bars(store.day_path(ds[-1]))
+    res = R.report_v2(store, data, [], ds, tmp_path)
+    assert res["primary"]["trades"] == 1 and "published 0.10 x ATR stop" in res["sensitivity"]
+    md = (tmp_path / "strategy_f1.md").read_text()
+    assert md.startswith("**PASS**") or md.startswith("**FAIL**")
+    assert (tmp_path / "strategy_f1_results.json").exists()

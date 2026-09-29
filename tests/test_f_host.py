@@ -28,7 +28,7 @@ def et(h, m, s=0, day=DAY):
 
 def make(names=("NVDA",), cfg_patch=None, data=None, news=None, reds=()):
     cfg = copy.deepcopy(BASE)
-    cfg["books"]["F_stocks_in_play"].update(cfg_patch or {})
+    cfg["books"]["F1_stocks_in_play"].update(cfg_patch or {})
     eng = FakeEngine(FakeQuotes(), cfg)
     data = data or FakeData(DAY)
     for i, s in enumerate(names):
@@ -95,7 +95,8 @@ def test_entry_only_above_the_or_high():
     [p] = host.book.open
     assert p.entry == pytest.approx(100.52 * 1.0001, abs=1e-4)
     assert p.qty == 9                                   # $1,000 / 100.55 limit (risk cap would allow 125)
-    assert p.stop == pytest.approx(p.entry - 0.2, abs=1e-4)
+    assert p.stop == pytest.approx(99.9, abs=1e-4)             # F1 v2: the OR low (0.32 x ATR below the fill)
+    assert p.shadow_stop == pytest.approx(p.entry - 0.2, abs=1e-4)   # the published 0.10 x ATR stop, shadow only
     assert "NVDA" not in host.armed
 
 
@@ -103,7 +104,7 @@ def test_one_entry_per_name_per_day():
     eng, data, host = scanned()
     quote(data, "NVDA", 100.51, 100.52, et(9, 36), last=100.52)
     at(host, eng, et(9, 36))
-    quote(data, "NVDA", 100.0, 100.01, et(9, 37), last=100.0)            # stopped out
+    quote(data, "NVDA", 99.85, 99.86, et(9, 37), last=99.85)             # stopped out below the OR low
     at(host, eng, et(9, 37))
     assert not host.book.open and host.book.trades == 1
     quote(data, "NVDA", 100.8, 100.81, et(9, 38), last=100.8)            # breaks out again
@@ -237,7 +238,7 @@ def test_daily_loss_halts_f_only_and_flattens_it():
         quote(data, s, 100.51, 100.52, et(9, 36), last=100.52)
     at(host, eng, et(9, 36))
     assert len(host.book.open) == 2
-    quote(data, "NVDA", 100.0, 100.01, et(9, 40))                     # NVDA stops: about -$5 <= -$1
+    quote(data, "NVDA", 99.85, 99.86, et(9, 40))                      # NVDA stops: about -$6 <= -$1
     quote(data, "MU", 100.6, 100.61, et(9, 40))
     at(host, eng, et(9, 40))
     assert host.book.halted and "daily loss" in host.book.halt_reason
@@ -335,18 +336,18 @@ def test_unexpected_equity_position_halts_every_book_in_shadow():
 def test_build_refuses_f_without_paper_only_and_skips_when_disabled():
     cfg = copy.deepcopy(BASE)
     eng = FakeEngine(FakeQuotes(), cfg)
-    cfg["books"]["F_stocks_in_play"]["paper_only"] = False
+    cfg["books"]["F1_stocks_in_play"]["paper_only"] = False
     with pytest.raises(SystemExit):
         build_f(eng, cfg, rh=None, mode="sim", provider="sim", feed=eng.feed, data=FakeData(DAY))
-    cfg["books"]["F_stocks_in_play"].update(paper_only=True, enabled=False)
+    cfg["books"]["F1_stocks_in_play"].update(paper_only=True, enabled=False)
     assert build_f(eng, cfg, rh=None, mode="sim", provider="sim", feed=eng.feed, data=FakeData(DAY)) is None
 
 
 def test_f2_stays_disabled_and_f_is_paper_only_in_config():
     b = BASE["books"]
-    assert b["F2_momentum_hold"]["enabled"] is False
-    assert b["F_stocks_in_play"]["paper_only"] is True
-    assert b["F_stocks_in_play"]["shorts"] == "log_only" and b["F_stocks_in_play"]["news_tag"] == "observe"
+    assert b["F0_momentum_hold"]["enabled"] is False
+    assert b["F1_stocks_in_play"]["paper_only"] is True
+    assert b["F1_stocks_in_play"]["shorts"] == "log_only" and b["F1_stocks_in_play"]["news_tag"] == "observe"
 
 
 def test_crew_proposals_cannot_touch_f_risk_fields():
@@ -355,9 +356,9 @@ def test_crew_proposals_cannot_touch_f_risk_fields():
     cfg = copy.deepcopy(BASE)
     pb = ProposalBook(cfg, None)
     for scope in ("trade", "day", "standing"):
-        for key, val in (("books.F_stocks_in_play.risk_per_trade", 50), ("books.F_stocks_in_play.max_notional", 5000),
-                         ("books.F_stocks_in_play.daily_loss", 500), ("books.F_stocks_in_play.max_positions", 10),
-                         ("books.F2_momentum_hold.enabled", True), ("books.F_stocks_in_play.paper_only", False)):
+        for key, val in (("books.F1_stocks_in_play.risk_per_trade", 50), ("books.F1_stocks_in_play.max_notional", 5000),
+                         ("books.F1_stocks_in_play.daily_loss", 500), ("books.F1_stocks_in_play.max_positions", 10),
+                         ("books.F0_momentum_hold.enabled", True), ("books.F1_stocks_in_play.paper_only", False)):
             item = pb.submit("quant", {"scope": scope, "title": f"{scope} {key}", "params": {key: val}}, 0.0)
             assert item["status"].startswith("rejected") and not item["params"]
     assert cfg["books"] == BASE["books"]
@@ -372,6 +373,21 @@ def test_open_risk_is_shared_between_f_and_the_other_books():
     assert host.account is bh.account
     assert bh.open_risk() == pytest.approx(p.risk)
     assert g.positions() == [p]
+
+
+def test_f1_opens_and_closes_refresh_the_book_strip():
+    from agentdesk.books.group import HostGroup
+    from agentdesk.books.host import BookHost
+    eng, data, host = scanned()
+    HostGroup(BookHost(eng, eng.cfg, books=[]), host)
+    quote(data, "NVDA", 100.51, 100.52, et(9, 36, 30), last=100.52)
+    at(host, eng, et(9, 36, 30))
+    p = host.book.open[0]
+    quote(data, "NVDA", p.stop - 0.05, p.stop - 0.04, et(9, 40))
+    at(host, eng, et(9, 40))
+    strips = [s["books"] for s in eng.bus.of("books")]
+    assert len(strips) == 2 and [b["book"] for b in strips[0]] == ["A", "F1"]
+    assert strips[0][1]["trades"] == 1 and strips[1][1]["day_pnl"] < 0
 
 
 class Boom:
