@@ -70,6 +70,7 @@ class NewsTagger:
                         text=("Catalysts: " + ", ".join(found[:5])) if found else "No clear catalysts on the F picks.")
 
     async def _ask(self, now: float, picks, runners) -> dict:
+        from ..crew import cached_system
         crew = self.e.crew
         client = crew._get_client()
         if client is None:
@@ -82,9 +83,10 @@ class NewsTagger:
                   "\"earnings|guidance|analyst|m&a|sector_macro|none_found\", \"priced_in\": \"early|partly|fully\", "
                   "\"confidence\": 0.0, \"note\": \"<= 20 words\", \"sources\": [\"url\"]}]}")
         msg = await asyncio.wait_for(client.messages.create(
-            model=crew.cfg["model"], max_tokens=2000, system=system,
+            model=crew.cfg["model"], max_tokens=2000, system=cached_system(system),
             messages=[{"role": "user", "content": "Stocks in play at 09:35 ET today:\n" + "\n".join(lines)}],
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]), timeout=self.timeout * 2)
+        crew.note_usage(msg)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
         from ..crew import _extract_json
         obj = _extract_json(text, key="tags") or {}

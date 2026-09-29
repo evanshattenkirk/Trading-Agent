@@ -27,6 +27,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
   - The crew can never change size or loss limits, including anything under `books.*`.
   - Standing changes and new strategies wait for Evan's Approve button. Approved strategies are built and backtested first; nothing new trades on its own.
 - Offline (no `ANTHROPIC_API_KEY`) the crew runs templated briefs and roundtables. Online it uses web search.
+- Every Claude call (desk briefs, roundtable, book F news tag) puts an explicit `cache_control` breakpoint on its stable system block via `crew.cached_system`; time, price, briefs and stats stay in the user message after it. `Crew.cache_usage` (also in the dashboard state) tallies cache reads and writes.
 
 ## Data stack (paper)
 - Robinhood MCP: option quotes/greeks, Level 2 (`get_equity_price_book`, Nasdaq TotalView), SPY bars, earnings calendar, order review.
