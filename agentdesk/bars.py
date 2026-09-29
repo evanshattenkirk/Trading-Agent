@@ -42,12 +42,17 @@ class TimeBarBuilder:
         self.tf = tf
         self.sec = TF_SECONDS[tf]
         self.cur: Bar | None = None
+        self.closed_t: float | None = None     # start of the last period closed; it is final
+        self.late = 0                          # prints ignored because their period had already closed
 
     def _start(self, ts: float) -> float:
         return float(int(ts // self.sec) * self.sec)
 
     def on_trade(self, tr: Trade) -> Bar | None:
         start = self._start(tr.ts)
+        if self.closed_t is not None and start <= self.closed_t:    # a late print never reopens or bleeds forward
+            self.late += 1
+            return None
         closed = None
         if self.cur is not None and start > self.cur.t:
             closed = self._close()
@@ -81,6 +86,7 @@ class TimeBarBuilder:
     def _close(self) -> Bar:
         b, self.cur = self.cur, None
         b.end = b.t + self.sec
+        self.closed_t = b.t
         return b
 
 

@@ -10,10 +10,20 @@ class Book:
         self.max_trades = int(cfg.get("max_trades_day", 1))
         self.open: list = []
         self.skips: deque = deque(maxlen=30)
-        self.errors = 0
-        self.error_ts = None        # time of the last error (host: one failure per tick keeps the count)
+        self.errors = 0             # the longest current failure streak among the kinds of call below
+        self.streaks: dict = {}     # kind of call (clock check, position check, bar hook...) -> failures in a row
         self.entering = False
         self.reset_day()
+
+    def succeeded(self, kind: str) -> None:
+        """A clean call clears only its own kind's streak: a working clock check must not hide failing exits."""
+        self.streaks.pop(kind, None)
+        self.errors = max(self.streaks.values(), default=0)
+
+    def failed(self, kind: str) -> int:
+        self.streaks[kind] = self.streaks.get(kind, 0) + 1
+        self.errors = max(self.streaks.values())
+        return self.errors
 
     def reset_day(self) -> None:
         self.closed: list = []

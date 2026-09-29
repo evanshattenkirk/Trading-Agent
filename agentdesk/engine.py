@@ -12,7 +12,7 @@ from collections import deque
 from datetime import time
 
 from .bars import Bar, TickBarBuilder, TimeBarBuilder, Trade, VWAP
-from .brokers.base import OrderResult, OrderStateError
+from .brokers.base import OrderResult, OrderStateError, RateLimited
 from .clock import at_ct, ct, ct_time, hm, is_rth, session_date
 from .exits import Contract, ExitIntent, ExitPlan, Position
 from .feeds.base import Heartbeat
@@ -66,7 +66,9 @@ class Engine:
         self._stopped = False
         self.ocfg = cfg["orders"]
         self.wd = {**WATCHDOG, **(cfg["risk"].get("watchdog") or {})}
-        self._errors = 0            # consecutive failed background tasks (broker/API errors)
+        self._errors = 0            # longest current run of failed background tasks (broker/API errors)
+        self._streaks: dict[str, int] = {}     # per kind ("manage", "entry"...): one kind's success can't hide another's failures
+        self._last_rate_log = -1e18
         self._last_reconcile = 0.0
         self._mismatches = 0
         self.books = None           # BookHost for paper books B/C/D (books/host.py); None when none is enabled
@@ -252,12 +254,19 @@ class Engine:
     async def _guard(self, coro, what: str) -> None:
         try:
             await coro
-            self._errors = 0
+            self._streaks.pop(what, None)
+            self._errors = max(self._streaks.values(), default=0)
         except asyncio.CancelledError:
             raise
+        except RateLimited as ex:           # Robinhood is pacing the account: skip this round; stale quotes still trip the watchdog
+            now = self.feed.now()
+            if now - self._last_rate_log >= 60:
+                self._last_rate_log = now
+                self.bus.emit("log", now, level="warn", msg=f"{what}: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
         except Exception as ex:
             now = self.feed.now()
-            self._errors += 1
+            self._streaks[what] = self._streaks.get(what, 0) + 1
+            self._errors = max(self._streaks.values())
             log.exception("%s failed (%d in a row)", what, self._errors)
             self.bus.emit("log", now, level="error", msg=f"{what} failed ({self._errors} in a row): {ex}")
             if self._errors >= self.wd["max_consecutive_errors"]:

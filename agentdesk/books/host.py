@@ -216,15 +216,14 @@ class BookHost:
 
     # ------------------------------------------------------------ per book
     async def _safe(self, book: Book, coro, now: float) -> None:
+        kind = getattr(coro, "__qualname__", "")
         try:
             await coro
-            if book.error_ts != now:        # a clean call only clears errors when nothing else failed this tick
-                book.errors = 0
+            book.succeeded(kind)
         except RateLimited as ex:           # Robinhood is pacing the account: skip this round, never halt over it
             self._rate_limited(now, f"book {book.letter}", ex)
         except Exception as ex:
-            book.errors += 1
-            book.error_ts = now
+            book.failed(kind)
             log.exception("book %s failed (%d in a row)", book.letter, book.errors)
             self._log(now, "error", f"book {book.letter}: {ex} ({book.errors} in a row)")
             if book.errors >= self.max_errors and not book.halted:
