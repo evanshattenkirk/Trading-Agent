@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agentdesk.iv import IVQuote, Pacer, atm_strike, d30_expiry, front_expiry, post_expiry, pre_expiry
+from agentdesk.iv import IVQuote, Pacer, RobinhoodChains, atm_strike, d30_expiry, front_expiry, post_expiry, pre_expiry
 
 TODAY = date(2026, 10, 5)                       # Monday
 EXPS = [date(2026, 10, 5), date(2026, 10, 7), date(2026, 10, 9), date(2026, 10, 16), date(2026, 11, 6)]
@@ -79,3 +79,99 @@ def test_pacer_does_not_sleep_when_calls_are_already_slow():
         await p.wait()
     asyncio.run(go())
     assert clk.slept == []
+
+
+
+NOW = 1_790_000_000.0          # any fixed epoch; the cache compares against it
+
+
+class FakeRH:
+    def __init__(self, responses):
+        self.responses, self.calls = responses, []
+
+    async def call(self, tool, args):
+        self.calls.append((tool, dict(args)))
+        r = self.responses[tool]
+        return r(args) if callable(r) else r
+
+
+def instruments(exp, strikes, page=None, nxt=None):
+    rows = [{"id": f"{r[0]}{k:g}-{exp}", "strike_price": f"{k:.4f}", "type": r, "expiration_date": exp}
+            for k in strikes for r in ("call", "put")]
+    return {"results": rows, "next": nxt}
+
+
+def test_expirations_are_read_once_per_day():
+    rh = FakeRH({"get_option_chains": {"results": [{"symbol": "AMD", "expiration_dates": ["2026-10-09", "2026-10-16"]}]}})
+    ch = RobinhoodChains(rh, clock=lambda: NOW)
+
+    async def go():
+        a = await ch.expirations("AMD")
+        b = await ch.expirations("AMD")
+        return a, b
+    a, b = asyncio.run(go())
+    assert a == b == [date(2026, 10, 9), date(2026, 10, 16)]
+    assert len(rh.calls) == 1
+
+
+def test_expirations_without_the_field_raise_with_the_keys_seen():
+    ch = RobinhoodChains(FakeRH({"get_option_chains": {"results": [{"symbol": "AMD"}]}}), clock=lambda: NOW)
+    try:
+        asyncio.run(ch.expirations("AMD"))
+    except RuntimeError as ex:
+        assert "expiration_dates" in str(ex)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
+def test_strikes_page_through_and_need_both_rights(tmp_path):
+    pages = {None: instruments("2026-10-09", [95, 100], nxt="c2"), "c2": instruments("2026-10-09", [105])}
+    pages["c2"]["results"] = [r for r in pages["c2"]["results"] if r["type"] == "call"]     # 105 has no put
+    rh = FakeRH({"get_option_instruments": lambda a: pages[a.get("cursor")]})
+    ch = RobinhoodChains(rh, cache_dir=tmp_path, clock=lambda: NOW)
+    ks = asyncio.run(ch.strikes("AMD", date(2026, 10, 9)))
+    assert ks == {95.0, 100.0}
+    assert [a.get("cursor") for _, a in rh.calls] == [None, "c2"]
+    c = ch.contract("AMD", date(2026, 10, 9), 100, "put")
+    assert c.broker_id == "p100-2026-10-09" and c.expiry == "2026-10-09" and c.symbol == "AMD"
+
+
+def test_strike_lists_are_cached_on_disk_until_stale(tmp_path):
+    rh = FakeRH({"get_option_instruments": instruments("2026-10-09", [100])})
+    asyncio.run(RobinhoodChains(rh, cache_dir=tmp_path, clock=lambda: NOW).strikes("AMD", date(2026, 10, 9)))
+    again = RobinhoodChains(rh, cache_dir=tmp_path, clock=lambda: NOW + 86400)
+    assert asyncio.run(again.strikes("AMD", date(2026, 10, 9))) == {100.0}
+    assert len(rh.calls) == 1                                    # second instance read the file
+    stale = RobinhoodChains(rh, cache_dir=tmp_path, clock=lambda: NOW + 4 * 86400)
+    asyncio.run(stale.strikes("AMD", date(2026, 10, 9)))
+    assert len(rh.calls) == 2                                    # older than LIST_MAX_AGE_DAYS: listed again
+
+
+def test_quotes_are_one_batched_call_with_iv():
+    rh = FakeRH({"get_option_instruments": instruments("2026-10-09", [100]),
+                 "get_option_quotes": {"results": [
+                     {"instrument_id": "c100-2026-10-09", "bid_price": "2.40", "ask_price": "2.50", "implied_volatility": "0.62"},
+                     {"instrument_id": "p100-2026-10-09", "bid_price": "2.20", "ask_price": "2.30"}]}})
+    ch = RobinhoodChains(rh, clock=lambda: NOW)
+
+    async def go():
+        await ch.strikes("AMD", date(2026, 10, 9))
+        cs = [ch.contract("AMD", date(2026, 10, 9), 100, r) for r in ("call", "put")]
+        return cs, await ch.quotes(cs), await ch.quote(cs[0])
+    cs, qs, one = asyncio.run(go())
+    assert [q.bid for q in qs] == [2.40, 2.20] and qs[0].iv == 0.62 and qs[1].iv is None
+    assert qs[0].ts == NOW and one is qs[0]
+    assert [t for t, _ in rh.calls].count("get_option_quotes") == 1
+
+
+def test_calls_wait_for_the_pacer():
+    class CountPacer:
+        n = 0
+
+        async def wait(self):
+            CountPacer.n += 1
+    rh = FakeRH({"get_equity_quotes": {"results": [{"symbol": "AMD", "last_trade_price": "100.2"},
+                                                   {"symbol": "XOM", "bid_price": "115", "ask_price": "115.2"}]}})
+    ch = RobinhoodChains(rh, pacer=CountPacer(), clock=lambda: NOW)
+    assert asyncio.run(ch.spots(["AMD", "XOM"])) == {"AMD": 100.2, "XOM": 115.1}
+    assert CountPacer.n == 1
