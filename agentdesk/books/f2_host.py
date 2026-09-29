@@ -73,6 +73,7 @@ class F2Host:
         self.book.max_trades = int(self.c["max_new_day"])
         self.account = account or AccountRisk((cfg.get("books") or {}).get("account"))
         self.other_risk = lambda: sum(p.entry * 100 * p.qty for p, _ in self.e.open)     # A (+ others via HostGroup)
+        self.books_changed = lambda now: None      # HostGroup: refresh the dashboard's book strip
         self.f = {**FILLS, **((cfg.get("books") or {}).get("fills") or {})}
         self.broker = PaperBroker(chains)
         self.broker.combo_model, self.broker.combo_frac = "mid_frac", float(self.c["fill_frac"])
@@ -376,6 +377,7 @@ class F2Host:
         self.j.save(pos, now)
         self.j.decision(**rec, outcome="opened", reason=res.status, lots=res.filled_qty)
         self.e.bus.emit("book_position", now, pos=pos.to_dict(), event="open", size_note=size_why)
+        self.books_changed(now)
 
     # ------------------------------------------------------------ management
     def _forced(self, p: ComboPosition, now: float, half: bool) -> str | None:
@@ -490,6 +492,7 @@ class F2Host:
         if self.book.day_pnl <= -lim and not self.book.blocked:
             self.book.blocked = f"daily loss ${self.book.day_pnl:.0f} <= -${lim:.0f}: no new F2 spreads today"
             self._log(now, "warn", f"book F2: {self.book.blocked}")
+        self.books_changed(now)
 
     # ------------------------------------------------------------ engine controls
     def halt_all(self, reason: str, flatten: bool = False) -> None:

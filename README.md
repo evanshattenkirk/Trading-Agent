@@ -30,7 +30,7 @@ This is the account where I take concentrated risk on purpose; retirement accoun
 - **Safety you can test.** A daily loss limit that counts open P&L at the bid, per-book halts, a stale-quote watchdog, day risk state that survives restarts, every position sold on Ctrl-C, and dashboard controls behind a per-run token with Origin and Host checks. `risk.py`, `lifecycle.py`, `server.py`
 - **Research that reports its failures.** Rules are pre-registered before results, split in-sample and out-of-sample, and re-run at taker fills. Most candidates fail, and the write-ups say so. `research/`
 - **Cost-aware model use.** Prompt-cache breakpoints on every Claude call, about 3 web-search calls a day, and a per-desk tally of tokens and estimated cost.
-- **567 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
+- **569 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
 
 ## Strategy books
 

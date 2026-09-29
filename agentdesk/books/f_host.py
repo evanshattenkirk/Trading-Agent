@@ -59,6 +59,7 @@ class FHost:
         self.book.max_trades = int(self.c["max_positions"])
         self.account = account or AccountRisk((cfg.get("books") or {}).get("account"))
         self.other_risk = lambda: sum(p.entry * 100 * p.qty for p, _ in self.e.open)     # A (+ B/C/D via HostGroup)
+        self.books_changed = lambda now: None      # HostGroup: refresh the dashboard's book strip
         if broker is None:
             from ..brokers.paper_equity import PaperEquityBroker
             broker = PaperEquityBroker(self, max_age=self.c.get("max_quote_age_s", 5))
@@ -424,6 +425,7 @@ class FHost:
         self.fj.open_position(str(self.day), self.e.mode, p)
         self.fj.set_status(str(self.day), r.symbol, "filled")
         self.e.bus.emit("f_position", now, pos=p.to_dict(), event="open")
+        self.books_changed(now)
         self._emit_scan(now)
 
     def _tags(self, r: F.ScanRow, now: float) -> dict:
@@ -476,6 +478,7 @@ class FHost:
         self.status[p.symbol] = "stopped" if p.exit_reason.startswith("stop") else "closed"
         self.fj.set_status(str(self.day), p.symbol, self.status[p.symbol])
         self.e.bus.emit("f_position", now, pos=p.to_dict(), event="closed")
+        self.books_changed(now)
         self._emit_scan(now)
         lim = abs(self.c["daily_loss"])
         if not self.book.halted and self.book.day_pnl <= -lim:

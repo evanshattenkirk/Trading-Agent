@@ -25,6 +25,8 @@ class HostGroup:
             if bookhost is not None:
                 bookhost.open_risk = lambda: base() + sum(x.open_risk() for x in self.extras)
                 bookhost.extra_books = [x.book for x in self.extras]
+        for h in self.extras:
+            h.books_changed = self.emit_books
 
     @classmethod
     def of(cls, bookhost=None, fhost=None, ehost=None, f2host=None):
@@ -86,6 +88,16 @@ class HostGroup:
             return self.bookhost.open_risk()
         h = self.extras[0]
         return h.other_risk() + h.open_risk()
+
+    def emit_books(self, now: float) -> None:
+        """Refresh the dashboard's book strip after an F1, E or F2 open or close (BookHost does this itself for
+        B/C/D/G)."""
+        if self.bookhost:
+            self.bookhost._emit_books(now)
+            return
+        snap = self.snapshot()
+        self.hosts[0].e.bus.emit("books", now, account=snap["account"],
+                                 books=[{k: v for k, v in b.items() if k not in ("open", "closed")} for b in snap["books"]])
 
     def snapshot(self) -> dict:
         if self.bookhost:

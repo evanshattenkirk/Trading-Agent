@@ -375,6 +375,21 @@ def test_open_risk_is_shared_between_f_and_the_other_books():
     assert g.positions() == [p]
 
 
+def test_f1_opens_and_closes_refresh_the_book_strip():
+    from agentdesk.books.group import HostGroup
+    from agentdesk.books.host import BookHost
+    eng, data, host = scanned()
+    HostGroup(BookHost(eng, eng.cfg, books=[]), host)
+    quote(data, "NVDA", 100.51, 100.52, et(9, 36, 30), last=100.52)
+    at(host, eng, et(9, 36, 30))
+    p = host.book.open[0]
+    quote(data, "NVDA", p.stop - 0.05, p.stop - 0.04, et(9, 40))
+    at(host, eng, et(9, 40))
+    strips = [s["books"] for s in eng.bus.of("books")]
+    assert len(strips) == 2 and [b["book"] for b in strips[0]] == ["A", "F1"]
+    assert strips[0][1]["trades"] == 1 and strips[1][1]["day_pnl"] < 0
+
+
 class Boom:
     """A host whose hooks raise: stands in for an F failure outside FHost's own guard."""
     book = None
