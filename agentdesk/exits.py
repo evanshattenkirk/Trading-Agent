@@ -73,6 +73,7 @@ class Position:
     entry_reasons: list = field(default_factory=list)
     l2: dict | None = None
     last_quote_ts: float = 0.0      # last time manage() saw a usable quote (safety watchdog)
+    crew: dict | None = None        # what the crew's vote did to this entry (qty at 1.0x, cutting desks, tweaks)
 
     def __post_init__(self):
         self.qty = self.qty or self.qty_initial

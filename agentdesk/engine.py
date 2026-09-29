@@ -413,6 +413,13 @@ class Engine:
                 up_mult, checks = self.crew.size_up(now, es.setup, spot)
                 self.bus.emit("conviction", now, mult=up_mult, checks=checks, setup=es.setup)
             qty, size_why = self.risk.size(q.ask, up_mult)
+            crew_fx = None
+            if self.crew:                      # the quantity without the crew's cut or size-up, for the scorecard
+                from .proposals import get_path
+                tweaks = {k: get_path(self.cfg, k) for k in self._day_orig}
+                tweaks.update(self.trade_tweaks)
+                crew_fx = self.crew.effect("A", qty=qty, qty_1x=self.risk.size(q.ask, 1.0, cut=1.0)[0], up=up_mult,
+                                           tweaks=tweaks)
             if qty <= 0:
                 self._skip(now, es, size_why)
                 return
@@ -435,6 +442,7 @@ class Engine:
             pos = Position(contract, es.setup, res.filled_qty, res.avg_price, now,
                            strike_reason=f"{choice.offset:+d}: {choice.reason}", entry_reasons=es.reasons, l2=l2_note)
             pos.mark, pos.bid, pos.ask = q.mark, q.bid, q.ask
+            pos.crew = crew_fx
             pos.fees += self.cfg["sizing"]["fee_per_contract"] * res.filled_qty
             pos.fills.append({"ts": now, "side": "buy", "qty": res.filled_qty, "px": res.avg_price, "why": "entry"})
             ecfg = self.cfg["exits"]
@@ -487,6 +495,8 @@ class Engine:
     def _skip(self, now, es, why: str) -> None:
         item = {"setup": es.setup, "tf": es.trigger_tf, "why": why}
         self.skips.append({"ts": now, **item})
+        if self.crew and why.startswith("blackout:"):
+            self.crew.note_block("A", why, now)
         self.bus.emit("skip", now, **item)
         self.set_agent(now, "watching", f"Passed on {es.setup.lower()} signal: {why}")
 

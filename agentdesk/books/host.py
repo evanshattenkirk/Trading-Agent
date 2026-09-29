@@ -27,6 +27,7 @@ log = logging.getLogger("agentdesk.books")
 FILLS = {"model": "mid_offset", "cents_per_leg": 1, "reprice_step_c": 1, "max_reprices": 4,
          "max_quote_age_s": 5, "max_leg_spread_pct": 0.25, "tick_exempt": 0.02}
 HIST_SEED = 424242
+CREW_BLOCKS = ("blackout:", "Vol desk:", "high-impact event before")     # skips that come from the crew's reads
 LIVE_FIELDS = ("id", "book", "qty", "mark", "peak", "unrealized", "realized", "fees", "total_pnl", "pnl_pct",
                "max_loss", "status")
 
@@ -257,7 +258,7 @@ class BookHost:
         events = [(b.start + before, b.name) for b in st.blackouts if session_date(b.start + before) == d]
         return MarketContext(now=now, day=d, spot=self.e.price, vwap=self.e.vwap.value, events=events,
                              vix_prev=self.vix_prev if self._vix_day == d else None, vix1d_flag=self._vix1d_flag(d),
-                             size_mult=min(1.0, st.size_mult), open=list(book.open))
+                             size_mult=self.e.risk.book_mult(book.letter), open=list(book.open))
 
     def _vix1d_flag(self, d) -> bool | None:
         crew = self.e.crew
@@ -327,7 +328,7 @@ class BookHost:
             if it.max_price is not None and fair > it.max_price:
                 return self._skip(book, now, f"debit ${fair:.2f} above the ${it.max_price:.2f} cap")
             per_lot = round(((it.width - fair) if it.credit else fair) * 100, 2)
-            lots, size_why = self.account.size(per_lot, it.lots, it.budget, min(1.0, self.e.risk.st.size_mult))
+            lots, size_why = self.account.size(per_lot, it.lots, it.budget, self.e.risk.book_mult(book.letter))
             if lots < 1:
                 return self._skip(book, now, size_why)
             ok, why = self.account.can_open(per_lot * lots, self.open_risk(), self.e.risk.st.day_pnl)
@@ -345,6 +346,9 @@ class BookHost:
             pos = ComboPosition(book.letter, book.strategy.name, list(it.legs), cs, res.filled_qty, res.avg_price,
                                 it.credit, it.width, now, strike_reason=it.reason,
                                 entry_reasons=[size_why] + list(it.meta.get("notes", [])), meta=dict(it.meta))
+            if self.e.crew is not None:            # what the crew's vote did to this entry, for the weekly scorecard
+                pos.meta["crew"] = self.e.crew.effect(book.letter, qty=lots,
+                                                      qty_1x=self.account.size(per_lot, it.lots, it.budget, 1.0)[0])
             pos.fees = self.fee * sum(l.ratio for l in it.legs) * res.filled_qty
             pos.fills.append(self._fill(now, "open", res, "entry"))
             c = book.c
@@ -475,6 +479,8 @@ class BookHost:
         if book.skips and book.skips[-1]["why"] == why:
             return                 # same reason as last time: already logged
         book.skips.append({"ts": now, "book": book.letter, "why": why})
+        if self.e.crew is not None and why.startswith(CREW_BLOCKS):
+            self.e.crew.note_block(book.letter, why, now)
         self.e.bus.emit("book_skip", now, book=book.letter, why=why)
 
     def _log(self, now: float, level: str, msg: str) -> None:

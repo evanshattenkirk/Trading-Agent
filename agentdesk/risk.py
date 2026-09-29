@@ -40,7 +40,8 @@ class RiskState:
     flatten_all: bool = False       # set by the kill switch and the safety watchdog
     halt_sticky: bool = True        # False for startup checks, which re-run on every start
     paused: bool = False
-    size_mult: float = 1.0
+    size_mult: float = 1.0          # book A's crew multiplier
+    book_mults: dict = field(default_factory=dict)      # crew multiplier per book letter (A..G), <= 1.0; missing = 1.0
     blackouts: list[Blackout] = field(default_factory=list)
 
 
@@ -48,7 +49,7 @@ class RiskStore:
     """Today's risk state on disk, so a restart can't reset the daily loss, trade count, cooldown or a halt.
     One small JSON file per mode, rewritten atomically on every change."""
     FIELDS = ("day_pnl", "peak_day_pnl", "trades", "wins", "losses", "loss_streak", "cooldown_until",
-              "halted", "halt_reason", "flatten_all", "paused", "size_mult")
+              "halted", "halt_reason", "flatten_all", "paused", "size_mult", "book_mults")
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
@@ -107,6 +108,7 @@ class RiskManager:
             if k in saved:
                 setattr(st, k, saved[k])
         st.size_mult = min(1.0, float(st.size_mult))       # a saved crew cut can only restrict
+        st.book_mults = {str(k): min(1.0, float(v)) for k, v in (st.book_mults or {}).items()}
         st.halt_sticky = True
         note = (f"Restored today's risk state: day P&L {st.day_pnl:+.2f}, {st.trades} trades"
                 + (f", cooldown until {hm(st.cooldown_until)}" if st.cooldown_until else "")
@@ -156,12 +158,14 @@ class RiskManager:
                 return False, f"blackout: {b.name}"
         return True, "ok"
 
-    def size(self, ask: float, up_mult: float = 1.0) -> tuple[int, str]:
+    def size(self, ask: float, up_mult: float = 1.0, cut: float | None = None) -> tuple[int, str]:
         """Budget = $max_trade x multiplier. Crew cuts (<1) always win; a size-up (>1, max 1.25) only
-        applies when no cut is active and also scales the contract cap (5 -> 6)."""
+        applies when no cut is active and also scales the contract cap (5 -> 6). `cut` overrides today's crew cut
+        (1.0 gives the quantity the crew's vote would have left alone, for the crew log)."""
         if ask <= 0:
             return 0, "no ask"
-        m = self.st.size_mult if self.st.size_mult < 1.0 else min(max(1.0, up_mult), self.cfg["crew"].get("max_size_multiplier", 1.25))
+        cut = self.st.size_mult if cut is None else cut
+        m = cut if cut < 1.0 else min(max(1.0, up_mult), self.cfg["crew"].get("max_size_multiplier", 1.25))
         budget = self.s["max_trade_dollars"] * m
         cap = round(self.s["max_contracts"] * m) if m > 1.0 else self.s["max_contracts"]
         qty = min(cap, int(budget // (ask * 100)))
@@ -243,6 +247,19 @@ class RiskManager:
         self.st.size_mult = max(lo, min(1.0, m))
         self._save()
 
+    def set_book_mults(self, mults: dict) -> None:
+        """The crew's multiplier per book (votes routed by topic). Book A's also drives size_mult."""
+        lo = self.cfg["crew"]["min_size_multiplier"]
+        self.st.book_mults = {str(k): max(lo, min(1.0, float(v))) for k, v in mults.items()}
+        self.st.size_mult = self.st.book_mults.get("A", 1.0)
+        self._save()
+
+    def book_mult(self, book: str) -> float:
+        """A crew cut for one book (<= 1.0). Book A reads size_mult so a direct set_size_mult still counts."""
+        if book == "A":
+            return min(1.0, self.st.size_mult)
+        return min(1.0, float((self.st.book_mults or {}).get(book, 1.0)))
+
     def extend_cooldown(self, now: float, minutes: float) -> None:
         self.st.cooldown_until = max(self.st.cooldown_until, now + min(30, minutes) * 60)
         self._save()
@@ -253,7 +270,7 @@ class RiskManager:
             "day_pnl": round(st.day_pnl, 2), "peak_day_pnl": round(st.peak_day_pnl, 2), "trades": st.trades,
             "wins": st.wins, "losses": st.losses, "loss_streak": st.loss_streak,
             "cooldown_until": st.cooldown_until or None, "halted": st.halted, "halt_reason": st.halt_reason,
-            "paused": st.paused, "size_mult": st.size_mult,
+            "paused": st.paused, "size_mult": st.size_mult, "book_mults": dict(st.book_mults or {}),
             "max_daily_loss": self.r["max_daily_loss"], "max_trades": self.r["max_trades_per_day"],
             "blackouts": [{"start": b.start, "end": b.end, "name": b.name} for b in st.blackouts],
         }

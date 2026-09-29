@@ -137,11 +137,11 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 
 | Desk | Huddles | Brings |
 |---|---|---|
-| Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE |
-| Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y/10Y moves, curve, auctions |
-| Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC, Fed speakers |
-| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX, expected move, trend vs chop; checks IV on the names the Earnings desk flags for book E |
-| Quant | loss reviews, 15:05 | Our stats; per-day and permanent tweak proposals |
+| Macro | 08:15 catch-up, 08:25 huddle, 11:30 | Econ calendar and surprises; blackouts around CPI/NFP/ISM/PCE. Its one web call also covers the Fed and Treasuries (`fed` and `rates` sub-briefs). Vote reaches books A and C |
+| Rates | 08:15 catch-up, 08:25 huddle, 11:30 | 2Y/10Y moves, curve, auctions, read from Macro's `rates` sub-brief. Information only (`INFO_ONLY`): no web call, vote fixed at 1.0, no events, no pitches |
+| Fed Watch | 08:15 catch-up, 08:25 huddle, 13:15 | FOMC, Fed speakers, read from Macro's `fed` sub-brief. Information only, like Rates |
+| Vol | 08:15 catch-up, 08:25 huddle, 11:30, 13:15, 15:05 | VIX from Robinhood `get_index_quotes` (prior close as fallback); expected move from the recorded 0DTE ATM straddle during the session, else from VIX. One premarket web call for VIX1D (`vix1d_flag`), bias and its vote; later reads keep that vote and are deterministic. Votes 0.75 when VIX > 28. Vote reaches books A, B, C, D and G |
+| Quant | loss reviews, 15:05 | Our stats; per-day and permanent tweak proposals. Its vote, cooldown and pitches are rule-based; the LLM only adds notes. Vote reaches book A |
 | Risk | loss reviews, halts | Deterministic risk manager's view |
 | Tape | loss reviews, big walls | Level 2 read; comments on walls of at least 25k shares near price (at most once every 20 min) |
 | Ops | 08:15 catch-up, 08:25 huddle, halts | Pre-flight (section 12): paper mode, books `paper_only`, loss limit and watchdog armed, not halted, 15m/5m history warm, SPY price, Robinhood connected, previous session's quotes recorded. Reports only; cuts size to 50% only when the 15m/5m MACD history is short |
@@ -149,13 +149,14 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 | Post-mortem | 15:05 | Audits each closed trade against the rules (entry window, blackouts, contract cap, flat by the flatten time, loss within stop + 10 points) and flags round trips; writes `~/.agentdesk/postmortems/YYYY-MM-DD.md` for the weekly Quant report. Information only |
 
 - **Premarket (Evan, 2026-09-28).** At 08:15 CT (`crew.schedule.arrive`) Macro, Rates, Fed, Vol, Ops and Earnings arrive and research at their own desks, in parallel. At 08:25 CT (`crew.schedule.premarket`) they huddle with the agent using those briefs, so the meeting ends before the 08:30 open. A desk still researching at 08:25 attends with its offline read and says so; the huddle never waits. If the engine starts after 08:25, the premarket huddle briefs in full as before.
-- **Research.** With an Anthropic key, Macro/Rates/Fed/Vol research with Claude plus web search, returning JSON briefs: headline, bias, confidence, events, vote, notes, proposals. Without a key, everything runs offline from config events and the data.
-- **Roundtable.** After the briefs, desks talk **to each other**: Rates checks Macro against bonds, Vol prices Fed risk, Risk grills Quant after losses. Any desk can revise its vote. With a key this is one extra LLM call per huddle; otherwise it's templated.
+- **Weekly event calendar (2026-09-29).** On the week's first session, at the 08:15 arrival, one web call saves the week's scheduled US events to `crew.calendar_path` (`~/.agentdesk/econ_calendar.json`). Each day its high-impact events become blackouts next to Macro's; blackouts are the union, since they only restrict. Each huddle compares the two and logs any disagreement.
+- **Research.** With an Anthropic key, Macro researches with Claude plus web search at 08:25 and 11:30, and Vol once at 08:25, returning JSON briefs: headline, bias, confidence, events, vote, notes, proposals. That is about 3 web calls a day plus the weekly calendar (it was 10). Rates and Fed are derived from Macro's reply. Every desk prompt describes all the books and names the ones its vote reaches. Without a key, everything runs offline from config events and the data.
+- **Roundtable.** After the briefs, desks talk **to each other**: Rates checks Macro against bonds, Vol prices Fed risk, Risk grills Quant after losses. Only desks in that huddle can revise their vote. With a key this is one extra LLM call per huddle; otherwise it's templated.
 - **Size votes (0.5–1.25×).**
-  - Any vote below 1.0 cuts size immediately, and the lowest vote wins.
+  - Any vote below 1.0 cuts size immediately, and the lowest vote wins, per book: each desk's vote reaches only the books in `crew.vote_books` (default Macro A, C; Vol A, B, C, D, G; Quant and Ops A; nothing reaches E or F). The risk manager keeps one multiplier per book.
   - **A size-up** (up to 125%, which lifts book A's contract cap from 5 to 6) happens only on a **book A SWING entry when every check passes**:
-    - Macro, Rates and Vol each vote above 1.0 with confidence ≥ 0.6
-    - Fed isn't hawkish
+    - Macro and Vol each vote above 1.0 with confidence ≥ 0.6
+    - Fed isn't hawkish (Macro's `fed.bias`)
     - No desk voting down
     - No high-impact event within 60 min
     - SPY above VWAP
@@ -166,6 +167,7 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
 
     The checklist is shown on every entry.
   - For books B–E, the crew can only restrict: blackouts, skipping a day, cutting lots. Never a size-up.
+  - **Crew log and scorecard (2026-09-29).** Each huddle's final votes, per-book multipliers and roundtable revisions, every entry a crew blackout or the VIX1D flag stopped, calendar disagreements and the day's token cost go to `journal.crew_log`. Each trade stores its crew effect (`trades.crew`: quantity at 1.0× next to the actual quantity, the size-up, the desks that cut, and book A's active tweaks). The weekly Quant report has a crew scorecard.
   - **Ops, Earnings and Post-mortem are restrict-only** (`RESTRICT_ONLY` in `desks.py`): their votes are capped at 1.0, they can't pitch proposals or add blackouts, and they never lift a halt. A cut from any of them also fails the size-up check "No desk voting down".
 - **Proposals (Evan's approved rules):**
   - **Next-trade or today changes apply automatically,** but only to a fixed list of settings within hard limits:

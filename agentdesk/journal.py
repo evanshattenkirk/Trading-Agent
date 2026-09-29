@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS trades (
   qty INTEGER, entry REAL, opened_ts REAL, closed_ts REAL,
   realized REAL, fees REAL, pnl REAL, pnl_pct REAL, peak REAL,
   exit_reason TEXT, strike_reason TEXT, entry_reasons TEXT, fills TEXT, l2 TEXT,
-  book TEXT DEFAULT 'A', legs TEXT, max_loss REAL
+  book TEXT DEFAULT 'A', legs TEXT, max_loss REAL, crew TEXT
+);
+CREATE TABLE IF NOT EXISTS crew_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT, ts REAL, kind TEXT, book TEXT, detail TEXT
 );
 CREATE TABLE IF NOT EXISTS option_quotes (
   ts REAL, expiry TEXT, strike REAL, right TEXT, bid REAL, ask REAL, spot REAL
@@ -34,7 +37,7 @@ class Journal:
     def __init__(self, path: Path | str | None):
         self.db = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False)
         self.db.executescript(SCHEMA)
-        for col in ("l2 TEXT", "book TEXT DEFAULT 'A'", "legs TEXT", "max_loss REAL"):
+        for col in ("l2 TEXT", "book TEXT DEFAULT 'A'", "legs TEXT", "max_loss REAL", "crew TEXT"):
             try:
                 self.db.execute(f"ALTER TABLE trades ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -43,13 +46,15 @@ class Journal:
     def record_trade(self, session: str, mode: str, p, book: str = "A") -> None:
         d = p.to_dict()
         basis = getattr(p, "risk_basis", None) or p.entry * 100 * p.qty_initial
+        crew = getattr(p, "crew", None) or (getattr(p, "meta", None) or {}).get("crew")     # what the crew did to it
         self.db.execute(
             "INSERT INTO trades (session,mode,contract,occ,setup,qty,entry,opened_ts,closed_ts,realized,fees,pnl,pnl_pct,peak,"
-            "exit_reason,strike_reason,entry_reasons,fills,l2,book,legs,max_loss) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "exit_reason,strike_reason,entry_reasons,fills,l2,book,legs,max_loss,crew) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (session, mode, d["contract"], d["occ"], p.setup, p.qty_initial, p.entry, p.opened_ts, p.closed_ts,
              p.realized, p.fees, p.realized - p.fees, (p.realized - p.fees) / basis if basis else 0, p.peak,
              p.exit_reason, p.strike_reason, json.dumps(p.entry_reasons), json.dumps(p.fills), json.dumps(p.l2),
-             book, json.dumps(d["legs"]) if "legs" in d else None, getattr(p, "risk_basis", None)))
+             book, json.dumps(d["legs"]) if "legs" in d else None, getattr(p, "risk_basis", None),
+             json.dumps(crew) if crew else None))
         self.db.commit()
 
     def record_quotes(self, rows: list[tuple]) -> None:
@@ -60,6 +65,32 @@ class Journal:
     def record_brief(self, session: str, ts: float, desk: str, brief: dict) -> None:
         self.db.execute("INSERT INTO briefs (session,ts,desk,brief) VALUES (?,?,?,?)", (session, ts, desk, json.dumps(brief)))
         self.db.commit()
+
+    def record_crew(self, session: str, ts: float, kind: str, book: str | None, detail: dict) -> None:
+        """What the crew did: a huddle's directive, an entry it blocked, a calendar disagreement, the day's usage."""
+        self.db.execute("INSERT INTO crew_log (session,ts,kind,book,detail) VALUES (?,?,?,?,?)",
+                        (session, ts, kind, book, json.dumps(detail, default=str)))
+        self.db.commit()
+
+    def crew_log(self, session: str | None = None) -> list[dict]:
+        q = "SELECT session,ts,kind,book,detail FROM crew_log" + (" WHERE session=?" if session else "") + " ORDER BY id"
+        rows = self.db.execute(q, (session,) if session else ()).fetchall()
+        return [{"session": r[0], "ts": r[1], "kind": r[2], "book": r[3], "detail": json.loads(r[4])} for r in rows]
+
+    def latest_straddle(self, expiry: str, spot: float, since: float) -> tuple[float, float] | None:
+        """(strike, call mid + put mid) at the strike nearest spot from the newest recorded 0DTE quotes since `since`."""
+        rows = self.db.execute("SELECT ts,strike,right,bid,ask FROM option_quotes WHERE expiry=? AND ts>=? "
+                               "ORDER BY ts DESC LIMIT 400", (expiry, since)).fetchall()
+        if not rows:
+            return None
+        k = min({r[1] for r in rows}, key=lambda x: abs(x - spot))
+        mids = {}
+        for ts, strike, right, bid, ask in rows:
+            if strike == k and right not in mids and bid and ask and ask >= bid > 0:
+                mids[right] = (bid + ask) / 2
+        if "call" not in mids or "put" not in mids:
+            return None
+        return k, round(mids["call"] + mids["put"], 4)
 
     def record_iv(self, rows: list[dict]) -> None:
         """Book E's end-of-day ATM IV rows; one per (day, symbol, kind), so a rerun replaces."""
