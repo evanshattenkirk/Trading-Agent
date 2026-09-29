@@ -437,3 +437,27 @@ class EHost:
 
     def _log(self, now: float, level: str, msg: str) -> None:
         self.e.bus.emit("log", now, level=level, msg=msg)
+
+
+E_CALLS_PER_S = 1.0
+
+
+def build_e(engine, cfg, rh=None, mode: str = "paper", provider: str = "sim", vix=None, chains=None):
+    """EHost for `books.E_earnings_iv`, or None when it is off. Paper only (enforced): E fills through its own
+    PaperBroker; in shadow/live `rh` only reviews each order (review_option_order), it never places one."""
+    bc = (cfg.get("books") or {}).get(KEY)
+    if not isinstance(bc, dict) or not bc.get("enabled"):
+        return None
+    if bc.get("paper_only") is not True:
+        raise SystemExit(f"books.{KEY}: only a paper path exists for book E; set paper_only: true")
+    if chains is None:
+        if provider == "sim":
+            log.warning("book E: no single-stock option data in sim; E is idle this run")
+            return None
+        if rh is None:
+            log.warning("book E needs Robinhood option data (quotes_source robinhood/auto); E is off this run")
+            return None
+        from ..iv import Pacer, RobinhoodChains
+        from ..iv_recorder import settings as iv_settings
+        chains = RobinhoodChains(rh, iv_settings(cfg)["cache_dir"], Pacer(E_CALLS_PER_S))
+    return EHost(engine, cfg, chains, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)

@@ -144,6 +144,18 @@ Books B (iron fly), C (ORB bull-put) and D (iron condor) run next to book A in e
 - The journal's `trades` table has a `book` column (A, B, C, D) plus `legs` and `max_loss`.
 - Dashboard: the chips next to the header stats switch between ALL and each book. The Day P&L, the position card (legs, credit, mark, take profit, stop, max loss) and the trades table follow the selection.
 
+## Book E: pre-earnings IV run-up (paper)
+
+Book E buys the implied-volatility run-up into an earnings report and always sells before the report comes out. It is a paper experiment: fills are simulated on E's own paper broker (mid minus 1¢ per leg, never worse than natural), and `paper_only: true` is required.
+
+- **E1 straddle:** at T−3, buy the ATM call and put in the first expiry after the report (4–10 DTE). Take profit +20%, stop −30%.
+- **E2 calendar:** at T−10..T−8, sell the ATM call expiring before the report and buy the same strike expiring after it. Take profit +15%, stop −30%. It also exits by 14:15 CT on the day its short leg expires.
+- Entries and exits happen at 14:45 CT (11:20 on half-days). The exit is the close before the report: T−1, or T−0 for after-close reporters.
+- Limits: $500 max debit for E1, $250 for E2, at most 3 positions, one per sector and one per name, prior VIX close at or below 30, every leg's spread within 5% of mid. After four earnings cycles of `iv_history`, E also skips names whose IV sits above the 80th percentile of earlier cycles.
+- E holds for days, so its positions live in `e_positions`, are restored when the engine starts, and are **not** sold at shutdown. The kill switch, safety halts, an E halt and the dashboard's Flatten button still sell them.
+- The IV data comes from the standalone quote recorder: from 13:30 CT it lists strikes (≤ 0.5 calls/s), and from 14:50 CT it records the ATM IV per name (≤ 1 call/s) into `journal.iv_history`. `python -m agentdesk iv-snapshot` runs that pass once by hand.
+- After this merges, redeploy both background jobs on the Mac: `tools/install_recorder.sh && tools/install_paper.sh`.
+
 ## Things to know before real money
 
 - **Stops live in this process, not at Robinhood.** If your Mac sleeps or loses its connection, open positions are unmanaged. Run it on a machine that stays awake (`caffeinate -dims python -m agentdesk run --mode live`). On startup, the engine refuses to trade if the Agentic account already holds option positions.
@@ -157,6 +169,7 @@ Books B (iron fly), C (ORB bull-put) and D (iron condor) run next to book A in e
 agentdesk/  engine.py strategy.py indicators.py bars.py strikes.py levels.py exits.py risk.py crew.py
             brokers/{paper,robinhood}.py  feeds/{sim,alpaca,massive}.py  backtest.py server.py web/
             books/  host.py account.py combo.py fills.py iron_fly.py orb_bull_put.py iron_condor.py vol.py
+                    e_host.py earnings_iv.py e_journal.py group.py   iv.py iv_recorder.py (book E and its IV pass)
 tests/      test_core.py
 research/   strategy study + spread/VRP modeling scripts (see research/README.md)
 tools/      build_demo.py  (records a sim day into the single-file demo page)

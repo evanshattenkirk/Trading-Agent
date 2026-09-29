@@ -5,6 +5,7 @@ book are flattened through engine.flatten("shutdown") while the engine, quotes a
 `flatten_timeout` to finish. Then it stops the engine loop, closes the dashboard (open websockets included), closes
 the broker/data sessions with a timeout each, and exits. Whatever is still open after the timeout is logged. A
 second Ctrl-C or SIGTERM, or shutdown taking longer than `hard_exit_sec`, exits the process immediately.
+Book E's paper positions are kept overnight on purpose (saved in e_positions; spec E-Q1).
 """
 from __future__ import annotations
 
@@ -114,7 +115,8 @@ async def shutdown(engine, server, srv: asyncio.Task, eng: asyncio.Task, closers
 def _held(engine) -> list[str]:
     a = [f"{p.qty}x {p.contract.label}" for p, _ in getattr(engine, "open", None) or []]
     books = getattr(engine, "books", None)
-    return a + [getattr(p, "label", str(p)) for p in (books.positions() if books else [])]
+    return a + [getattr(p, "label", str(p)) for p in (books.positions() if books else [])
+                if not getattr(p, "overnight", False)]
 
 
 async def _sell_open_positions(engine, timeout: float) -> None:

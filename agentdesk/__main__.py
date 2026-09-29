@@ -100,7 +100,9 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
     from .books.f_host import build_f
     from .books.group import HostGroup
-    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed))
+    from .books.e_host import build_e
+    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed),
+                         build_e(engine, cfg, rh=rh, mode=mode, provider=provider, vix=vix))
     engine.books = group if group.enabled else None
     engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
     return engine, bus
