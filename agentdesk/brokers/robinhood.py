@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import stat
 import uuid
 import time
@@ -152,7 +153,8 @@ class _Callback:
 
 def is_rate_limited(err) -> bool:
     e = str(err).lower()
-    return "rate_limited" in e or "rate limit" in e or "too many requests" in e or "429" in e
+    return ("rate_limited" in e or "rate limit" in e or "too many requests" in e
+            or re.search(r"\b429\b", e) is not None)       # a bare "429" can sit inside an instrument id
 
 
 ORDER_TOOLS = ("place_option_order", "cancel_option_order", "get_option_orders")

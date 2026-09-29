@@ -87,6 +87,7 @@ def test_rate_limited_text_is_recognised():
     assert is_rate_limited("get_option_quotes error: error: RATE_LIMITED: too many requests, please try again shortly")
     assert is_rate_limited("HTTP 429")
     assert not is_rate_limited("get_option_quotes error: 500 internal")
+    assert not is_rate_limited("get_option_quotes error: no quote for 5f2a4290-19c1-4d3e-a429-0b1c2d3e4f50")
 
 
 # ------------------------------------------------------------------ RobinhoodMCP.call
