@@ -2,7 +2,7 @@
 loss; an open-risk cap over every open position (book A's open debit counts); a global halt."""
 from __future__ import annotations
 
-ACCOUNT = {"paper_balance": 10000, "open_risk_cap": 1500, "per_position_max_loss": 300, "fee_per_leg": 0.04}
+ACCOUNT = {"paper_balance": 10000, "open_risk_cap": 2500, "per_position_max_loss": 300, "fee_per_leg": 0.04}
 
 
 class AccountRisk:

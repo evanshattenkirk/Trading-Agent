@@ -49,8 +49,8 @@ at entry: fresh, a nonzero bid, and bid/ask ≤ max($0.05, 8% of mid).
 | Short leg | The listed strike nearest long ± the ATM straddle mid for that expiry (up for calls, down for puts), at least 2 strike steps from the long strike |
 | Structure check | Skip if the debit is above 60% of the width |
 | Earnings | Skip if the name reports between the entry day and the exit day. No earnings calendar → no entry |
-| Size | lots = floor($200 ÷ (debit × 100)); skip below 1 |
-| Limits (proposed 2026-09-29, Evan to confirm) | $200 max debit per spread, at most 3 open, one per name, at most 3 new spreads a day, a −$300 realized day blocks new F2 entries. The shared $1,500 open-risk cap applies (debit = max loss) |
+| Size | lots = floor($750 ÷ (debit × 100)); skip below 1 |
+| Limits (Evan, 2026-09-29; first proposed at $200, raised before any F2 result) | $750 max debit per spread, at most 3 open, one per name, at most 3 new spreads a day, a −$300 realized day blocks new F2 entries. The shared $2,500 open-risk cap applies (debit = max loss) |
 | Take profit | Spread mid ≥ 2 × the debit, or ≥ 80% of the width |
 | Stop | Spread mid ≤ 0.5 × the debit |
 | Never held into expiration | A leg expiring today forces the exit (the expiry rule makes this a guard only) |
