@@ -35,6 +35,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 - The recorder saves real 0DTE quotes, ATM−10..ATM+10 calls and puts, every 10s into `journal.option_quotes`. That is the data for real-quote analyses of A, B, C and D.
 - Book E's IV pass runs inside `record-quotes` (read-only, metered as tag `iv`): it lists strikes from 13:30 CT at ≤ 0.5 calls/s and quotes the ATM call and put in the front, pre-report, post-report and ~30-day expiries from 14:50 CT at ≤ 1 call/s, into `journal.iv_history`. `iv-snapshot` runs it once by hand.
 - Level 2 (`l2.py`) runs in observe mode: it logs book state per entry and never blocks. Use `l2-report` after a few weeks.
+- Robinhood throttles near 240 calls/min per account, shared with the recorder. The engine keeps to `robinhood.call_budget` (120/min, 3/s; `RobinhoodMCP` paces every call and pauses 2-8 s after a RATE_LIMITED, which never counts toward a book halt), polls Level 2 every 3 s, and quotes every open B/C/D/G leg in one call per second. The recorder has no budget and paces itself.
 
 ## Robinhood facts verified 2026-09-27
 - Agentic account ••••6452, limited_margin, **option_level_3**, $500 cash. Show only the last 4 digits in anything user-facing.
@@ -51,7 +52,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (475 pass today; the full run takes about 3.5 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (488 pass today; the full run takes about 3.5 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.

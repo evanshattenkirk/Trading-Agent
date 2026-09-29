@@ -79,7 +79,7 @@ exits:
 
 l2:                      # Level 2 book from Robinhood get_equity_price_book
   mode: observe           # off | observe (log + display, never blocks) | enforce (can veto entries)
-  poll_ms: 1000
+  poll_ms: 3000           # observe only: 20 calls/min out of the engine's 120/min Robinhood budget (was 1000)
   near_dollars: 0.25      # imbalance measured on levels within this distance of mid
   wall_mult: 4.0          # a wall = level size >= 4x the median level size on that side
   min_wall_shares: 10000  # ...and at least this many shares
@@ -130,6 +130,10 @@ robinhood:
   token_dir: ~/.agentdesk
   account_number: null      # null = auto-detect the Agentic account
   quote_poll_ms: 1000
+  # Robinhood throttles near 240 calls/min per account (probe 2026-09-28). The engine made ~200/min on 2026-09-29 and
+  # got RATE_LIMITED 773 times, starving the recorder. The engine keeps to half the ceiling; the recorder (42 quotes
+  # every 10 s, book E's IV pass 13:30-15:00 CT at <= 1 call/s) uses its own grant and pacing within the rest.
+  call_budget: {per_min: 120, per_s: 3}
   record_option_quotes: true   # log real 0DTE SPY call+put quotes ATM-10..ATM+10 every 10s -> journal.option_quotes
   arg_overrides: {}         # per-tool fixed args if the schema matcher misses one (see rh-inspect)
 

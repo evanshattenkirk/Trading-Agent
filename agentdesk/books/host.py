@@ -11,6 +11,7 @@ import asyncio
 import logging
 from datetime import time, timedelta
 
+from ..brokers.base import RateLimited
 from ..brokers.paper import PaperBroker
 from ..clock import ct_time, is_rth, session_date
 from ..config import hhmm
@@ -74,6 +75,7 @@ class BookHost:
         self._last_manage, self._last_emit, self._busy = 0.0, 0.0, False
         self._errors, self._tasks = 0, set()
         self._inline, self._vix_task = True, None
+        self._last_rate_log = -1e18
 
     @property
     def enabled(self) -> bool:
@@ -129,6 +131,8 @@ class BookHost:
             self._errors = 0
         except asyncio.CancelledError:
             raise
+        except RateLimited as ex:
+            self._rate_limited(self.e.feed.now(), "books", ex)
         except Exception as ex:
             self._errors += 1
             now = self.e.feed.now()
@@ -164,6 +168,8 @@ class BookHost:
             poll = self.cfg["robinhood"]["quote_poll_ms"] / 1000
             if self.positions() and now - self._last_manage >= poll:
                 self._last_manage = now
+                if not await self._prefetch(now):
+                    return
                 for book in self.books:
                     if book.open:
                         await self._safe(book, self._manage(book, now), now)
@@ -186,12 +192,35 @@ class BookHost:
                     log.exception("flatten %s failed", pos.label)
                     self._log(now, "error", f"flatten {pos.label} failed: {ex}")
 
+    async def _prefetch(self, now: float) -> bool:
+        """One get_option_quotes for every leg of every open B/C/D/G position; each book's check then reads the
+        cache. False when Robinhood is rate limiting, so this tick asks nothing more of it."""
+        cs = [c for b in self.books for p in b.open for c in p.contracts]
+        if len(cs) < 2 or getattr(self.e.quotes, "rh", None) is None:
+            return True
+        try:
+            await fetch_quotes(self.e.quotes, cs)
+        except RateLimited as ex:
+            self._rate_limited(now, "books", ex)
+            return False
+        except Exception:
+            log.debug("books: batched quote prefetch failed; each book asks on its own", exc_info=True)
+        return True
+
+    def _rate_limited(self, now: float, who: str, ex) -> None:
+        """One dashboard line per episode (a minute apart at most), never an error count."""
+        if now - self._last_rate_log >= 60:
+            self._last_rate_log = now
+            self._log(now, "warn", f"{who}: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
+
     # ------------------------------------------------------------ per book
     async def _safe(self, book: Book, coro, now: float) -> None:
         try:
             await coro
             if book.error_ts != now:        # a clean call only clears errors when nothing else failed this tick
                 book.errors = 0
+        except RateLimited as ex:           # Robinhood is pacing the account: skip this round, never halt over it
+            self._rate_limited(now, f"book {book.letter}", ex)
         except Exception as ex:
             book.errors += 1
             book.error_ts = now

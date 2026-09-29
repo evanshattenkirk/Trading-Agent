@@ -140,6 +140,7 @@ async def spot_price(rh, symbol: str) -> float | None:
 def recorder_cfg(cfg, s: dict):
     c = copy.deepcopy(dict(cfg))
     c["robinhood"] = {**c["robinhood"], "token_dir": s["token_dir"], "redirect_port": int(s["redirect_port"])}
+    c["robinhood"].pop("call_budget", None)      # the engine's budget; the recorder paces itself (and the probe must not be capped)
     return c
 
 

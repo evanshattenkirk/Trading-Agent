@@ -26,6 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from ..books import f_stocks_in_play as F
+from ..brokers.base import RateLimited
 
 log = logging.getLogger("agentdesk.f_data")
 CONSTITUENTS_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
@@ -79,8 +80,8 @@ class RobinhoodEquityData:
         await self.throttle.wait()
         try:
             return await self.rh.call(tool, args)
-        except Exception:
-            if not retry:
+        except Exception as ex:
+            if not retry or isinstance(ex, RateLimited):     # the client already paused every call; don't pile on
                 raise
             await asyncio.sleep(0.3)
             await self.throttle.wait()

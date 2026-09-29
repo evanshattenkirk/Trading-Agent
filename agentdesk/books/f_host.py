@@ -22,6 +22,7 @@ import asyncio
 import itertools
 import logging
 
+from ..brokers.base import RateLimited
 from ..clock import session_date
 from ..config import hhmm
 from . import f_stocks_in_play as F
@@ -89,6 +90,7 @@ class FHost:
         self.shadows: dict[str, dict] = {}
         self.seen: dict[str, int] = {}          # last processed 1-minute bar per symbol
         self._last_poll = self._last_bar_min = -1e18
+        self._last_rate_log = -1e18
 
     @property
     def enabled(self) -> bool:
@@ -181,6 +183,10 @@ class FHost:
         try:
             await coro
             b.errors = 0
+        except RateLimited as ex:           # Robinhood is pacing the account: skip this round, never halt over it
+            if now - self._last_rate_log >= 60:
+                self._last_rate_log = now
+                self._log(now, "warn", f"book F: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
         except Exception as ex:
             b.errors += 1
             log.exception("book F failed (%d in a row)", b.errors)
