@@ -129,10 +129,12 @@ def phase(now: float, s: dict) -> str:
 class IVDay:
     """One weekday's IV pass. The recorder calls step(now) every few seconds: from list_from_ct it lists strikes once
     (list pacer), from quote_ct it records every name (quote pacer), retries failed names every retry_sec until
-    stop_ct, then logs the day's summary once."""
+    stop_ct, then logs the day's summary once. Holidays and half-days (skip_days) are skipped: their quotes are stale or
+    thin, and a stale row would repeat the next day's T in iv_history."""
 
-    def __init__(self, snap, calendar_fn, s: dict, list_pacer=None, quote_pacer=None, log_fn=None):
+    def __init__(self, snap, calendar_fn, s: dict, list_pacer=None, quote_pacer=None, log_fn=None, skip_days=()):
         self.snap, self.calendar_fn, self.s = snap, calendar_fn, s
+        self.skip_days = {str(d) for d in skip_days}
         self.list_pacer, self.quote_pacer = list_pacer, quote_pacer
         self.log_fn = log_fn or (lambda summary: None)
         self.day = None
@@ -151,7 +153,7 @@ class IVDay:
         today = session_date(now)
         if today != self.day:
             self._reset(today)
-        ph = phase(now, self.s)
+        ph = "closed" if str(today) in self.skip_days else phase(now, self.s)
         if self.done:
             return ph
         if ph == "list" and not self.listed:

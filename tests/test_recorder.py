@@ -136,3 +136,29 @@ def test_meter_rows_can_carry_the_iv_tag(tmp_path):
     m.add(2.0, "get_option_quotes", 12.0, True, "ok", None)
     m.flush()
     assert [r[0] for r in m.db.execute("SELECT tag FROM rh_calls ORDER BY ts")] == ["iv", "recorder"]
+
+
+def test_quote_and_iv_loops_share_one_robinhood_session(tmp_path, monkeypatch):        # book E final review 2
+    from agentdesk.config import load_config
+    started = []
+
+    class FakeMCP:
+        def __init__(self, cfg, meter):
+            self.meter = meter
+
+        async def start(self):
+            started.append(self)
+            await asyncio.sleep(0.01)          # the OAuth handshake yields to the other loop
+
+        async def close(self):
+            pass
+    monkeypatch.setattr(recorder, "RECORDER_DIR", tmp_path)
+    monkeypatch.setattr(recorder, "MeteredRobinhoodMCP", FakeMCP)
+    cfg = load_config()
+    cfg["journal_path"] = str(tmp_path / "j.db")
+    d = recorder.RecorderDaemon(cfg)
+
+    async def go():
+        await asyncio.gather(d.connect(), d.connect(), recorder.IVClient(d).d.connect())
+    asyncio.run(go())
+    assert len(started) == 1 and d.rh is started[0]

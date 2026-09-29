@@ -177,3 +177,17 @@ def test_ivday_logs_what_is_still_missing_at_the_stop_time_and_resets_next_day()
     assert logs == [{"iv_day": "2026-10-05", "rows": 3, "failed": ["XOM"]},
                     {"iv_day": "2026-10-06", "rows": 3, "failed": []}]      # the new day starts clean and records all
     assert day.day == date(2026, 10, 6) and len(snap.shots) == 2 and snap.shots[-1][1] is None
+
+
+def test_ivday_skips_holidays_and_half_days():                                 # book E final review 5
+    logs, snap = [], Snap()
+
+    async def cal(today):
+        return []
+    day = IVDay(snap, cal, dict(DEFAULTS), log_fn=logs.append, skip_days={MON})
+
+    async def go():
+        for t in (at(13, 30), at(14, 50), at(15, 0)):
+            await day.step(t)
+    asyncio.run(go())
+    assert snap.warmed == 0 and snap.shots == [] and logs == []

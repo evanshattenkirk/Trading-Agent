@@ -30,6 +30,8 @@ from .host import FILLS
 
 log = logging.getLogger("agentdesk.book_e")
 KEY = "E_earnings_iv"
+ENTRY_RETRY_SEC = 60        # a failed calendar read is retried inside the entry window
+MAX_EXIT_TRIES = 3          # forced-exit tries without usable quotes before closing at the last mark
 LIVE_FIELDS = ("id", "book", "qty", "mark", "peak", "unrealized", "realized", "fees", "total_pnl", "pnl_pct",
                "max_loss", "status")
 
@@ -74,13 +76,14 @@ class EHost:
         self._busy, self._tasks, self._flagged = False, set(), set()
         self._last_poll, self._last_emit = -1e18, -1e18
         self.vix_prev, self._vix_day, self._vix_try = None, None, -1e18
+        self._entry_try, self._exit_tries = -1e18, {}
 
     async def _crew_calendar(self, today):
         from ..desks import load_calendar
         if self.e.crew is None:
             return []
-        cal, _ = await load_calendar(self.e.crew, today)
-        return cal
+        cal, src = await load_calendar(self.e.crew, today)
+        return None if src.startswith("Robinhood calendar unavailable") else cal     # retry, don't trade blind
 
     # ------------------------------------------------------------ state
     @property
@@ -163,9 +166,11 @@ class EHost:
             await self._manage(now)
         half = self.e.risk.early_close(now)
         t = ct_time(now)
-        if self.entered != self.day and is_rth(now) and R.entry_time(self.c, half) <= t < (time(12) if half else time(15)):
-            self.entered = self.day
-            await self._entries(now)
+        if self.entered != self.day and is_rth(now) and R.entry_time(self.c, half) <= t < (time(12) if half else time(15)) \
+                and now - self._entry_try >= ENTRY_RETRY_SEC:
+            self._entry_try = now
+            if await self._entries(now):
+                self.entered = self.day
 
     async def _ensure_vix(self, now: float) -> None:
         d = session_date(now)
@@ -195,21 +200,34 @@ class EHost:
 
     async def _calendar(self, now: float) -> list | None:
         try:
-            return await self.calendar_fn(self.day)
+            cal = await self.calendar_fn(self.day)
         except Exception as ex:
-            self._log(now, "warn", f"book E: earnings calendar unavailable ({ex})")
-            return None
+            cal, why = None, str(ex)
+        else:
+            why = "no Robinhood calendar"
+        if cal is None:
+            self._log(now, "warn", f"book E: earnings calendar unavailable ({why}); retrying in {ENTRY_RETRY_SEC}s")
+        return cal
 
-    async def _entries(self, now: float) -> None:
+    async def _entries(self, now: float) -> bool:
+        """Evaluate today's candidates; False when the calendar couldn't be read (the entry window retries)."""
         cal = await self._calendar(now)
         if cal is None:
-            return
+            return False
         allowed = set(self.c.get("structures") or [R.E1, R.E2])
         for row in screen(cal, self.day, self.universe, self.holidays):
             st = R.structure_for(row["flag"])
             if st is None or st not in allowed or self.ej.traded(row["symbol"], str(row["date"]), st):
                 continue
-            await self._consider(row, st, now)
+            try:
+                await self._consider(row, st, now)
+            except Exception as ex:                 # one name's bad data never costs the others their entry
+                log.exception("book E: %s failed", row["symbol"])
+                self.ej.decision(day=str(self.day), ts=now, symbol=row["symbol"], structure=st, T=row["T"],
+                                 earnings_date=str(row["date"]), timing=row["timing"], outcome="error",
+                                 reason=str(ex)[:300], vix=self.vix_prev)
+                self._log(now, "error", f"book E: {row['symbol']} {R.SETUP[st]}: {ex}")
+        return True
 
     async def _consider(self, row: dict, st: str, now: float) -> None:
         sym, ev, timing, T = row["symbol"], row["date"], row["timing"], row["T"]
@@ -319,11 +337,18 @@ class EHost:
         due = {p.id: self._forced(p, now, half) for p in self.book.open}
         if not is_rth(now):
             return
-        if not any(due.values()) and now - self._last_poll < float(self.c["poll_sec"]):
-            return
+        new_due = any(r and pid not in self._exit_tries for pid, r in due.items())
+        if not new_due and now - self._last_poll < float(self.c["poll_sec"]):
+            return                  # retries of a forced exit wait poll_sec too, so a dead quote can't spin
         self._last_poll = now
         held = list(self.book.open)
-        qs = await self.chains.quotes([c for p in held for c in p.contracts])
+        try:
+            qs, quoted = await self.chains.quotes([c for p in held for c in p.contracts]), True
+        except Exception as ex:
+            if not any(due.values()):
+                raise
+            self._log(now, "warn", f"book E: quotes failed during a forced exit ({ex})")
+            qs, quoted = [None] * sum(len(p.contracts) for p in held), False
         i = 0
         for p in held:
             pq, i = qs[i:i + len(p.contracts)], i + len(p.contracts)
@@ -334,8 +359,10 @@ class EHost:
                 p.peak = max(p.peak, p.mark)
             reason = due[p.id]
             if reason:
-                await self._exit(p, ExitIntent(reason, urgent=True), now)
-                if p.status == "open" and any(q is None for q in pq):
+                tries = self._exit_tries[p.id] = self._exit_tries.get(p.id, 0) + 1
+                if quoted:          # without fresh quotes a paper fill would use stale cached prices
+                    await self._exit(p, ExitIntent(reason, urgent=True), now)
+                if p.status == "open" and ((quoted and any(q is None for q in pq)) or tries >= MAX_EXIT_TRIES):
                     self._close_at_mark(p, reason, now)
                 continue
             it = R.tp_stop(p.meta["structure"], p.entry, p.mark, self.c) if usable else None
@@ -385,6 +412,7 @@ class EHost:
 
     def _close(self, pos: ComboPosition, reason: str, now: float) -> None:
         pos.status, pos.closed_ts, pos.exit_reason = "closed", now, reason
+        self._exit_tries.pop(pos.id, None)
         net = pos.realized - pos.fees
         self.book.on_close(pos, net)
         self.account.on_closed(net)
