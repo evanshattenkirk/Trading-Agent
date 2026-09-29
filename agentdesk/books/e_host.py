@@ -273,7 +273,7 @@ class EHost:
         cq = ComboQuote(legs, qs[:len(legs)])
         fair = paper_fair(cq, False, True, self.f["model"], self.f["cents_per_leg"] / 100)
         rec["debit"] = fair
-        lots, size_why = R.lots_for(fair, R.max_debit(st, self.c), min(1.0, self.e.risk.st.size_mult))
+        lots, size_why = R.lots_for(fair, R.max_debit(st, self.c), self.e.risk.book_mult("E"))
         if lots < 1:
             return skip(size_why)
         ok, why = self.account.can_open(round(fair * 100 * lots, 2), self._all_risk(), self.e.risk.st.day_pnl)
@@ -290,6 +290,8 @@ class EHost:
         pos = ComboPosition("E", R.SETUP[st], legs, cs, res.filled_qty, res.avg_price, False, 0.0, now,
                             strike_reason=f"{sym} {k:g} ATM (spot {spot:.2f}); reports {ev} {timing or 'time n/a'}, T-{T}",
                             entry_reasons=[size_why, iv_note, vix_note], meta=meta, id=f"E-{uuid.uuid4().hex[:8]}")
+        if self.e.crew is not None:
+            pos.meta["crew"] = self.e.crew.effect("E", qty=lots, qty_1x=R.lots_for(fair, R.max_debit(st, self.c), 1.0)[0])
         pos.fees = self.fee * len(legs) * res.filled_qty
         pos.fills.append(self._fill(now, "open", res, "entry"))
         pos.target = round(pos.entry * (1 + self.c["take_profit"][st]), 2)

@@ -19,6 +19,7 @@ from .earnings import heavyweights_overnight, parse_calendar, previous_trading_d
 log = logging.getLogger("agentdesk.desks")
 
 RESTRICT_ONLY = ("ops", "earnings", "postmortem")
+INFO_ONLY = ("rates", "fed")        # folded into Macro (crew review, 2026-09-29): derived briefs, vote fixed at 1.0
 WATCHDOG_KEYS = ("quote_stale_sec", "max_consecutive_errors", "reconcile_sec")
 FLAG_TEXT = {"E2": "E2 calendar window", "E1": "E1 straddle at the close", "exit": "exit at the close"}
 

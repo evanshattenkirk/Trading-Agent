@@ -91,9 +91,9 @@ def test_desk_brief_prefix_is_identical_across_huddles_and_the_volatile_part_fol
 def test_web_desks_keep_web_search_ahead_of_the_system_breakpoint():
     e, c = make(now=at_ct(D, time(8, 15)))
     c._client = fake_client()
-    run(c._llm("fed", e.feed.now()))
+    run(c._llm("macro", e.feed.now()))
     kw = c._client.messages.calls[0]
-    assert DESKS["fed"].uses_web and kw["tools"][0]["name"] == "web_search"
+    assert DESKS["macro"].uses_web and kw["tools"][0]["name"] == "web_search"
     assert "cache_control" not in kw["tools"][0]          # covered by the system marker (tools render first)
     assert kw["system"][-1]["cache_control"] == EPHEMERAL
 
@@ -145,7 +145,8 @@ def test_cache_usage_is_tallied_so_hits_can_be_checked():
     c._client = fake_client(usage=usage)
     run(c._llm("macro", e.feed.now()))
     run(c._llm_roundtable("premarket", ["macro", "rates"], e.feed.now()))
-    assert c.cache_usage == {"calls": 2, "input": 240, "cache_read": 1800, "cache_write": 0}
+    assert {k: c.cache_usage[k] for k in ("calls", "input", "cache_read", "cache_write")} == \
+        {"calls": 2, "input": 240, "cache_read": 1800, "cache_write": 0}
     assert c.state()["cache_usage"]["cache_read"] == 1800
 
 

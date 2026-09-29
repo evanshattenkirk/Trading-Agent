@@ -102,12 +102,16 @@ risk:
 
 crew:
   enabled: true
-  model: claude-sonnet-5
+  model: claude-sonnet-5-5          # Macro and Vol briefs, the weekly calendar, book F's news tag (crew review 2026-09-29)
   fast_model: claude-haiku-4-5-20251001
   web_search: true
   # arrive: desks catch up at their own desks; premarket: quick huddle using those briefs, done before the 08:30 open
   schedule: {arrive: "08:15", premarket: "08:25", midday: "11:30", late: "13:15", postclose: "15:05"}
   consult_quant_after_losses: 2
+  # Which books each desk's size vote reaches (crew review 2026-09-29). Rates and Fed are folded into Macro and
+  # don't vote. A desk not listed (Risk, Tape, Earnings, Post-mortem) reaches book A only. Nothing reaches E or F.
+  vote_books: {macro: [A, C], vol: [A, B, C, D, G], quant: [A], ops: [A]}
+  calendar_path: ~/.agentdesk/econ_calendar.json   # the week's scheduled US events, one web call a week
   min_size_multiplier: 0.5          # lowest a desk vote can cut size to
   max_size_multiplier: 1.25         # size-up cap; only when every conviction check passes (see crew.py size_up)
   auto_apply_tweaks: true           # per-trade / per-day tweaks inside whitelisted bounds apply without asking

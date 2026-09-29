@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentdesk.clock import at_ct
 from agentdesk.config import load_config
-from agentdesk.crew import PREMARKET_DESKS, Crew
+from agentdesk.crew import INFO_ONLY, PREMARKET_DESKS, Crew
 from agentdesk.risk import RiskManager
 
 CFG = load_config()
@@ -97,7 +97,7 @@ def test_desks_catch_up_at_0815_then_huddle_at_0825():
     arrive_events, prepared, mid_events = run(day())
     # catch-up: nobody walks to the huddle yet, each premarket desk has prepared a brief
     assert not any(kw.get("phase") == "walk" for _, _, kw in arrive_events)
-    assert prepared == set(PREMARKET)
+    assert prepared == set(PREMARKET) - set(INFO_ONLY)    # Fed and Rates are read from Macro at the huddle
     assert mid_events == arrive_events
     # 08:25 huddle: desks walk over and the briefs recorded are the ones prepared at 08:15
     walks = [kw["desk"] for _, ts, kw in e.bus.events if ts == t_huddle and kw.get("phase") == "walk"]
@@ -105,7 +105,8 @@ def test_desks_catch_up_at_0815_then_huddle_at_0825():
     assert sorted(briefs_at(e, t_huddle)) == sorted(PREMARKET)
     for k in PREMARKET:
         assert c.briefs[k]["slot"] == "premarket"
-        assert c.briefs[k]["prepared_ts"] == t_arrive
+        if k not in INFO_ONLY:
+            assert c.briefs[k]["prepared_ts"] == t_arrive
     assert not c.prep                                  # prepared briefs are consumed once
 
 
@@ -126,9 +127,9 @@ def test_late_desk_attends_with_offline_brief_and_never_delays_the_huddle():
     c.offline = False                                   # pretend we have an API key
     slow = asyncio.Event()
 
-    async def fake_llm(key, now, extra=""):
-        if key == "fed":
-            await slow.wait()                           # Fed Watch is still researching at 08:25
+    async def fake_llm(key, now, extra="", **kw):
+        if key == "macro":
+            await slow.wait()                           # Macro is still researching at 08:25
         return {"headline": f"{key} live read", "bias": "neutral", "confidence": 0.7, "size_multiplier": 1.0}
 
     async def fake_roundtable(slot, desks, now):
@@ -144,11 +145,11 @@ def test_late_desk_attends_with_offline_brief_and_never_delays_the_huddle():
         await c._consult("premarket", PREMARKET, at_ct(D, time(8, 25)))
 
     run(day())
-    assert c.briefs["macro"]["headline"] == "macro live read"
-    fed = c.briefs["fed"]
-    assert fed["headline"] != "fed live read"
-    assert any("still researching" in n.lower() for n in fed.get("notes", []))
-    assert 0.5 <= fed["size_multiplier"] <= 1.25
+    assert c.briefs["vol"]["headline"] == "vol live read"
+    macro = c.briefs["macro"]
+    assert macro["headline"] != "macro live read"
+    assert any("still researching" in n.lower() for n in macro.get("notes", []))
+    assert 0.5 <= macro["size_multiplier"] <= 1.25
 
 
 def test_engine_started_after_the_huddle_time_skips_catch_up_and_briefs_fully():

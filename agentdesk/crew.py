@@ -29,12 +29,13 @@ import os
 import random
 import re
 from dataclasses import dataclass
-from datetime import time
+from datetime import time, timedelta
+from pathlib import Path
 
 from .clock import at_ct, ct, ct_time, is_rth, session_date
 from .config import expand, hhmm
 from . import desks as xdesks
-from .desks import RESTRICT_ONLY
+from .desks import INFO_ONLY, RESTRICT_ONLY
 from .proposals import ProposalBook
 
 log = logging.getLogger("agentdesk.crew")
@@ -60,12 +61,18 @@ class Desk:
 
 
 DESKS = {
-    "macro": Desk("macro", "Macro", "US economic calendar and data surprises today: CPI, PPI, NFP, jobless claims, ISM, retail sales, GDP, PCE, consumer sentiment. Times in CT, consensus vs prior, and what a miss does to SPY."),
-    "rates": Desk("rates", "Rates", "Treasury market: 2Y and 10Y yields and their change today, curve shape, Treasury auctions today, and whether rates are a headwind or tailwind for equities intraday."),
-    "fed": Desk("fed", "Fed Watch", "Federal Reserve: FOMC decision/minutes/presser timing if today, Fed speakers scheduled today with CT times, fed-funds futures pricing shifts."),
-    "vol": Desk("vol", "Vol", "Volatility: VIX level and change, VIX9D vs VIX term structure, SPY 0DTE expected move from the ATM straddle if available, and whether the tape favors trend or chop."
-                 " Also report vix1d_flag: true when VIX1D is more than 3 points above VIX, false when it isn't; leave it"
-                 " out if you can't find VIX1D (book B skips the day on true)."),
+    "macro": Desk("macro", "Macro", "US economic calendar and data surprises today: CPI, PPI, NFP, jobless claims, ISM, retail sales, GDP, PCE, consumer sentiment. Times in CT, consensus vs prior, and what a miss does to SPY."
+                  " You also cover the Federal Reserve (FOMC decision, minutes or presser if today, Fed speakers today with CT"
+                  " times, fed-funds pricing) and Treasuries (2Y and 10Y yields and their change, curve, auctions today)."
+                  ' Add two keys to the JSON: "fed": {"bias": "hawkish" | "neutral" | "dovish", "headline": "<= 90 chars",'
+                  ' "notes": [...]} and "rates": {"headline": "<= 90 chars", "notes": [...]}. Fed and Treasury items that can'
+                  " move SPY also go in events."),
+    "rates": Desk("rates", "Rates", "Treasuries, read from the Macro desk's brief. Information only: no vote.", uses_web=False),
+    "fed": Desk("fed", "Fed Watch", "The Federal Reserve, read from the Macro desk's brief. Information only: no vote.", uses_web=False),
+    "vol": Desk("vol", "Vol", "Volatility. Robinhood's VIX and the expected move are in the message; don't search for them."
+                 " Search for VIX1D and report vix1d_flag: true when VIX1D is more than 3 points above VIX, false when it"
+                 " isn't; leave it out if you can't find VIX1D (book B skips the day on true). Then say whether the tape"
+                 " favors trend or chop, and vote."),
     "quant": Desk("quant", "Quant", "Reviews the engine's own trades today: win rate, avg win/loss, which setup and time windows are working, whether the market is chopping the MACD triggers.", uses_web=False),
     "risk": Desk("risk", "Risk", "Deterministic risk manager.", uses_web=False),
     "tape": Desk("tape", "Tape", "Level 2 order book reader.", uses_web=False),
@@ -73,7 +80,24 @@ DESKS = {
     "earnings": Desk("earnings", "Earnings", "Robinhood earnings calendar: book E's windows and SPY heavyweights reporting.", uses_web=False),
     "postmortem": Desk("postmortem", "Post-mortem", "Audits the day's trades against the rules; writes the daily file.", uses_web=False),
 }
-VOTERS_FOR_SIZE_UP = ("macro", "rates", "vol")
+VOTERS_FOR_SIZE_UP = ("macro", "vol")
+BOOK_LETTERS = ("A", "B", "C", "D", "E", "F", "G")
+# Which books each desk's size vote reaches (crew.vote_books overrides). A desk with no entry (Risk, Tape, Earnings,
+# Post-mortem) still cuts book A, as every vote did before; Rates and Fed (INFO_ONLY) reach no book.
+DEFAULT_VOTE_BOOKS = {"macro": ["A", "C"], "vol": ["A", "B", "C", "D", "G"], "quant": ["A"], "ops": ["A"]}
+BOOKS_TEXT = ("The desk runs paper books: A long SPY 0DTE calls on MACD/RSI triggers (4-5 contracts, flat by 14:40 CT);"
+              " B iron fly sold at 08:45 CT; C bull-put spreads after a bullish opening-range break; D iron condor sold at"
+              " 09:00 CT on quiet days; G SPY call calendar at 09:00 CT; E pre-earnings single-name straddles and calendars"
+              " held for days; F large-cap stock longs (logging only).")
+# $ per million tokens (input, output) by model prefix; cache reads cost 0.1x input, cache writes 1.25x.
+PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0),
+          "claude-opus-5-5": (4.0, 20.0)}
+WEB_SEARCH_USD = 0.01           # $10 per 1,000 searches
+
+
+def price_of(model: str | None) -> tuple[float, float]:
+    keys = [k for k in PRICES if (model or "").startswith(k)]
+    return PRICES[max(keys, key=len)] if keys else (0.0, 0.0)
 
 SCHEMA_HINT = """Reply with ONLY a JSON object:
 {"headline": "<= 90 chars, the one thing the trader must know",
@@ -86,7 +110,7 @@ SCHEMA_HINT = """Reply with ONLY a JSON object:
  "proposals": []}
 size_multiplier is your vote: 1.0 = normal. Below 1.0 needs a concrete reason (event risk, vol spike).
 Above 1.0 (max 1.25) only when your evidence clearly supports long SPY exposure today, with confidence
->= 0.6. A size-up only happens if Macro, Rates and Vol all vote above 1.0 and several market checks pass.
+>= 0.6. A size-up only happens if Macro and Vol both vote above 1.0 and several market checks pass.
 proposals (optional, usually empty): {"scope": "trade"|"day"|"standing"|"new_strategy", "title": "...",
  "rationale": "...", "params": {"<whitelisted key>": value}, "spec": "(new_strategy only) rules in plain words",
  "evidence": "numbers"}. Whitelisted keys: exits.stop_loss_pct, exits.swing.runner_trail_pct,
@@ -130,7 +154,12 @@ class Crew:
         self.prep: dict[str, dict] = {}                     # briefs the premarket desks wrote at their desks
         self.prep_tasks: dict[str, asyncio.Task] = {}       # ... and the ones still researching
         self._client = None
-        self.cache_usage = {"calls": 0, "input": 0, "cache_read": 0, "cache_write": 0}
+        self.cache_usage = self._new_usage()
+        self.vix = None                                     # VIX source for the Vol desk (Robinhood or the sim)
+        self._calendar: dict | None = None                  # this week's saved economic calendar
+        self._event_src: dict[str, str] = {}                # blackout name -> desk that sourced it
+        self._logged: set = set()                           # crew_log block keys already written today
+        self._cal_check = None
         self.directive = {"size_mult": 1.0, "blackouts": [], "summary": "", "votes": {}}
         self.conviction = {"mult": 1.0, "checks": [], "ts": 0}
         path = None if engine.feed.is_sim else expand(cfg["journal_path"]).parent / "proposals.json"
@@ -145,14 +174,21 @@ class Crew:
         if d != self.day:
             self.day, self.ran = d, set()
             self._drop_prep()
+            self._logged, self._cal_check, self.cache_usage = set(), None, self._new_usage()
             self._load_config_events(now)
         t = ct_time(now)
         sch = self.cfg["schedule"]
+        if "calendar" not in self.ran and t >= hhmm(sch.get("arrive") or sch["premarket"]) and ct(now).weekday() < 5:
+            self.ran.add("calendar")
+            if self.offline:
+                await self._ensure_calendar(now)
+            else:                                   # one web call a week; never holds up the clock
+                asyncio.create_task(self._ensure_calendar(now))
         if "arrive" in sch and "arrive" not in self.ran and t >= hhmm(sch["arrive"]) and ct(now).weekday() < 5:
             self.ran.add("arrive")
             if t < hhmm(sch["premarket"]):          # started after the huddle time: the huddle briefs in full
                 await self._catch_up(PREMARKET_DESKS, now)
-        plan = [("premarket", PREMARKET_DESKS), ("midday", ["vol", "rates", "macro"]),
+        plan = [("premarket", PREMARKET_DESKS), ("midday", ["macro", "rates", "vol"]),
                 ("late", ["fed", "vol"]), ("postclose", ["quant", "vol", "postmortem"])]
         for slot, desks in plan:
             if slot not in self.ran and t >= hhmm(sch[slot]) and ct(now).weekday() < 5:
@@ -169,6 +205,7 @@ class Crew:
         for ev in evs:
             if ev.get("impact") == "high":
                 self.e.risk.add_blackout(at_ct(d, hhmm(ev["time"])), ev["name"])
+                self._event_src.setdefault(ev["name"], "config")
         self._config_events = evs
 
     async def on_trade_closed(self, pos, net: float, now: float) -> None:
@@ -194,6 +231,8 @@ class Crew:
         bus.emit("crew", now, desk=desks[0], phase="say", who="agent", to="all",
                  text=f"Morning. Catch up at your desks; huddle at {clock_label(self.cfg['schedule']['premarket'])}.")
         for k in desks:
+            if k in INFO_ONLY:                      # read from Macro's brief at the huddle
+                continue
             if self.offline:
                 await self._prepare(k, now)
             else:
@@ -268,14 +307,23 @@ class Crew:
             frm, to = ln.get("from"), ln.get("to", "agent")
             if frm in DESKS and ln.get("text"):
                 bus.emit("crew", now, desk=frm, phase="say", who=frm, to=to, text=str(ln["text"])[:140])
+        revised = {}
         for k, v in (talk.get("votes") or {}).items():
-            if k in self.briefs:
-                self.briefs[k]["size_multiplier"] = self._clamp(v, k)
+            if k in desks and k in self.briefs:         # only desks at this huddle can change their vote
+                try:
+                    self.briefs[k]["size_multiplier"] = revised[k] = self._clamp(v, k)
+                except (TypeError, ValueError):
+                    continue
         for p in pitched + list(talk.get("proposals") or []):
-            if p.get("desk", desks[0]) in RESTRICT_ONLY:
+            if p.get("desk", desks[0]) in RESTRICT_ONLY + INFO_ONLY:
                 continue
             await self._handle_proposal(p.get("desk", desks[0]), p, now)
         self._apply(now)
+        self._log(now, "directive", None, {"slot": slot, "desks": desks, "votes": self.directive.get("votes", {}),
+                                           "book_mults": self.directive.get("book_mults", {}), "revised": revised,
+                                           "blackouts": self.directive.get("blackouts", [])})
+        if slot == "postclose":
+            self._log(now, "usage", None, self.cache_usage)
         bus.emit("crew", now, desk=desks[0], phase="say", who="agent", to="all", text=self._wrap_line(slot))
         for k in desks:
             bus.emit("crew", now, desk=k, phase="done", brief=self.briefs.get(k))
@@ -286,43 +334,98 @@ class Crew:
         v = self.directive.get("votes", {})
         cut = [k for k, m in v.items() if m < 1.0]
         up = [k for k in VOTERS_FOR_SIZE_UP if v.get(k, 1.0) > 1.0]
+        both = " and ".join(DESKS[k].name for k in VOTERS_FOR_SIZE_UP)
         if self.e.risk.st.halted:
             return "Done for the day. Thanks, team."
         if slot == "postclose":
             back = self.cfg["schedule"].get("arrive") or self.cfg["schedule"]["premarket"]
             return f"Good session. Journal's saved; see everyone at {clock_label(back)}."
         if cut:
-            return f"Size to {int(self.e.risk.st.size_mult * 100)}% on {', '.join(DESKS[k].name for k in cut)}'s call."
+            return f"Size to {int(min(self.directive.get('book_mults', {'A': 1.0}).values()) * 100)}% on {', '.join(DESKS[k].name for k in cut)}'s call."
         if len(up) == len(VOTERS_FOR_SIZE_UP):
-            return "Macro, Rates and Vol all lean long. Size-up is on the table if the tape confirms."
+            return f"{both} both lean long. Size-up is on the table if the tape confirms."
         if up:
             return f"{', '.join(DESKS[k].name for k in up)} want more size. Not enough agreement; staying at 100%."
         return "Rules unchanged. Back to the screens."
 
     def _clamp(self, v, key: str | None = None) -> float:
+        if key in INFO_ONLY:                        # Fed and Rates inform; they don't vote
+            return 1.0
         hi = 1.0 if key in RESTRICT_ONLY else self.cfg.get("max_size_multiplier", 1.25)
         return max(self.cfg["min_size_multiplier"], min(hi, float(v)))
 
+    # ------------------------------------------------------------ votes by book
+    def _routes(self, desk: str) -> list[str]:
+        vb = self.cfg.get("vote_books")
+        vb = vb if isinstance(vb, dict) else DEFAULT_VOTE_BOOKS
+        if desk in INFO_ONLY:
+            return []
+        return list(vb[desk] or []) if desk in vb else ["A"]
+
+    def _votes(self) -> dict[str, float]:
+        return {k: b.get("size_multiplier", 1.0) for k, b in self.briefs.items() if b.get("day") == str(self.day)}
+
+    def cut_by(self, book: str) -> list[str]:
+        """Desks whose vote is cutting this book's size today."""
+        return [k for k, m in self._votes().items() if m < 1.0 and book in self._routes(k)]
+
+    def book_mults(self) -> dict[str, float]:
+        votes = self._votes()
+        return {bk: min([1.0] + [m for k, m in votes.items() if m < 1.0 and bk in self._routes(k)]) for bk in BOOK_LETTERS}
+
+    def effect(self, book: str, qty: int, qty_1x: int, up: float = 1.0, tweaks: dict | None = None) -> dict:
+        """What the crew did to one entry, saved with the trade for the weekly scorecard."""
+        return {"mult": self.e.risk.book_mult(book), "qty": qty, "qty_1x": qty_1x, "up": up,
+                "cut_by": self.cut_by(book), "tweaks": dict(tweaks or {})}
+
+    # ------------------------------------------------------------ crew log
+    def _log(self, now: float, kind: str, book: str | None, detail: dict) -> None:
+        rec = getattr(self.e.journal, "record_crew", None)
+        if rec is None:
+            return
+        try:
+            rec(str(session_date(now)), now, kind, book, json.loads(json.dumps(detail, default=str)))
+        except Exception as ex:
+            log.warning("crew log %s failed: %s", kind, ex)
+
+    def note_block(self, book: str, why: str, now: float) -> None:
+        """An entry a crew blackout or the VIX1D flag stopped; logged once per book and reason per day."""
+        key = (str(session_date(now)), book, why)
+        if key in self._logged:
+            return
+        self._logged.add(key)
+        if "VIX1D" in why:
+            desk = "vol"
+        else:
+            name = why.split(": ", 1)[1] if ": " in why else why
+            desk = self._event_src.get(name, "config")
+        self._log(now, "block", book, {"reason": why, "desk": desk})
+
     def _apply(self, now: float) -> None:
-        votes = {k: b.get("size_multiplier", 1.0) for k, b in self.briefs.items() if b.get("day") == str(self.day)}
-        cuts = [m for m in votes.values() if m < 1.0]
-        self.e.risk.set_size_mult(min(cuts) if cuts else 1.0)
+        votes = self._votes()
+        mults = self.book_mults()
+        self.e.risk.set_book_mults(mults)
         have = {b.name for b in self.e.risk.st.blackouts}
         for k, b in self.briefs.items():
+            if b.get("day") not in (None, str(self.day)):
+                continue
             for ev in b.get("events", []) or []:
                 if ev.get("impact") == "high" and ev.get("time_ct") and ev.get("name") not in have:
                     try:
                         self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"])
                         have.add(ev["name"])
+                        self._event_src.setdefault(ev["name"], k)
                     except Exception:
                         pass
             if b.get("cooldown_minutes") and b.get("slot") == "loss-review" and abs(b.get("ts", 0) - now) < 1:
                 self.e.risk.extend_cooldown(now, float(b["cooldown_minutes"]))
+        self._check_calendar(now)
         biases = [b.get("bias") for k, b in self.briefs.items() if k in ("macro", "rates", "fed", "vol")]
         self.directive = {
-            "size_mult": self.e.risk.st.size_mult, "votes": votes,
+            "size_mult": self.e.risk.st.size_mult, "votes": votes, "book_mults": mults,
             "blackouts": [x.name for x in self.e.risk.st.blackouts],
-            "summary": f"Size {int(self.e.risk.st.size_mult * 100)}%. "
+            "summary": f"Size {int(self.e.risk.st.size_mult * 100)}%"
+                       + ("".join(f", {bk} {int(m * 100)}%" for bk, m in mults.items() if bk != "A" and m < 1.0)) + ". "
                        + (f"Blackouts: {', '.join(x.name for x in self.e.risk.st.blackouts)}. " if self.e.risk.st.blackouts else "")
                        + (f"Desk lean: {max(set(biases), key=biases.count)}." if biases else ""),
         }
@@ -346,7 +449,7 @@ class Crew:
         fb = self.briefs.get("fed") or {}
         add("Fed not hawkish", fb.get("day") == day and fb.get("bias") != "bearish" and fb.get("size_multiplier", 1.0) >= 1.0,
             fb.get("bias", "no brief"))
-        lows = [k for k, b in self.briefs.items() if b.get("day") == day and b.get("size_multiplier", 1.0) < 1.0]
+        lows = self.cut_by("A")
         add("No desk voting down", not lows, ", ".join(DESKS[k].name for k in lows))
         soon = [b for b in st.blackouts if b.start - 3600 <= now < b.end]
         add("No high-impact event within 60m", not soon, soon[0].name if soon else "")
@@ -392,8 +495,14 @@ class Crew:
             b = self._postmortem_brief(now)
         elif key == "quant":
             b = self._quant_brief(slot)
-            if not self.offline:
-                b = await self._llm(key, now, extra=json.dumps(b)) or b
+            if not self.offline:                    # the rules keep the vote, cooldown and pitches; Haiku adds notes
+                llm = await self._llm(key, now, extra=json.dumps(b))
+                if llm:
+                    b["notes"] = (list(b.get("notes") or []) + [str(n) for n in llm.get("notes") or []])[:4]
+        elif key in INFO_ONLY:
+            b = self._derived_brief(key, now, slot)
+        elif key == "vol" and not self.e.feed.is_sim:
+            b = await self._vol_read(slot, now)
         elif not self.offline and DESKS[key].uses_web:
             b = await self._llm(key, now)
         if b is None:
@@ -404,7 +513,7 @@ class Crew:
         b["day"] = str(self.day)
         b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0), key)
         b["cooldown_minutes"] = max(0, min(30, int(b.get("cooldown_minutes") or 0)))
-        if key in RESTRICT_ONLY:            # inform or cut only: no pitches, no blackouts
+        if key in RESTRICT_ONLY + INFO_ONLY:    # inform (or cut) only: no pitches, no blackouts
             b["proposals"], b["events"] = [], []
         return b
 
@@ -563,7 +672,7 @@ class Crew:
 
     # ------------------------------------------------------------ roundtable
     async def _roundtable(self, slot: str, desks: list[str], now: float) -> dict:
-        if not self.offline and len([d for d in desks if d not in ("risk", "tape") + RESTRICT_ONLY]) >= 2:
+        if not self.offline and len([d for d in desks if d not in ("risk", "tape") + RESTRICT_ONLY + INFO_ONLY]) >= 2:
             out = await self._llm_roundtable(slot, desks, now)
             if out:
                 return out
@@ -626,7 +735,7 @@ class Crew:
         except Exception as ex:
             self.e.bus.emit("log", now, level="warn", msg=f"roundtable failed: {ex}")
             return None
-        self.note_usage(msg)
+        self.note_usage(msg, "roundtable", self.cfg["fast_model"])
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
         return _extract_json(text, key="lines")
 
@@ -640,18 +749,22 @@ class Crew:
             self._client = AsyncAnthropic(api_key=self.api_key)
         return self._client
 
-    async def _llm(self, key: str, now: float, extra: str = "") -> dict | None:
+    async def _llm(self, key: str, now: float, extra: str = "", extra_label: str = "Engine stats JSON") -> dict | None:
         client = self._get_client()
         if client is None:
             return None
         desk = DESKS[key]
+        books = self._routes(key)
+        reach = (f"Your size vote applies to books {', '.join(books)}." if books
+                 else "Your size vote applies to no book: you inform only.")
         ctx = (f"Today is {ct(now).strftime('%A %Y-%m-%d')}, {ct(now).strftime('%H:%M')} CT. SPY last {self.e.price}. "
-               f"The trader runs an automated 0DTE SPY call strategy (MACD/RSI triggers, 4-5 contracts, flat by 14:40 CT).")
+               f"{BOOKS_TEXT} {reach}")
         system = (f"You are the {desk.name} desk on a small options trading team. Your beat: {desk.role} "
                   f"Be terse and numeric. Use web search for today's facts; never invent data. If you cannot verify "
                   f"something, leave it out.\n\n{SCHEMA_HINT}")
-        user = ctx + (f"\n\nEngine stats JSON:\n{extra}" if extra else "") + f"\n\nGive the {desk.name} brief."
-        kwargs = dict(model=self.cfg["fast_model"] if key == "quant" else self.cfg["model"], max_tokens=DESK_MAX_TOKENS,
+        user = ctx + (f"\n\n{extra_label}:\n{extra}" if extra else "") + f"\n\nGive the {desk.name} brief."
+        model = self.cfg["fast_model"] if key == "quant" else self.cfg["model"]
+        kwargs = dict(model=model, max_tokens=DESK_MAX_TOKENS,
                       system=cached_system(system), messages=[{"role": "user", "content": user}])
         if desk.uses_web and self.cfg.get("web_search", True):
             kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}]
@@ -660,7 +773,7 @@ class Crew:
         except Exception as ex:
             self.e.bus.emit("log", now, level="warn", msg=f"{desk.name} desk LLM call failed: {ex}")
             return None
-        self.note_usage(msg)
+        self.note_usage(msg, key, model)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
         b = _extract_json(text)
         if b is None:
@@ -669,15 +782,222 @@ class Crew:
             self.e.bus.emit("log", now, level="warn", msg=f"{desk.name} desk reply had no brief ({why})")
         return b
 
-    def note_usage(self, msg) -> None:
-        """Tally prompt-cache hits across the day's calls (a cache_read of 0 on repeat calls means a miss)."""
+    @staticmethod
+    def _new_usage() -> dict:
+        return {"calls": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "web_searches": 0,
+                "est_cost_usd": 0.0, "by_desk": {}}
+
+    def note_usage(self, msg, desk: str = "other", model: str | None = None) -> None:
+        """Tally the day's tokens, web searches and estimated cost, in total and per desk (a cache_read of 0 on repeat
+        calls means a cache miss). The cost is an estimate from list prices (PRICES, WEB_SEARCH_USD)."""
         u = getattr(msg, "usage", None)
-        c = self.cache_usage
-        c["calls"] += 1
-        for k, attr in (("input", "input_tokens"), ("cache_read", "cache_read_input_tokens"),
+        n = {"calls": 1}
+        for k, attr in (("input", "input_tokens"), ("output", "output_tokens"), ("cache_read", "cache_read_input_tokens"),
                         ("cache_write", "cache_creation_input_tokens")):
-            c[k] += int(getattr(u, attr, 0) or 0)
-        log.debug("crew cache: %s", c)
+            n[k] = int(getattr(u, attr, 0) or 0)
+        n["web_searches"] = int(getattr(getattr(u, "server_tool_use", None), "web_search_requests", 0) or 0)
+        pin, pout = price_of(model or getattr(msg, "model", None))
+        n["est_cost_usd"] = ((n["input"] * pin + n["output"] * pout + n["cache_read"] * pin * 0.1
+                              + n["cache_write"] * pin * 1.25) / 1e6 + n["web_searches"] * WEB_SEARCH_USD)
+        c = self.cache_usage
+        d = c["by_desk"].setdefault(desk, {k: 0 for k in n})
+        for k, v in n.items():
+            c[k] += v
+            d[k] += v
+        log.debug("crew usage: %s", c)
+
+    # ------------------------------------------------------------ Fed and Rates, read from Macro
+    def _derived_brief(self, key: str, now: float, slot: str) -> dict:
+        m = self.briefs.get("macro") or {}
+        sub = m.get(key) if m.get("day") == str(self.day) else None
+        if not isinstance(sub, dict):
+            return self._offline_brief(key, now, slot)
+        b = {"headline": str(sub.get("headline") or ("Nothing from the Fed today" if key == "fed" else "No read on Treasuries"))[:90],
+             "bias": "neutral", "confidence": 0.5, "events": [], "size_multiplier": 1.0,
+             "notes": [str(x) for x in sub.get("notes") or []][:4], "source": "macro"}
+        if key == "fed":
+            fb = str(sub.get("bias") or "").lower()
+            b["bias"] = {"hawkish": "bearish", "dovish": "bullish"}.get(fb, "neutral")
+            b["fed_bias"] = fb or "neutral"
+        return b
+
+    # ------------------------------------------------------------ Vol, from Robinhood data
+    def _vix_source(self):
+        if self.vix is None:
+            from .books.vol import RobinhoodVix, SimVix
+            if self.e.feed.is_sim:
+                self.vix = SimVix(self.e.feed)
+            elif getattr(self.e, "l2_rh", None) is not None:
+                self.vix = RobinhoodVix(self.e.l2_rh)
+        return self.vix
+
+    async def _vix(self, what: str) -> float | None:
+        src = self._vix_source()
+        if src is None:
+            return None
+        day = session_date(self.e.feed.now())
+        if what == "prev" and getattr(self, "_vix_prev", (None,))[0] == day:
+            return self._vix_prev[1]                # one historicals call a day
+        try:
+            call = src.current() if what == "now" else src.prior_close(day)
+            v = await asyncio.wait_for(call, timeout=15)
+            v = float(v) if v else None
+            if what == "prev" and v:
+                self._vix_prev = (day, v)
+            return v
+        except Exception as ex:
+            log.warning("vol desk: VIX %s unavailable: %s", what, ex)
+            return None
+
+    def _expected_move(self, now: float, vix: float | None) -> tuple[float | None, str]:
+        spot = self.e.price
+        if not spot:
+            return None, ""
+        if is_rth(now):
+            fn = getattr(self.e.journal, "latest_straddle", None)
+            try:
+                got = fn(str(session_date(now)), float(spot), now - 120) if fn else None
+            except Exception:
+                got = None
+            if got:
+                return round(got[1], 2), f"{got[0]:g} straddle"
+        if vix:
+            m = ((self.e.cfg.get("books") or {}).get("D_iron_condor") or {}).get("em_rth_mult", 0.80)
+            return round(spot * vix / 100 * math.sqrt(1 / 252) * m, 2), "VIX"
+        return None, ""
+
+    async def _vol_read(self, slot: str, now: float) -> dict:
+        """Vol's numbers come from Robinhood: VIX now (prior close as fallback) and the expected move from the recorded
+        0DTE ATM straddle (from VIX before the open). Robinhood has no VIX1D, so the premarket read makes one web call
+        for vix1d_flag, the bias and the vote; later reads keep that vote. VIX above 28 cuts to 75%."""
+        vix_prev = await self._vix("prev")
+        vix = await self._vix("now") or vix_prev
+        em, src = self._expected_move(now, vix)
+        prev = self.briefs.get("vol") or {}
+        prev = prev if prev.get("day") == str(self.day) else {}
+        parts = [f"VIX {vix:.2f}" if vix else "VIX n/a"]
+        if vix_prev:
+            parts.append(f"prior close {vix_prev:.2f}")
+        if em:
+            parts.append(f"{'straddle implies' if src.endswith('straddle') else 'expected move'} ±${em:.2f}"
+                         + (" for the rest of today" if src.endswith("straddle") else ""))
+        b = {"headline": ", ".join(parts)[:90], "bias": prev.get("bias", "neutral"),
+             "confidence": prev.get("confidence", 0.5), "events": [], "size_multiplier": prev.get("size_multiplier", 1.0),
+             "em": em, "vix": vix, "vix_prev": vix_prev, "notes": [f"Source: Robinhood VIX, {src or 'no'} expected move"]}
+        if "vix1d_flag" in prev:
+            b["vix1d_flag"] = prev["vix1d_flag"]
+        if slot == "premarket" and not self.offline:
+            facts = f"Robinhood: {', '.join(parts)}."
+            llm = await self._llm("vol", now, extra=facts, extra_label="Numbers already known")
+            if llm:
+                b.update({k: llm[k] for k in ("headline", "bias", "confidence", "size_multiplier", "vix1d_flag") if k in llm})
+                b["notes"] = ([str(x) for x in llm.get("notes") or []] + b["notes"])[:4]
+        if vix and vix > 28:
+            b["size_multiplier"] = min(float(b.get("size_multiplier") or 1.0), 0.75)
+            b["headline"] = f"VIX {vix:.1f} is above 28: cutting size to 75%."
+        return b
+
+    # ------------------------------------------------------------ weekly economic calendar
+    def _calendar_path(self) -> Path:
+        return Path(expand(self.cfg.get("calendar_path", "~/.agentdesk/econ_calendar.json")))
+
+    async def _ensure_calendar(self, now: float) -> None:
+        """One web call a week: the week's scheduled US events, saved to crew.calendar_path. Its high-impact events
+        today become blackouts next to Macro's (the union: blackouts only restrict)."""
+        if self.e.feed.is_sim:                      # the simulator's days are made up; its events come from the feed
+            return
+        d = session_date(now)
+        monday = d - timedelta(days=d.weekday())
+        path, cal = self._calendar_path(), None
+        try:
+            data = json.loads(path.read_text())
+            cal = data if isinstance(data, dict) and data.get("week") == str(monday) else None
+        except (OSError, ValueError):
+            pass
+        if cal is None and not self.offline and not self.e.feed.is_sim:
+            events = await self._llm_calendar(now, monday)
+            if events is not None:
+                cal = {"week": str(monday), "fetched_ts": now, "events": events}
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps(cal, indent=1))
+                except OSError as ex:
+                    log.warning("calendar save failed: %s", ex)
+        self._calendar = cal
+        if not cal:
+            return
+        have = {b.name for b in self.e.risk.st.blackouts}
+        for ev in self._calendar_today(d):
+            if ev["impact"] == "high" and ev["name"] not in have:
+                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"])
+                have.add(ev["name"])
+                self._event_src.setdefault(ev["name"], "calendar")
+
+    def _calendar_today(self, d) -> list[dict]:
+        out = []
+        for ev in (self._calendar or {}).get("events") or []:
+            try:
+                if str(ev.get("date")) == str(d) and ev.get("name") and ev.get("time_ct"):
+                    hhmm(str(ev["time_ct"]))
+                    out.append({"time_ct": str(ev["time_ct"]), "name": str(ev["name"])[:60],
+                                "impact": str(ev.get("impact") or "medium").lower()})
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    async def _llm_calendar(self, now: float, monday) -> list[dict] | None:
+        client = self._get_client()
+        if client is None:
+            return None
+        system = ("You keep the economic calendar for a small SPY options desk. List every scheduled US event for the"
+                  " week that can move SPY intraday: data releases (CPI, PPI, jobs, claims, ISM, retail sales, GDP, PCE,"
+                  " JOLTS, sentiment), FOMC decisions, minutes and pressers, Fed speakers, and Treasury auctions. Times"
+                  " in US Central time (CT), not ET. Use web search; never invent an event. Reply with ONLY JSON:"
+                  ' {"events": [{"date": "YYYY-MM-DD", "time_ct": "HH:MM", "name": "...", "impact": "high" | "medium" | "low"}]}.'
+                  " high = CPI, PPI, NFP, PCE, retail sales, ISM, FOMC decision or presser, the Fed chair speaking.")
+        user = f"The week of Monday {monday} to Friday {monday + timedelta(days=4)}. Today is {ct(now).strftime('%A %Y-%m-%d')}."
+        kwargs = dict(model=self.cfg["model"], max_tokens=DESK_MAX_TOKENS, system=cached_system(system),
+                      messages=[{"role": "user", "content": user}])
+        if self.cfg.get("web_search", True):
+            kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]
+        try:
+            msg = await asyncio.wait_for(client.messages.create(**kwargs), timeout=180)
+        except Exception as ex:
+            self.e.bus.emit("log", now, level="warn", msg=f"weekly calendar call failed: {ex}")
+            return None
+        self.note_usage(msg, "calendar", self.cfg["model"])
+        text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
+        got = _extract_json(text, key="events")
+        if got is None or not isinstance(got.get("events"), list):
+            self.e.bus.emit("log", now, level="warn", msg="weekly calendar reply had no events list")
+            return None
+        return [e for e in got["events"] if isinstance(e, dict)]
+
+    def _check_calendar(self, now: float) -> None:
+        """Compare today's high-impact events in the weekly calendar with Macro's; log any disagreement."""
+        m = self.briefs.get("macro") or {}
+        if not self._calendar or m.get("day") != str(self.day):
+            return
+        cal = [e for e in self._calendar_today(self.day) if e["impact"] == "high"]
+        mac = [e for e in m.get("events") or [] if e.get("impact") == "high" and e.get("time_ct") and e.get("name")]
+
+        def near(a, b):
+            try:
+                ta, tb = hhmm(str(a["time_ct"])), hhmm(str(b["time_ct"]))
+            except (TypeError, ValueError):
+                return False
+            return abs((ta.hour * 60 + ta.minute) - (tb.hour * 60 + tb.minute)) <= 15
+
+        only_cal = [f"{e['name']} {e['time_ct']}" for e in cal if not any(near(e, x) for x in mac)]
+        only_mac = [f"{e['name']} {e['time_ct']}" for e in mac if not any(near(e, x) for x in cal)]
+        key = (tuple(only_cal), tuple(only_mac))
+        if key == self._cal_check:
+            return
+        self._cal_check = key
+        if only_cal or only_mac:
+            self._log(now, "calendar_check", None, {"only_calendar": only_cal, "only_macro": only_mac})
+            self.e.bus.emit("log", now, level="warn", msg="calendar check: weekly calendar and Macro disagree: "
+                            + "; ".join([f"only in calendar: {x}" for x in only_cal] + [f"only from Macro: {x}" for x in only_mac]))
 
     def state(self) -> dict:
         return {"briefs": self.briefs, "directive": self.directive, "offline": self.offline, "cache_usage": self.cache_usage,

@@ -86,7 +86,7 @@ class NewsTagger:
             model=crew.cfg["model"], max_tokens=2000, system=cached_system(system),
             messages=[{"role": "user", "content": "Stocks in play at 09:35 ET today:\n" + "\n".join(lines)}],
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]), timeout=self.timeout * 2)
-        crew.note_usage(msg)
+        crew.note_usage(msg, "f_news", crew.cfg["model"])
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
         from ..crew import _extract_json
         obj = _extract_json(text, key="tags") or {}

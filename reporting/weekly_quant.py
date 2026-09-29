@@ -220,6 +220,7 @@ def load_trades(path, modes=("paper", "shadow")) -> list[dict]:
         d["book"] = (d.get("book") or "A").upper()[:1]
         d["fills"] = _loads(d.get("fills")) or []
         d["l2"] = _loads(d.get("l2"))
+        d["crew"] = _loads(d.get("crew"))
         d["pnl"] = float(d.get("pnl") or 0.0)
         out.append(d)
     return out
@@ -558,7 +559,88 @@ def build_report(journal, week_ending: date, modes=("paper", "shadow"), sip_dir=
         "straddle_week": straddle_vs_realized(journal, ws, we),
         "straddle_all": straddle_vs_realized(journal, "2000-01-01", we),
         "alpha": ALPHA, "bonferroni_alpha": ALPHA / BOOK_COUNT,
+        "crew": crew_scorecard(journal, trades, ws, we),
     }
+
+
+# ----------------------------------------------------------------------------- crew scorecard
+def load_crew_log(path) -> list[dict]:
+    db = _connect(path)
+    try:
+        if not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='crew_log'").fetchone():
+            return []
+        rows = db.execute("SELECT session,ts,kind,book,detail FROM crew_log ORDER BY id").fetchall()
+    finally:
+        db.close()
+    return [{"session": r[0], "ts": r[1], "kind": r[2], "book": r[3], "detail": _loads(r[4]) or {}} for r in rows]
+
+
+def _crew_block(trades: list, log: list) -> dict:
+    """What the crew did in one window: P&L its size votes added or saved (actual minus the same trade at 1.0x,
+    scaled by quantity), how tweaked trades did, what it blocked, and what it cost."""
+    sizing: dict = {}
+    tw = {"with": [], "without": []}
+    for t in trades:
+        c = t.get("crew")
+        if not isinstance(c, dict):
+            continue
+        tw["with" if c.get("tweaks") else "without"].append(t["pnl"])
+        q, q1 = c.get("qty") or 0, c.get("qty_1x")
+        if q and q1 is not None and q != q1:
+            who = ("size-up gate" if q > q1 else "+".join(c.get("cut_by") or []) or "crew cut")
+            r = sizing.setdefault(who, {"trades": 0, "delta": 0.0})
+            r["trades"] += 1
+            r["delta"] += t["pnl"] - t["pnl"] * q1 / q
+    blocks: dict = {}
+    for r in log:
+        if r["kind"] == "block":
+            k = f"{r['detail'].get('desk', '?')} -> {r['book']}"
+            blocks[k] = blocks.get(k, 0) + 1
+    usage = [r["detail"] for r in log if r["kind"] == "usage"]
+    return {
+        "sizing": sizing,
+        "tweaks": {k: {"trades": len(v), "net": sum(v)} for k, v in tw.items()},
+        "blocks": dict(sorted(blocks.items(), key=lambda kv: -kv[1])),
+        "calendar_disagreements": sum(1 for r in log if r["kind"] == "calendar_check"),
+        "sessions_logged": len({r["session"] for r in log}),
+        "est_cost_usd": sum(float(u.get("est_cost_usd") or 0) for u in usage),
+        "web_searches": sum(int(u.get("web_searches") or 0) for u in usage),
+    }
+
+
+def crew_scorecard(journal, trades: list, ws: str, we: str) -> dict:
+    log = [r for r in load_crew_log(journal) if r["session"] and r["session"] <= we]
+    return {"week": _crew_block([t for t in trades if t["session"] >= ws], [r for r in log if r["session"] >= ws]),
+            "cumulative": _crew_block(trades, log)}
+
+
+def _crew_section(rep: dict) -> list:
+    sc = rep.get("crew")
+    L = ["## Crew scorecard", ""]
+    if not sc or not (sc["cumulative"]["sessions_logged"] or any(t["trades"] for t in sc["cumulative"]["tweaks"].values())):
+        return L + ["No crew effects logged yet (the crew log starts with the 2026-09-29 crew changes).", ""]
+    w, c = sc["week"], sc["cumulative"]
+    L += ["Sizing: P&L the crew's size votes added (+) or cost (-), vs the same trades at 1.0x. Blocked entries are "
+          "counted, not priced; pricing them needs a replay on recorded quotes.", "",
+          "| Vote from | Trades (week) | P&L effect (week) | Trades (since start) | P&L effect (since start) |",
+          "|---|---|---|---|---|"]
+    for who in sorted(set(w["sizing"]) | set(c["sizing"])):
+        a, b = w["sizing"].get(who, {"trades": 0, "delta": 0.0}), c["sizing"].get(who, {"trades": 0, "delta": 0.0})
+        L.append(f"| {who} | {a['trades']} | {_usd(a['delta'])} | {b['trades']} | {_usd(b['delta'])} |")
+    if not c["sizing"]:
+        L.append("| none yet | 0 | | 0 | |")
+    L += ["", "| | This week | Since start |", "|---|---|---|",
+          f"| Trades with a crew tweak active (net) | {w['tweaks']['with']['trades']} ({_usd(w['tweaks']['with']['net'])}) | "
+          f"{c['tweaks']['with']['trades']} ({_usd(c['tweaks']['with']['net'])}) |",
+          f"| Trades without one (net) | {w['tweaks']['without']['trades']} ({_usd(w['tweaks']['without']['net'])}) | "
+          f"{c['tweaks']['without']['trades']} ({_usd(c['tweaks']['without']['net'])}) |",
+          f"| Entries blocked | {sum(w['blocks'].values())} | {sum(c['blocks'].values())} |",
+          f"| Calendar vs Macro disagreements | {w['calendar_disagreements']} | {c['calendar_disagreements']} |",
+          f"| Crew API cost, estimated | ${w['est_cost_usd']:.2f} | ${c['est_cost_usd']:.2f} |",
+          f"| Web searches | {w['web_searches']} | {c['web_searches']} |"]
+    if c["blocks"]:
+        L += ["", "Blocked entries by source: " + ", ".join(f"{k} {v}" for k, v in c["blocks"].items()) + "."]
+    return L + [""]
 
 
 def _m(x, nd=0, pct=False, sign=True):
@@ -634,6 +716,7 @@ def render_markdown(rep: dict) -> str:
         for b, r in books.items():
             L += _book_section(b, r)
     L += _straddle_section(rep)
+    L += _crew_section(rep)
     L += ["## Notes", "",
           "- Journal schema: the multi-book framework's trades table (PR #6: `book`, `legs`, `max_loss`). "
           "A journal without `book` is read as all book A.",
