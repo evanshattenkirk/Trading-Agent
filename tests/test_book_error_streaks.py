@@ -68,3 +68,20 @@ def test_books_e_and_f_halt_when_one_hook_keeps_failing_between_clean_ones():
             run(h._safe(_ok(), 1000.0 + i))
             run(h._safe(_broken(), 1000.0 + i))
         assert h.book.halted, h.book.letter
+
+
+def test_a_new_day_starts_every_streak_at_zero():
+    book = Book("B_test", {}, None)
+    for _ in range(3):
+        book.failed("manage")                         # halted over its exit checks yesterday; they stopped running
+    book.reset_day()
+    assert book.failed("clock") == 1
+
+
+def test_the_engine_starts_a_new_day_with_no_error_streaks():
+    from test_safety import engine
+    e = engine()
+    e._streaks["entry"] = 2
+    e._errors = 2
+    e._new_day(e.day, e.feed.t)
+    assert e._errors == 0 and not e._streaks

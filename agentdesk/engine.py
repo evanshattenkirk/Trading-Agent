@@ -216,6 +216,8 @@ class Engine:
             set_path(self.cfg, k, v)
         self._day_orig.clear()
         self.trade_tweaks.clear()
+        self._streaks.clear()
+        self._errors = 0
         if self.levels.hod is not None and self.price is not None:
             self.levels.set_prior_day(self.levels.hod, self.levels.lod, self.price)
         self.day = d

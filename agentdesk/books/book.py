@@ -26,6 +26,7 @@ class Book:
         return self.errors
 
     def reset_day(self) -> None:
+        self.streaks, self.errors = {}, 0     # yesterday's streaks must not halt today's book on its first error
         self.closed: list = []
         self.trades = self.wins = self.losses = 0
         self.day_pnl = 0.0
