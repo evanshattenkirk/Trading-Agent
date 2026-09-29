@@ -181,26 +181,29 @@ class RecorderDaemon:
         self.last_alert = 0.0
         self.fails = 0
         self.iv_task: asyncio.Task | None = None
+        self._conn = asyncio.Lock()
         self.ivs = iv_settings(cfg)
         RECORDER_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------------------------------- session
     async def connect(self) -> None:
-        if self.rh is not None:
-            return
-        rh = MeteredRobinhoodMCP(self.rh_cfg, self.meter)
-        await rh.start()
-        self.rh = rh
-        self.rec = OptionQuoteRecorder(rh, self.journal, every=float(self.s["every_sec"]), width=int(self.s["width"]),
-                                       symbol=self.symbol, standalone=True)
+        async with self._conn:          # the quote loop and the IV loop share one session (one OAuth grant)
+            if self.rh is not None:
+                return
+            rh = MeteredRobinhoodMCP(self.rh_cfg, self.meter)
+            await rh.start()
+            self.rh = rh
+            self.rec = OptionQuoteRecorder(rh, self.journal, every=float(self.s["every_sec"]), width=int(self.s["width"]),
+                                           symbol=self.symbol, standalone=True)
 
     async def disconnect(self) -> None:
-        rh, self.rh, self.rec = self.rh, None, None
-        if rh is not None:
-            try:
-                await rh.close()
-            except BaseException as ex:          # anyio cancel scopes can raise on close after a dropped session
-                log.debug("close: %r", ex)
+        async with self._conn:
+            rh, self.rh, self.rec = self.rh, None, None
+            if rh is not None:
+                try:
+                    await rh.close()
+                except BaseException as ex:          # anyio cancel scopes can raise on close after a dropped session
+                    log.debug("close: %r", ex)
 
     def awake(self, on: bool) -> None:
         if on and (self.caff is None or self.caff.poll() is not None):
@@ -222,7 +225,8 @@ class RecorderDaemon:
                           ((self.cfg.get("crew") or {}).get("earnings") or {}).get("universe") or [], holidays(self.cfg))
         return IVDay(snap, lambda d: recorder_calendar(client, self.cfg, d), self.ivs,
                      list_pacer=Pacer(float(self.ivs["list_calls_per_s"])),
-                     quote_pacer=Pacer(float(self.ivs["quote_calls_per_s"])), log_fn=self._iv_log)
+                     quote_pacer=Pacer(float(self.ivs["quote_calls_per_s"])), log_fn=self._iv_log,
+                     skip_days=holidays(self.cfg) | set((self.cfg.get("calendar") or {}).get("early_close") or []))
 
     def _iv_log(self, summary: dict) -> None:
         log.info("iv day done: %s", summary)

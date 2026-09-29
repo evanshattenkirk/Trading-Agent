@@ -278,3 +278,50 @@ def test_three_errors_in_a_row_halt_book_e():
         ch.now = eng.feed.t = at(TUE, 9, 0, s)
         asyncio.run(h.run(h.on_second(eng.feed.t), True))
     assert h.book.halted
+
+
+def test_one_names_data_error_does_not_cancel_the_other_entries():             # final review 1
+    h, eng, ch = make()
+    real = ch.expirations
+
+    async def flaky(sym):
+        if sym == "AMD":
+            raise RuntimeError("get_option_chains AMD: no expiration_dates")
+        return await real(sym)
+    ch.expirations = flaky
+    tick(h, ch, at(MON, 14, 45))
+    assert set(by_symbol(h)) == {"XOM"}
+    amd = [d for d in h.ej.decisions() if d["symbol"] == "AMD"][0]
+    assert amd["outcome"] == "error" and "no expiration_dates" in amd["reason"]
+
+
+def test_a_failed_calendar_read_retries_instead_of_losing_the_day():           # final review 1
+    h, eng, ch = make(cal=(AMD_EV,))
+    fail = [True]
+    orig = h.calendar_fn
+
+    async def cal(today):
+        if fail[0]:
+            return None                      # Robinhood calendar unavailable
+        return await orig(today)
+    h.calendar_fn = cal
+    tick(h, ch, at(MON, 14, 45))
+    assert h.book.open == []
+    fail[0] = False
+    tick(h, ch, at(MON, 14, 45, 30))         # inside the retry gap: nothing yet
+    assert h.book.open == []
+    tick(h, ch, at(MON, 14, 46))
+    assert set(by_symbol(h)) == {"AMD"}
+
+
+def test_forced_exit_with_failing_quotes_is_throttled_then_closes_at_last_mark():   # final review 3
+    h, eng, ch = make(cal=(AMD_EV,))
+    tick(h, ch, at(MON, 14, 45))
+    ch.fail.add("quotes")
+    n0 = ch.calls.count("quotes")
+    for s in range(0, 45):
+        tick(h, ch, at(THU, 14, 45, s))
+    assert ch.calls.count("quotes") - n0 == 3            # one try per poll_sec, not one per second
+    assert h.book.open == [] and not h.book.halted
+    t = eng.journal.trades()[0]
+    assert "T-0" in t["exit_reason"] and "last mark" in t["exit_reason"]
