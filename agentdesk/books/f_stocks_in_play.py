@@ -1,8 +1,12 @@
-"""Book F: large-cap "stocks in play" (docs/BOOK_F_HANDOFF.md). Paper only, long only, whole shares.
+"""Book F1 (was F): "stocks in play" (docs/BOOK_F_HANDOFF.md). Paper only, long only, whole shares.
 
-The section 3 rules are frozen. This module holds them as pure functions (shared by the engine and by
-research/strategy_f_intraday.py, so paper and the backtest trade the same rules) plus the StocksInPlay state
-machine that FHost (f_host.py) drives. All rule times are US/Eastern; the engine clock is CT.
+Pure functions shared by the engine (books/f_host.py) and research/strategy_f_intraday.py. The handoff's section 3
+rules are the defaults. The F1 v2 changes (research/strategy_f1_prereg.md) switch on only through config keys the
+section 3 spec doesn't have, so the replication backtest still trades the frozen rules:
+  universe.source: all_us   every liquid US common stock, not only the top S&P names (plus the extras)
+  stop_mode: or_low         stop at the opening-range low, clamped to [stop_atr_min, stop_atr_max] x ATR14
+  max_or_atr                skip a name whose opening range is wider than this many ATR14 (overextended open)
+All rule times are US/Eastern; the engine clock is CT.
 """
 from __future__ import annotations
 
@@ -59,20 +63,33 @@ def rvol5(today_vol, hist_vols: list) -> float | None:
 
 
 # ------------------------------------------------------------------ universe (07:30 CT)
-def universe(daily: dict[str, list[dict]], sp500, cfg: dict) -> dict[str, dict]:
-    """Section 3 universe from daily bars through yesterday: the top N S&P 500 names by 20-day average dollar volume
-    plus the extras, then prior close >= min_price, ATR14 >= min_atr and 20-day dollar volume >= the floor.
-    Names with fewer than 20 daily bars are left out (new listings enter once they have 20)."""
+def universe(daily: dict[str, list[dict]], sp500, cfg: dict, broad: bool = False, cap: int | None = None) -> dict[str, dict]:
+    """The universe from daily bars through yesterday. Names with fewer than 20 daily bars are left out (new
+    listings enter once they have 20).
+    Section 3 (broad=False): the top N S&P 500 names by 20-day average dollar volume plus the extras, then prior
+    close >= min_price, ATR14 >= min_atr and 20-day dollar volume >= the floor.
+    F1 v2 (broad=True): every name in `daily` (all US common stocks) passing the same floors plus a 14-day average
+    volume floor (min_avg_volume), ranked by 20-day dollar volume, the top `cap` kept (None: all), plus the extras."""
     u = cfg["universe"]
     info = {}
     for s, bars in daily.items():
         if len(bars) < 20:
             continue
-        info[s] = {"atr": atr14(bars), "dv20": sum(b["c"] * b["v"] for b in bars[-20:]) / 20, "close": bars[-1]["c"]}
+        info[s] = {"atr": atr14(bars), "dv20": sum(b["c"] * b["v"] for b in bars[-20:]) / 20, "close": bars[-1]["c"],
+                   "avg_vol14": sum(b["v"] for b in bars[-14:]) / 14}
+
+    def ok(s):
+        x = info[s]
+        return (x["close"] >= u["min_price"] and x["atr"] is not None and x["atr"] >= u["min_atr"]
+                and x["dv20"] >= u["min_dollar_vol_20d"] and x["avg_vol14"] >= u.get("min_avg_volume", 0))
+
+    extras = {s for s in u.get("extra", []) if s in info}
+    if broad:
+        ranked = sorted((s for s in info if ok(s)), key=lambda s: (-info[s]["dv20"], s))
+        names = set(ranked if cap is None else ranked[:cap]) | {s for s in extras if ok(s)}
+        return {s: info[s] for s in names}
     top = sorted((s for s in info if s in sp500), key=lambda s: -info[s]["dv20"])[:u["top_sp500_by_dollar_vol"]]
-    names = set(top) | {s for s in u.get("extra", []) if s in info}
-    return {s: info[s] for s in names if info[s]["close"] >= u["min_price"] and info[s]["atr"] is not None
-            and info[s]["atr"] >= u["min_atr"] and info[s]["dv20"] >= u["min_dollar_vol_20d"]}
+    return {s: info[s] for s in set(top) | extras if ok(s)}
 
 
 # ------------------------------------------------------------------ scan
@@ -91,13 +108,23 @@ class ScanRow:
     picked: bool = False
     reason: str = ""
     news: dict | None = None
+    prev_close: float | None = None
 
     @property
     def direction(self) -> str:
         return "green" if self.close > self.open else "red" if self.close < self.open else "doji"
 
+    @property
+    def gap_pct(self) -> float | None:
+        return None if not self.prev_close else round((self.open / self.prev_close - 1) * 100, 2)
+
+    @property
+    def or_atr(self) -> float | None:
+        return None if not self.atr else round((self.or_high - self.or_low) / self.atr, 3)
+
     def to_dict(self) -> dict:
         return {"symbol": self.symbol, "rvol5": None if self.rvol5 is None else round(self.rvol5, 2),
+                "gap_pct": self.gap_pct, "or_atr": self.or_atr,
                 "direction": self.direction, "open": self.open, "close": self.close, "or_high": self.or_high,
                 "or_low": self.or_low, "atr": round(self.atr, 3), "dollar_vol20": self.dollar_vol20, "rank": self.rank,
                 "picked": self.picked, "reason": self.reason, "news": self.news, "ai": self.symbol in AI_LIST}
@@ -118,16 +145,22 @@ def scan_row(sym: str, info: dict, bars: list[dict], past_vols: list) -> ScanRow
         return None
     vol = sum(b["v"] for b in bs)
     return ScanRow(sym, rvol5(vol, past_vols), bs[0]["o"], bs[-1]["c"], max(b["h"] for b in bs),
-                   min(b["l"] for b in bs), vol, info["atr"], info["dv20"])
+                   min(b["l"] for b in bs), vol, info["atr"], info["dv20"], prev_close=info.get("close"))
 
 
 def rank_candidates(rows: list[ScanRow], cfg: dict) -> ScanResult:
     """RVOL5 >= rvol5_min and a green first candle, ranked by RVOL5 (ties: 20-day dollar volume), top_n bought.
-    Red first candles with enough RVOL5 are ranked the same way into shadow shorts (logged, never traded)."""
-    lo, n = cfg["rvol5_min"], cfg["top_n"]
+    With max_or_atr set (F1 v2), a green candle whose opening range is wider than that many ATR14 is skipped before
+    ranking, so the next name takes its place. Red first candles with enough RVOL5 are ranked the same way into
+    shadow shorts (logged, never traded)."""
+    lo, n, wide = cfg["rvol5_min"], cfg["top_n"], cfg.get("max_or_atr")
     key = lambda r: (-r.rvol5, -r.dollar_vol20, r.symbol)
     live = [r for r in rows if r.rvol5 is not None and r.rvol5 >= lo]
     greens = sorted([r for r in live if r.direction == "green"], key=key)
+    if wide is not None:
+        for r in [r for r in greens if r.or_atr is not None and r.or_atr > wide]:
+            r.reason = f"opening range {r.or_atr:.2f} x ATR > {wide:g} (overextended)"
+        greens = [r for r in greens if r.or_atr is None or r.or_atr <= wide]
     reds = sorted([r for r in live if r.direction == "red"], key=key)
     for r in rows:
         if r.rvol5 is None:
@@ -153,7 +186,17 @@ def shares_for(entry: float, stop: float, cfg: dict) -> int:
     return max(0, math.floor(min(cfg["risk_per_trade"] / risk, cfg["max_notional"] / entry) + 1e-9))
 
 
-def stop_price(fill: float, atr: float, cfg: dict) -> float:
+def stop_price(fill: float, atr: float, cfg: dict, or_low: float | None = None) -> float:
+    """Section 3: fill - stop_atr_frac x ATR14. F1 v2 (stop_mode: or_low): the opening-range low, clamped so the
+    stop sits between stop_atr_min and stop_atr_max x ATR14 below the fill."""
+    if cfg.get("stop_mode") == "or_low" and or_low is not None:
+        lo, hi = cfg.get("stop_atr_min", 0.10) * atr, cfg.get("stop_atr_max", 0.50) * atr
+        return round(fill - min(max(fill - or_low, lo), hi), 4)
+    return round(fill - cfg["stop_atr_frac"] * atr, 4)
+
+
+def paper_rule_stop(fill: float, atr: float, cfg: dict) -> float:
+    """The published rule's stop (fill - stop_atr_frac x ATR14), logged next to every F1 v2 trade as a shadow."""
     return round(fill - cfg["stop_atr_frac"] * atr, 4)
 
 
@@ -191,6 +234,9 @@ class FPos:
     exit_reason: str | None = None
     fills: list = field(default_factory=list)
     fees: float = 0.0
+    shadow_stop: float | None = None    # the published 0.10 x ATR stop, tracked but never traded (F1 v2)
+    shadow_hit: bool = False
+    tags: dict = field(default_factory=dict)   # observe-only context at entry; never gates or sizes
 
     @property
     def label(self) -> str:
@@ -209,6 +255,15 @@ class FPos:
         return 0.0 if self.exit_px is None else round((self.exit_px - self.entry) * self.qty, 2)
 
     @property
+    def shadow_pnl(self) -> float | None:
+        """P&L had the published stop been used: the shadow stop's loss once touched, else the trade's own P&L."""
+        if self.shadow_stop is None:
+            return None
+        if self.shadow_hit:
+            return round((self.shadow_stop - self.entry) * self.qty, 2)
+        return self.pnl if self.exit_px is not None else None
+
+    @property
     def r_multiple(self) -> float | None:
         per = self.entry - self.stop
         if per <= 0:
@@ -221,7 +276,9 @@ class FPos:
                 "entry": self.entry, "stop": self.stop, "mark": self.mark, "status": self.status,
                 "opened_ts": self.opened_ts, "closed_ts": self.closed_ts, "exit_px": self.exit_px,
                 "exit_reason": self.exit_reason, "risk": self.risk, "unrealized": self.unrealized, "pnl": self.pnl,
-                "r": self.r_multiple, "rvol5": self.rvol5, "rank": self.rank, "news": self.news}
+                "r": self.r_multiple, "rvol5": self.rvol5, "rank": self.rank, "news": self.news,
+                "shadow_stop": self.shadow_stop, "shadow_hit": self.shadow_hit, "shadow_pnl": self.shadow_pnl,
+                "tags": self.tags}
 
 
 def should_exit(now: float, pos: FPos, quote: Q | None, cfg: dict, half_day: bool = False) -> str | None:
@@ -267,12 +324,13 @@ def bar_stop_fill(bar: dict, stop: float, slip_bp: float = 0.0) -> float | None:
     return None
 
 
-def bar_entry_then_stop(bar: dict, or_high: float, limit: float, atr: float, cfg: dict, slip_bp: float = 0.0):
+def bar_entry_then_stop(bar: dict, or_high: float, limit: float, atr: float, cfg: dict, slip_bp: float = 0.0,
+                        or_low: float | None = None):
     """(entry, stop, exit or None) for the bar that triggers. With entry and stop in the same bar, the stop hit."""
     fill = bar_entry_fill(bar, or_high, limit, slip_bp)
     if fill is None:
         return None
-    stop = stop_price(fill, atr, cfg)
+    stop = stop_price(fill, atr, cfg, or_low)
     return fill, stop, (_dn(stop, slip_bp) if bar["l"] <= stop else None)
 
 

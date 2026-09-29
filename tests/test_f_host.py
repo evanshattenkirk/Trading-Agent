@@ -95,7 +95,8 @@ def test_entry_only_above_the_or_high():
     [p] = host.book.open
     assert p.entry == pytest.approx(100.52 * 1.0001, abs=1e-4)
     assert p.qty == 9                                   # $1,000 / 100.55 limit (risk cap would allow 125)
-    assert p.stop == pytest.approx(p.entry - 0.2, abs=1e-4)
+    assert p.stop == pytest.approx(99.9, abs=1e-4)             # F1 v2: the OR low (0.32 x ATR below the fill)
+    assert p.shadow_stop == pytest.approx(p.entry - 0.2, abs=1e-4)   # the published 0.10 x ATR stop, shadow only
     assert "NVDA" not in host.armed
 
 
@@ -103,7 +104,7 @@ def test_one_entry_per_name_per_day():
     eng, data, host = scanned()
     quote(data, "NVDA", 100.51, 100.52, et(9, 36), last=100.52)
     at(host, eng, et(9, 36))
-    quote(data, "NVDA", 100.0, 100.01, et(9, 37), last=100.0)            # stopped out
+    quote(data, "NVDA", 99.85, 99.86, et(9, 37), last=99.85)             # stopped out below the OR low
     at(host, eng, et(9, 37))
     assert not host.book.open and host.book.trades == 1
     quote(data, "NVDA", 100.8, 100.81, et(9, 38), last=100.8)            # breaks out again
@@ -237,7 +238,7 @@ def test_daily_loss_halts_f_only_and_flattens_it():
         quote(data, s, 100.51, 100.52, et(9, 36), last=100.52)
     at(host, eng, et(9, 36))
     assert len(host.book.open) == 2
-    quote(data, "NVDA", 100.0, 100.01, et(9, 40))                     # NVDA stops: about -$5 <= -$1
+    quote(data, "NVDA", 99.85, 99.86, et(9, 40))                      # NVDA stops: about -$6 <= -$1
     quote(data, "MU", 100.6, 100.61, et(9, 40))
     at(host, eng, et(9, 40))
     assert host.book.halted and "daily loss" in host.book.halt_reason

@@ -291,7 +291,7 @@ def test_universe_top_n_plus_extras_then_filters():
     cfg = {**CFG, "universe": {**CFG["universe"], "extra": ["NVDA"]}}
     uni = F.universe(data, sp500={"BIG", "SMALL", "CHEAP", "CALM", "NEW"}, cfg=cfg)
     assert set(uni) == {"BIG", "NVDA"}
-    assert uni["BIG"] == {"atr": pytest.approx(2.0), "dv20": pytest.approx(5e8), "close": 100.0}
+    assert uni["BIG"] == {"atr": pytest.approx(2.0), "dv20": pytest.approx(5e8), "close": 100.0, "avg_vol14": 5e6}
 
 
 def test_scan_row_from_the_opening_five_minutes():

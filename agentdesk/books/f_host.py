@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
 import logging
 
 from ..brokers.base import RateLimited
@@ -127,6 +128,8 @@ class FHost:
         for r in keep:
             p = F.FPos(r["symbol"], r["qty"], r["entry"], r["stop"], r["opened_ts"], atr=r["atr"] or 0.0,
                        or_high=r["or_high"] or 0.0, rvol5=r["rvol5"], rank=r["rank"], id=r["id"])
+            p.shadow_stop, p.shadow_hit = r.get("shadow_stop"), bool(r.get("shadow_hit"))
+            p.tags = json.loads(r["tags"]) if r.get("tags") else {}
             p.last_quote_ts = now
             self.book.open.append(p)
             self.book.trades += 1
@@ -219,11 +222,20 @@ class FHost:
 
     # ------------------------------------------------------------ prep and scan
     async def _prepare(self, now: float) -> None:
-        sp = set(await self.data.sp500())
         u = self.c["universe"]
-        names = sorted(sp | set(u.get("extra", [])))
-        daily = await self.data.daily_bars(names, self.day)
-        uni = F.universe(daily, sp, self.c)
+        daily, sp, broad = {}, set(), False
+        if u.get("source") == "all_us" and hasattr(self.data, "us_daily"):
+            daily = await self.data.us_daily(self.day)
+            broad = bool(daily)
+            if not broad:
+                self._log(now, "warn", "book F1: no broad US universe today (Alpaca keys or symbol list missing); "
+                                       "using the S&P universe")
+        if not broad:
+            sp = set(await self.data.sp500())
+            daily = await self.data.daily_bars(sorted(sp | set(u.get("extra", []))), self.day)
+        # the 09:35 scan costs one call per 10 names on Robinhood, so its universe is capped; SIP bars lift the cap
+        cap = u.get("max_names") if self.c.get("bars_source", "robinhood") == "robinhood" else None
+        uni = F.universe(daily, sp, self.c, broad=broad, cap=cap)
         ok = await self.data.tradable(sorted(uni))
         dropped = sorted(set(uni) - set(ok))
         self.uni = {s: v for s, v in uni.items() if s in ok}
@@ -231,7 +243,9 @@ class FHost:
         vols = await self.data.or_volumes(sorted(self.uni), dates)
         self.hist = [vols.get(d, {}) for d in dates]
         self.prepared = True
-        self._log(now, "info", f"book F1: universe {len(self.uni)} names (S&P {len(sp)} + extras)"
+        self._log(now, "info", f"book F1: universe {len(self.uni)} names "
+                               + (f"(all US, top {cap} by dollar volume + extras)" if broad and cap else
+                                  "(all US + extras)" if broad else f"(S&P {len(sp)} + extras)")
                                + (f"; not tradable: {', '.join(dropped)}" if dropped else "")
                                + f"; RVOL5 base from {len(dates)} sessions")
 
@@ -309,6 +323,8 @@ class FHost:
             q = self._fresh(p.symbol, now)
             if q is not None:
                 p.mark, p.last_quote_ts = round((q.bid + q.ask) / 2, 4), now
+                if p.shadow_stop is not None and q.bid <= p.shadow_stop:
+                    p.shadow_hit = True
             forced = self._forced(now)
             why = forced or (F.should_exit(now, p, q, self.c, half) if q is not None else None)
             if why is None and q is None and F.et_time(now) >= F.exit_time_et(self.c, half):
@@ -367,7 +383,7 @@ class FHost:
         if not ok:
             return self._skip(now, f"{r.symbol}: {reason}")
         limit = F.entry_limit(r.or_high)
-        stop0 = limit - self.c["stop_atr_frac"] * r.atr
+        stop0 = F.stop_price(limit, r.atr, self.c, r.or_low)
         qty = F.shares_for(limit, stop0, self.c)
         if qty < 1:
             self.armed.pop(r.symbol, None)
@@ -395,8 +411,11 @@ class FHost:
             return self._skip(now, f"{r.symbol}: buy not filled ({res.message or res.status})")
         self.armed.pop(r.symbol, None)
         fill = res.avg_price
-        p = F.FPos(r.symbol, res.filled_qty, fill, F.stop_price(fill, r.atr, self.c), now, atr=r.atr, or_high=r.or_high,
-                   rvol5=r.rvol5, rank=r.rank, news=r.news, id=f"F-{self.day}-{r.symbol}-{next(_ids)}")
+        p = F.FPos(r.symbol, res.filled_qty, fill, F.stop_price(fill, r.atr, self.c, r.or_low), now, atr=r.atr,
+                   or_high=r.or_high, rvol5=r.rvol5, rank=r.rank, news=r.news, id=f"F1-{self.day}-{r.symbol}-{next(_ids)}")
+        if self.c.get("stop_mode") == "or_low":
+            p.shadow_stop = F.paper_rule_stop(fill, r.atr, self.c)
+        p.tags = self._tags(r, now)
         p.last_quote_ts, p.mark = now, fill
         p.fills.append({"ts": now, "side": "buy", "qty": p.qty, "px": fill, "limit": limit, "why": why,
                         "review": res.review})
@@ -406,6 +425,15 @@ class FHost:
         self.fj.set_status(str(self.day), r.symbol, "filled")
         self.e.bus.emit("f_position", now, pos=p.to_dict(), event="open")
         self._emit_scan(now)
+
+    def _tags(self, r: F.ScanRow, now: float) -> dict:
+        """Observe-only context at entry (research/strategy_f1_prereg.md): logged for later out-of-sample tests,
+        never used to gate or size."""
+        spy, vwap = getattr(self.e, "price", None), getattr(getattr(self.e, "vwap", None), "value", None)
+        return {"gap_pct": r.gap_pct, "or_atr": r.or_atr, "rvol5": r.rvol5,
+                "min_after_scan": round((now - F.at_et(self.day, _scan_time(self.c))) / 60, 1),
+                "spy_vs_vwap_bp": round((spy / vwap - 1) * 1e4, 1) if spy and vwap else None,
+                "catalyst": (r.news or {}).get("catalyst")}
 
     async def _exit(self, p: F.FPos, why: str, now: float, bar_px: float | None = None) -> None:
         if p.status != "open" or p.exiting:
@@ -476,6 +504,8 @@ class FHost:
                 for p in [p for p in self.book.open if p.symbol == s]:
                     if b["t"] < _mins(F.et_time(p.opened_ts)):
                         continue
+                    if p.shadow_stop is not None and b["l"] <= p.shadow_stop:
+                        p.shadow_hit = True
                     px = self.broker.bar_stop(b, p.stop)
                     if px is not None:
                         await self._exit(p, "stop (bar)", now, bar_px=px)

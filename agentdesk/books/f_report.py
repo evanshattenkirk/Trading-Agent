@@ -64,7 +64,16 @@ def build_report(fj, since: str | None = None) -> dict:
             "by_rvol5": split(bucket),
             "ai_list": stats([r for r in rows if r["symbol"] in AI_LIST]),
             "rest": stats([r for r in rows if r["symbol"] not in AI_LIST]),
-            "shadow_shorts": stats([{**s, "r": s["r"]} for s in sh])}
+            "shadow_shorts": stats([{**s, "r": s["r"]} for s in sh]),
+            "published_stop": _published_stop(rows)}
+
+
+def _published_stop(rows) -> dict:
+    """F1 v2 trades carry the P&L they would have had with the published 0.10 x ATR stop (never traded)."""
+    both = [r for r in rows if r.get("shadow_pnl") is not None]
+    return {"trades": len(both), "pnl": round(sum(r["pnl"] or 0 for r in both), 2),
+            "shadow_pnl": round(sum(r["shadow_pnl"] for r in both), 2),
+            "shadow_stopped": sum(1 for r in both if r.get("shadow_hit"))}
 
 
 def _group(rows, key) -> dict:
@@ -94,4 +103,10 @@ def format_report(r: dict) -> str:
     out += ["", "By RVOL5:"] + [_line(k, s) for k, s in r["by_rvol5"].items()]
     out += ["", "AI/memory list vs the rest:", _line("AI list", r["ai_list"]), _line("rest", r["rest"])]
     out += ["", "Shadow shorts (red first candle, never traded):", _line("would-be shorts", r["shadow_shorts"])]
+    ps = r.get("published_stop") or {}
+    if ps.get("trades"):
+        out += ["", "Stop comparison (same trades):",
+                f"  opening-range-low stop (traded)  P&L ${ps['pnl']:+.2f}",
+                f"  published 0.10 x ATR stop (shadow) P&L ${ps['shadow_pnl']:+.2f}, "
+                f"stopped {ps['shadow_stopped']} of {ps['trades']}"]
     return "\n".join(out)
