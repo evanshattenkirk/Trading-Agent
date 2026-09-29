@@ -62,6 +62,7 @@
         </div>
         <div id="chart" class="chart"></div>
       </div>
+      <div class="split h" data-split="log" role="separator" aria-orientation="horizontal" aria-label="Resize chart and trades" tabindex="0"></div>
       <div class="panel log-panel">
         <div class="tabs" role="tablist">
           <button class="tab on" data-tab="trades" role="tab">Trades</button>
@@ -77,6 +78,8 @@
         <div class="tabbody" id="tab-activity" hidden><ol class="feed" id="feed"></ol></div>
       </div>
     </section>
+
+    <div class="split v" data-split="side" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0"></div>
 
     <aside class="side">
       <div class="side-scroll">
@@ -115,6 +118,8 @@
         </section>
       </div>
 
+      <div class="split h" data-split="office" role="separator" aria-orientation="horizontal" aria-label="Resize office" tabindex="0"></div>
+
       <section class="panel office" aria-label="Agent office">
         <div class="office-h">
           <span class="office-title">THE DESK</span>
@@ -132,6 +137,7 @@
 <script src="static/office.js"></script>
 <script src="static/app.js"></script>
 <script src="static/book_f.js"></script>
+<script src="static/layout.js"></script>
 <!--/BODY-->
 </body>
 </html>
