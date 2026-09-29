@@ -29,7 +29,7 @@ This is the complete record of what was built, verified, tested and decided in t
 
 - **Accounts.**
   - Agentic ••••6452 is the only one the agent can trade (`agentic_allowed` is true). Type `limited_margin`: it can reuse unsettled funds but can't borrow. `option_level_3`, $500 cash.
-  - Main ••••5937 is Level 3 but not agent-tradable.
+  - The main (non-agentic) account is Level 3 but not agent-tradable.
 - **Multi-leg works.** `review_option_order` on the Agentic account accepted this order with no `order_checks` alerts:
   - Order: SPY 2026-09-28 sell-to-open 760P / buy-to-open 758P, `direction:"credit"`, limit 0.30.
   - Fees came back as $0.08 in total, i.e. **$0.02 OCC + $0.02 ORF per contract per leg**.

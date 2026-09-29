@@ -9,3 +9,16 @@ research/data/
 rh_tools.json
 data/
 research/iex_vs_sip_out/
+
+# Secrets and local state (the repo is public). Real credentials live in .env and ~/.agentdesk/.
+.env.*
+!.env.example
+*.env
+rh_oauth*.json
+*oauth*.json
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+*.db-journal
+*.log
