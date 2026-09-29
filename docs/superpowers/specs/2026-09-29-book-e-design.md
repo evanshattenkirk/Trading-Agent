@@ -141,6 +141,13 @@ The crew's proposals whitelist already can't touch `books.*`; a test confirms it
 - `e_positions` stores each open position (legs, contracts with symbol/expiry/strike/broker id, entry, qty, fees,
   event date and timing, exit plan). It's written on open, fill and close; startup restores open rows. Sim mode uses
   an in-memory journal, so nothing persists there.
+- E always fills through its own `PaperBroker` (as `BookHost` does), never `engine.broker`, so E stays paper even
+  when book A is promoted and the process holds a live Robinhood broker. In shadow the reviewer only calls
+  `review_option_order`. `build_e` refuses to start unless `paper_only: true`.
+- Restore before trading: `EHost.start` loads `e_positions` before the first hook runs, so restored positions count in
+  the account open-risk cap and the max-3/sector limits before any new entry. Paper fills return synchronously, so a
+  row is written only after a known fill (no uncertain order state). A partial fill blocks new E entries until the
+  position is reconciled, as in B/C/D. A row that can't be parsed halts E and is logged.
 - In sim mode E stays idle and says so ("no single-stock option data in sim"); tests drive E with fake quotes.
 - E's hooks run under `EHost.run` with its own error counter (as F); `max_consecutive_errors` in a row halts and
   flattens E only.
@@ -157,7 +164,8 @@ The crew's proposals whitelist already can't touch `books.*`; a test confirms it
 - Never through earnings: exit on the exit day; restart after the exit time; restart after the announcement closes
   and flags the trade; a moved date moves the exit.
 - Shutdown keeps E and still sells the other books; kill switch and Flatten sell E.
-- Persistence round trip through `e_positions`.
+- Persistence round trip through `e_positions`; restored risk blocks an entry that would pass the cap without it.
+- E never calls `engine.broker`, even with a live broker attached (A promoted).
 - Recorder: picks front/pre/earn/d30, writes `iv_history` idempotently, paces ≤ 1 call/s and ≤ 0.5 calls/s in the
   listing phase (fake clock), refuses non-read-only tools, retries a failed symbol.
 - The existing test suite still passes.
