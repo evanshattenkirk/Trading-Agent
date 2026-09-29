@@ -46,3 +46,14 @@ def test_desk_calls_leave_room_for_thinking_and_search(monkeypatch):
     b = asyncio.run(c._brief("macro", "premarket", e.feed.now()))
     assert b["headline"] == "Quiet day"
     assert c._client.messages.calls[0]["max_tokens"] == DESK_MAX_TOKENS >= 16000
+
+
+def test_extract_json_returns_the_outer_brief_not_a_nested_sub_brief():
+    from agentdesk.crew import _extract_json
+    text = ('Here is the brief.\n{"headline": "Light data day", "bias": "neutral", "confidence": 0.5, "events": [],'
+            ' "fed": {"bias": "hawkish", "headline": "No FOMC {today}", "notes": ["Waller 10:00"]},'
+            ' "rates": {"headline": "10Y 5.2%", "notes": []}}\nDone.')
+    b = _extract_json(text)
+    assert b["headline"] == "Light data day" and b["fed"]["bias"] == "hawkish" and b["rates"]["headline"] == "10Y 5.2%"
+    assert _extract_json('{"notes": []}') is None
+    assert _extract_json('cut off {"headline": "x", "notes": ["a"') is None

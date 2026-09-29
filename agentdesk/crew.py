@@ -1006,18 +1006,14 @@ class Crew:
 
 
 def _extract_json(text: str, key: str = "headline") -> dict | None:
-    for m in reversed(list(re.finditer(r"\{", text))):
-        chunk = text[m.start():]
-        depth = 0
-        for i, ch in enumerate(chunk):
-            depth += ch == "{"
-            depth -= ch == "}"
-            if depth == 0:
-                try:
-                    obj = json.loads(chunk[: i + 1])
-                    if isinstance(obj, dict) and key in obj:
-                        return obj
-                except json.JSONDecodeError:
-                    pass
-                break
-    return None
+    """The largest JSON object in the reply that has `key`. Macro's brief nests "fed" and "rates" objects that
+    carry their own "headline", so the first or last match can be a nested one; the outermost is the brief."""
+    dec, best = json.JSONDecoder(), None
+    for m in re.finditer(r"\{", text):
+        try:
+            obj, end = dec.raw_decode(text, m.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and key in obj and (best is None or end - m.start() > best[0]):
+            best = (end - m.start(), obj)
+    return best[1] if best else None
