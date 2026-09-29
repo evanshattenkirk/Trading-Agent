@@ -36,7 +36,7 @@ def test_group_shares_one_account_and_sums_open_risk():
 def test_group_without_bookhost_still_shares_risk_between_f_and_e():
     h, eng, ch = make()
     f = types.SimpleNamespace(account=h.account.__class__(), other_risk=lambda: 0.0, open_risk=lambda: 100.0,
-                              book=types.SimpleNamespace(letter="F"))
+                              book=types.SimpleNamespace(letter="F1"))
     g = HostGroup(None, f, h)
     assert f.account is h.account
     assert h.other_risk() == 100.0 and f.other_risk() == 0.0 and g.open_risk() == 100.0

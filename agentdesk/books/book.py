@@ -6,7 +6,8 @@ from collections import deque
 
 class Book:
     def __init__(self, key: str, cfg: dict, strategy):
-        self.key, self.letter, self.c, self.strategy = key, key[0], cfg, strategy
+        # the book id is the config key's prefix: A_macd_calls -> A, F1_stocks_in_play -> F1
+        self.key, self.letter, self.c, self.strategy = key, key.split("_", 1)[0], cfg, strategy
         self.max_trades = int(cfg.get("max_trades_day", 1))
         self.open: list = []
         self.skips: deque = deque(maxlen=30)

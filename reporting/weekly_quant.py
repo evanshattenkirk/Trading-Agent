@@ -45,7 +45,11 @@ BOOKS = {
     "C": "ORB bull-put spread",
     "D": "10:00 ET iron condor",
     "E": "Pre-earnings IV run-up",
+    "F1": "Stocks in play, long shares",
+    "F2": "Single-name call/put debit spreads",
+    "G": "SPY 0DTE/1DTE call calendar",
 }
+LEGACY_BOOKS = {"F": "F1"}     # book F became F1 on 2026-09-29
 
 # Modeled per-trade return on risk, lowest and highest cell across periods, cost levels and IV 0.60.
 # A and E have no option-level backtest to compare against.
@@ -217,7 +221,8 @@ def load_trades(path, modes=("paper", "shadow")) -> list[dict]:
     out = []
     for r in rows:
         d = dict(r)
-        d["book"] = (d.get("book") or "A").upper()[:1]
+        b = (d.get("book") or "A").upper()
+        d["book"] = LEGACY_BOOKS.get(b, b)
         d["fills"] = _loads(d.get("fills")) or []
         d["l2"] = _loads(d.get("l2"))
         d["crew"] = _loads(d.get("crew"))

@@ -194,7 +194,7 @@ class FPos:
 
     @property
     def label(self) -> str:
-        return f"F {self.symbol}"
+        return f"F1 {self.symbol}"
 
     @property
     def risk(self) -> float:
@@ -217,7 +217,7 @@ class FPos:
         return None if px is None else round((px - self.entry) / per, 3)
 
     def to_dict(self) -> dict:
-        return {"book": "F", "id": self.id, "symbol": self.symbol, "label": self.label, "qty": self.qty,
+        return {"book": "F1", "id": self.id, "symbol": self.symbol, "label": self.label, "qty": self.qty,
                 "entry": self.entry, "stop": self.stop, "mark": self.mark, "status": self.status,
                 "opened_ts": self.opened_ts, "closed_ts": self.closed_ts, "exit_px": self.exit_px,
                 "exit_reason": self.exit_reason, "risk": self.risk, "unrealized": self.unrealized, "pnl": self.pnl,

@@ -86,7 +86,7 @@ def format_report(r: dict) -> str:
     a = r["all"]
     if not a.get("trades"):
         return "No closed F trades" + (f" since {r['since']}" if r.get("since") else "") + " yet."
-    out = [f"Book F (stocks in play), paper" + (f", since {r['since']}" if r.get("since") else ""),
+    out = [f"Book F1 (stocks in play, shares), paper" + (f", since {r['since']}" if r.get("since") else ""),
            _line("all", a), f"  worst day {a['worst_day']['day']} ${a['worst_day']['pnl']:+.2f}"
            + ("   (under 50 trades: treat as anecdote)" if a["trades"] < 50 else ""), "", "By news tag (priced in):"]
     out += [_line(k, s) for k, s in r["by_priced_in"].items()]

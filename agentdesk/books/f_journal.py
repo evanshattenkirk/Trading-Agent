@@ -4,7 +4,7 @@
   f_trades         every F position, open or closed, with its R multiple. Open rows are the restart check: a row
                    still open from an earlier session, or after the exit time, means shares were held too long
   f_shadow_shorts  would-be shorts on red first candles (hypothetical P&L; never an order)
-F trades also go into `trades` with book = 'F' (pnl_pct there is the R multiple: the basis is the initial risk).
+F trades also go into `trades` with book = 'F1' (pnl_pct there is the R multiple: the basis is the initial risk).
 """
 from __future__ import annotations
 
@@ -106,11 +106,11 @@ class FJournal:
 
 
 class TradeRow:
-    """Adapter so Journal.record_trade can store an F position in `trades` (book 'F')."""
+    """Adapter so Journal.record_trade can store an F position in `trades` (book 'F1')."""
 
     def __init__(self, p):
         self.p = p
-        self.setup, self.qty_initial, self.entry = "F", p.qty, p.entry
+        self.setup, self.qty_initial, self.entry = "F1", p.qty, p.entry
         self.opened_ts, self.closed_ts, self.realized, self.fees = p.opened_ts, p.closed_ts, p.pnl, 0.0
         self.peak, self.exit_reason, self.l2 = None, p.exit_reason, None
         self.strike_reason = f"OR high {p.or_high:.2f}, RVOL5 {p.rvol5 or 0:.2f}, rank {p.rank}"

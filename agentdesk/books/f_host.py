@@ -1,4 +1,4 @@
-"""Runs book F (large-cap stocks in play) next to book A and the B/C/D BookHost.
+"""Runs book F1 (stocks in play, long shares) next to book A and the B/C/D BookHost.
 
 The engine calls on_second / on_bar / kill / flatten / halt_all through HostGroup (group.py). F is paper only:
 every fill is simulated (PaperEquityBroker); in shadow/live each order is also sent to review_equity_order.
@@ -31,7 +31,8 @@ from .book import Book
 from .f_journal import FJournal, TradeRow
 
 log = logging.getLogger("agentdesk.book_f")
-KEY = "F_stocks_in_play"
+KEY = "F1_stocks_in_play"
+BOOK = "F1"
 _ids = itertools.count(1)
 
 
@@ -121,8 +122,8 @@ class FHost:
         self._reset_day(today)
         if stale:
             names = ", ".join(f"{r['symbol']} ({r['session']})" for r in stale)
-            self.book.halt(f"F shares never closed: {names}. Check them, then run `python -m agentdesk f-clear-stale`")
-            self._log(now, "error", f"book F halted: {self.book.halt_reason}")
+            self.book.halt(f"F1 shares never closed: {names}. Check them, then run `python -m agentdesk f-clear-stale`")
+            self._log(now, "error", f"book F1 halted: {self.book.halt_reason}")
         for r in keep:
             p = F.FPos(r["symbol"], r["qty"], r["entry"], r["stop"], r["opened_ts"], atr=r["atr"] or 0.0,
                        or_high=r["or_high"] or 0.0, rvol5=r["rvol5"], rank=r["rank"], id=r["id"])
@@ -130,7 +131,7 @@ class FHost:
             self.book.open.append(p)
             self.book.trades += 1
             self.status[p.symbol] = "filled"
-            self._log(now, "warn", f"book F: restored open paper position {p.symbol} {p.qty} @ {p.entry:.2f}, stop {p.stop:.2f}")
+            self._log(now, "warn", f"book F1: restored open paper position {p.symbol} {p.qty} @ {p.entry:.2f}, stop {p.stop:.2f}")
         await self._check_account(now)
 
     async def _check_account(self, now: float) -> None:
@@ -141,7 +142,7 @@ class FHost:
         try:
             held = await get()
         except Exception as ex:
-            self._log(now, "warn", f"book F: could not read equity positions ({ex})")
+            self._log(now, "warn", f"book F1: could not read equity positions ({ex})")
             return
         extra = held                        # F is paper only: any real equity position is unexpected
         if not extra:
@@ -186,14 +187,14 @@ class FHost:
         except RateLimited as ex:           # Robinhood is pacing the account: skip this round, never halt over it
             if now - self._last_rate_log >= 60:
                 self._last_rate_log = now
-                self._log(now, "warn", f"book F: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
+                self._log(now, "warn", f"book F1: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
         except Exception as ex:
             b.failed(kind)
-            log.exception("book F failed (%d in a row)", b.errors)
-            self._log(now, "error", f"book F: {ex} ({b.errors} in a row)")
+            log.exception("book F1 failed (%d in a row)", b.errors)
+            self._log(now, "error", f"book F1: {ex} ({b.errors} in a row)")
             if b.errors >= self.max_errors and not b.halted:
                 b.halt(f"{b.errors} errors in a row: {ex}")
-                self._log(now, "error", f"book F halted and flattening: {b.halt_reason}")
+                self._log(now, "error", f"book F1 halted and flattening: {b.halt_reason}")
                 await self.flatten(f"book halted: {b.halt_reason}", now)
 
     async def _tick(self, now: float) -> None:
@@ -230,7 +231,7 @@ class FHost:
         vols = await self.data.or_volumes(sorted(self.uni), dates)
         self.hist = [vols.get(d, {}) for d in dates]
         self.prepared = True
-        self._log(now, "info", f"book F: universe {len(self.uni)} names (S&P {len(sp)} + extras)"
+        self._log(now, "info", f"book F1: universe {len(self.uni)} names (S&P {len(sp)} + extras)"
                                + (f"; not tradable: {', '.join(dropped)}" if dropped else "")
                                + f"; RVOL5 base from {len(dates)} sessions")
 
@@ -266,7 +267,7 @@ class FHost:
             self.shadows[r.symbol] = {"row": r, "pos": None, "done": False}
         self.fj.record_scan(str(self.day), now, res.rows)
         missing = len(self.uni) - len(rows)
-        self._log(now, "info", f"book F scan: {len(rows)} names with data ({missing} dropped), picks "
+        self._log(now, "info", f"book F1 scan: {len(rows)} names with data ({missing} dropped), picks "
                                f"{', '.join(f'{r.symbol} {r.rvol5:.1f}x' for r in res.picks) or 'none'}; "
                                f"shadow shorts {', '.join(r.symbol for r in res.shorts) or 'none'}")
         self._emit_scan(now)
@@ -288,7 +289,7 @@ class FHost:
                     p.news = tag
             self.fj.set_news(str(self.day), sym, tag, now, late)
         if late:
-            self._log(now, "warn", f"book F: news tag landed late ({now - started:.0f}s); stored, never waited on")
+            self._log(now, "warn", f"book F1: news tag landed late ({now - started:.0f}s); stored, never waited on")
         self._emit_scan(now)
 
     # ------------------------------------------------------------ quotes, entries, exits
@@ -419,7 +420,7 @@ class FHost:
                     await self._poll([p.symbol], now)
                     q = self._fresh(p.symbol, now)
                 if q is None:
-                    self._log(now, "warn", f"book F: can't exit {p.symbol} ({why}): no fresh quote")
+                    self._log(now, "warn", f"book F1: can't exit {p.symbol} ({why}): no fresh quote")
                     return
                 stop = p.stop if why == "stop" else None
                 res = None
@@ -430,7 +431,7 @@ class FHost:
                     if res.filled_qty > 0 or res.status == "rejected":
                         break
                 if res is None or res.filled_qty <= 0:
-                    self._log(now, "warn", f"book F: exit {p.symbol} not filled ({why}): {res and (res.message or res.status)}")
+                    self._log(now, "warn", f"book F1: exit {p.symbol} not filled ({why}): {res and (res.message or res.status)}")
                     return
                 px, review = res.avg_price, res.review
             p.fills.append({"ts": now, "side": "sell", "qty": p.qty, "px": px, "why": why, "review": review})
@@ -443,7 +444,7 @@ class FHost:
         self.book.on_close(p, p.pnl)
         self.account.on_closed(p.pnl)
         self.fj.close_position(p)
-        self.e.journal.record_trade(str(self.day), self.e.mode, TradeRow(p), book="F")
+        self.e.journal.record_trade(str(self.day), self.e.mode, TradeRow(p), book=BOOK)
         self.status[p.symbol] = "stopped" if p.exit_reason.startswith("stop") else "closed"
         self.fj.set_status(str(self.day), p.symbol, self.status[p.symbol])
         self.e.bus.emit("f_position", now, pos=p.to_dict(), event="closed")
@@ -451,7 +452,7 @@ class FHost:
         lim = abs(self.c["daily_loss"])
         if not self.book.halted and self.book.day_pnl <= -lim:
             self.book.halt(f"daily loss -${lim:g} (F only)")
-            self._log(now, "warn", f"book F halted for the day: P&L ${self.book.day_pnl:.2f}")
+            self._log(now, "warn", f"book F1 halted for the day: P&L ${self.book.day_pnl:.2f}")
 
     async def _flatten_if_halted(self, now: float) -> None:
         if self.book.halted:
@@ -541,25 +542,25 @@ class FHost:
             try:
                 await self._poll(syms, now)
             except Exception as ex:
-                self._log(now, "error", f"book F: quotes for flatten failed: {ex}")
+                self._log(now, "error", f"book F1: quotes for flatten failed: {ex}")
         for p in list(self.book.open):
             try:
                 await self._exit(p, reason, now)
             except Exception as ex:
-                log.exception("F flatten %s failed", p.symbol)
-                self._log(now, "error", f"book F: flatten {p.symbol} failed: {ex}")
+                log.exception("F1 flatten %s failed", p.symbol)
+                self._log(now, "error", f"book F1: flatten {p.symbol} failed: {ex}")
 
     # ------------------------------------------------------------ events / snapshot
     def _order_event(self, now, sym, side, qty, limit, res, why) -> None:
-        self.e.bus.emit("book_order", now, book="F", action=side, symbol=sym, qty=qty, status=res.status,
+        self.e.bus.emit("book_order", now, book=BOOK, action=side, symbol=sym, qty=qty, status=res.status,
                         filled=res.filled_qty, price=res.avg_price, limit=limit, why=why, review=res.review)
 
     def _skip(self, now: float, why: str) -> None:
         b = self.book
         if b.skips and b.skips[-1]["why"] == why:
             return
-        b.skips.append({"ts": now, "book": "F", "why": why})
-        self.e.bus.emit("book_skip", now, book="F", why=why)
+        b.skips.append({"ts": now, "book": BOOK, "why": why})
+        self.e.bus.emit("book_skip", now, book=BOOK, why=why)
 
     def _log(self, now: float, level: str, msg: str) -> None:
         self.e.bus.emit("log", now, level=level, msg=msg)
@@ -602,13 +603,13 @@ def _date(s: str):
 
 
 def build_f(engine, cfg, rh=None, mode: str = "paper", provider: str = "sim", feed=None, data=None):
-    """FHost for `books.F_stocks_in_play`, or None when it is off. F is paper_only (enforced): paper fills always;
+    """FHost for `books.F1_stocks_in_play`, or None when it is off. F1 is paper_only (enforced): paper fills always;
     in shadow/live each order is also sent to review_equity_order, never placed."""
     bc = (cfg.get("books") or {}).get(KEY)
     if not isinstance(bc, dict) or not bc.get("enabled"):
         return None
     if bc.get("paper_only") is not True:
-        raise SystemExit(f"books.{KEY}: only a paper path exists for book F; set paper_only: true")
+        raise SystemExit(f"books.{KEY}: only a paper path exists for book F1; set paper_only: true")
     if data is None:
         if provider == "sim":
             from ..feeds.f_data import SimEquityData
@@ -617,7 +618,7 @@ def build_f(engine, cfg, rh=None, mode: str = "paper", provider: str = "sim", fe
             from ..feeds.f_data import RobinhoodEquityData
             data = RobinhoodEquityData(rh, bc)
         else:
-            log.warning("book F needs Robinhood equity data (quotes_source robinhood/auto); F is off this run")
+            log.warning("book F1 needs Robinhood equity data (quotes_source robinhood/auto); F is off this run")
             return None
     host = FHost(engine, cfg, data)
     if mode in ("shadow", "live") and rh is not None:

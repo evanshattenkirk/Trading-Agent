@@ -28,7 +28,7 @@ def et(h, m, s=0, day=DAY):
 
 def make(names=("NVDA",), cfg_patch=None, data=None, news=None, reds=()):
     cfg = copy.deepcopy(BASE)
-    cfg["books"]["F_stocks_in_play"].update(cfg_patch or {})
+    cfg["books"]["F1_stocks_in_play"].update(cfg_patch or {})
     eng = FakeEngine(FakeQuotes(), cfg)
     data = data or FakeData(DAY)
     for i, s in enumerate(names):
@@ -335,18 +335,18 @@ def test_unexpected_equity_position_halts_every_book_in_shadow():
 def test_build_refuses_f_without_paper_only_and_skips_when_disabled():
     cfg = copy.deepcopy(BASE)
     eng = FakeEngine(FakeQuotes(), cfg)
-    cfg["books"]["F_stocks_in_play"]["paper_only"] = False
+    cfg["books"]["F1_stocks_in_play"]["paper_only"] = False
     with pytest.raises(SystemExit):
         build_f(eng, cfg, rh=None, mode="sim", provider="sim", feed=eng.feed, data=FakeData(DAY))
-    cfg["books"]["F_stocks_in_play"].update(paper_only=True, enabled=False)
+    cfg["books"]["F1_stocks_in_play"].update(paper_only=True, enabled=False)
     assert build_f(eng, cfg, rh=None, mode="sim", provider="sim", feed=eng.feed, data=FakeData(DAY)) is None
 
 
 def test_f2_stays_disabled_and_f_is_paper_only_in_config():
     b = BASE["books"]
-    assert b["F2_momentum_hold"]["enabled"] is False
-    assert b["F_stocks_in_play"]["paper_only"] is True
-    assert b["F_stocks_in_play"]["shorts"] == "log_only" and b["F_stocks_in_play"]["news_tag"] == "observe"
+    assert b["F0_momentum_hold"]["enabled"] is False
+    assert b["F1_stocks_in_play"]["paper_only"] is True
+    assert b["F1_stocks_in_play"]["shorts"] == "log_only" and b["F1_stocks_in_play"]["news_tag"] == "observe"
 
 
 def test_crew_proposals_cannot_touch_f_risk_fields():
@@ -355,9 +355,9 @@ def test_crew_proposals_cannot_touch_f_risk_fields():
     cfg = copy.deepcopy(BASE)
     pb = ProposalBook(cfg, None)
     for scope in ("trade", "day", "standing"):
-        for key, val in (("books.F_stocks_in_play.risk_per_trade", 50), ("books.F_stocks_in_play.max_notional", 5000),
-                         ("books.F_stocks_in_play.daily_loss", 500), ("books.F_stocks_in_play.max_positions", 10),
-                         ("books.F2_momentum_hold.enabled", True), ("books.F_stocks_in_play.paper_only", False)):
+        for key, val in (("books.F1_stocks_in_play.risk_per_trade", 50), ("books.F1_stocks_in_play.max_notional", 5000),
+                         ("books.F1_stocks_in_play.daily_loss", 500), ("books.F1_stocks_in_play.max_positions", 10),
+                         ("books.F0_momentum_hold.enabled", True), ("books.F1_stocks_in_play.paper_only", False)):
             item = pb.submit("quant", {"scope": scope, "title": f"{scope} {key}", "params": {key: val}}, 0.0)
             assert item["status"].startswith("rejected") and not item["params"]
     assert cfg["books"] == BASE["books"]

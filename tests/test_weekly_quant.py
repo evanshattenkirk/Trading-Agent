@@ -142,6 +142,16 @@ def test_load_excludes_sim_and_defaults_book_a(tmp_path):
     assert len(rows) == 1 and rows[0]["book"] == "A"
 
 
+def test_legacy_book_f_rows_report_as_f1(db):
+    p, c = db
+    add(c, "F", "2026-09-29", -2.0)                  # written before book F became F1
+    add(c, "F1", "2026-09-30", 3.0)
+    add(c, "F2", "2026-09-30", 40.0)
+    c.commit()
+    assert [r["book"] for r in wq.load_trades(p)] == ["F1", "F1", "F2"]
+    assert wq.BOOKS["F1"] and wq.BOOKS["F2"]
+
+
 def test_week_bounds():
     assert wq.week_bounds(date(2026, 10, 2)) == ("2026-09-28", "2026-10-02")
     assert wq.last_friday(date(2026, 10, 4)) == date(2026, 10, 2)

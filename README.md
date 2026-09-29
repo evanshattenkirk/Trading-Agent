@@ -38,7 +38,7 @@ All books run side by side on one paper account: $10,000 balance, $1,500 cap on 
 
 | Book | What it trades | Status | Evidence so far |
 |---|---|---|---|
-| **A** | Evan's MACD 0DTE calls: 15m and 5m MACD above signal as the filter, 1m or 144-tick cross-up as the trigger, RSI 30–70 | Paper; the only book with a live code path | The MACD proxy isn't significant out of sample (t 0.23 / 1.69 / 0.39). Results on the free IEX feed aren't evidence, so A is judged by a weekly replay on full SIP prints |
+| **A** | Evan's MACD 0DTE calls: 15m and 5m MACD above signal as the filter, 1m or 144-tick cross-up as the trigger, RSI 30–70 | Paper; the only book allowed to go live | The MACD proxy isn't significant out of sample (t 0.23 / 1.69 / 0.39). Results on the free IEX feed aren't evidence, so A is judged by a weekly replay on full SIP prints |
 | **B** | 0DTE SPY iron fly at 08:45 CT, $5 wings, take profit 50% | Paper | Relies on the variance risk premium, modeled from VIX. Real-quote replay: `research/bd_real_quotes.py` |
 | **C** | Bullish 30-minute opening-range breakout → $2 bull-put spread | Paper | Negative in backtest (−3 bp a trade, t −5.75 in-sample). Kept on paper to confirm |
 | **D** | 10:00 ET iron condor, shorts at 0.9× the expected move, quiet-day filter | Paper | Modeled positive at taker fills with the entry-time filter; turns mixed (0.0% / −3.7% / +4.1% across three periods) if implied vol is 40% below the model (`research/d_quiet_check.py`) |
