@@ -271,3 +271,39 @@ def test_kill_continues_after_a_failed_exit():
     e.quotes.q = RuntimeError("down")
     run(e.kill())
     assert e.risk.st.halted and e.risk.st.flatten_all and e.broker.cancelled == 1
+
+
+def test_rate_limits_never_trip_the_safety_halt():             # 2026-09-29 12:50 CT: 3 throttles halted every book
+    from agentdesk.brokers.base import RateLimited
+    e = engine()
+    open_pos(e)
+    e.quotes.q = RateLimited("get_option_quotes error: error: RATE_LIMITED: too many requests, please try again shortly")
+    msgs = []
+
+    async def go():
+        sub = e.bus.subscribe()
+        for _ in range(6):
+            e.feed.t += 1
+            await e._run(e.manage(e.feed.t), "manage")
+        while not sub.empty():
+            msgs.append(sub.get_nowait())
+    run(go())
+    assert not e.risk.st.halted and e._errors == 0
+    logs = [m for m in msgs if m["type"] == "log"]
+    assert len(logs) == 1 and logs[0]["level"] == "warn" and "rate limit" in logs[0]["msg"]
+
+
+def test_a_clean_call_of_another_kind_does_not_hide_failing_exit_checks():
+    e = engine()
+    open_pos(e)
+
+    async def fine():
+        return None
+
+    async def go():
+        for _ in range(3):
+            e.quotes.q = RuntimeError("robinhood 503")
+            await e._run(e.manage(e.feed.t), "manage")
+            await e._run(fine(), "position check")
+    run(go())
+    assert e.risk.st.halted and "3 broker/API errors" in e.risk.st.halt_reason

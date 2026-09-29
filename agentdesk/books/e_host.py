@@ -146,16 +146,16 @@ class EHost:
             t.add_done_callback(self._tasks.discard)
 
     async def _safe(self, coro, now: float) -> None:
-        b = self.book
+        b, kind = self.book, getattr(coro, "__qualname__", "")
         try:
             await coro
-            b.errors = 0
+            b.succeeded(kind)
         except RateLimited as ex:           # Robinhood is pacing the account: skip this round, never halt over it
             if now - self._last_rate_log >= 60:
                 self._last_rate_log = now
                 self._log(now, "warn", f"book E: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
         except Exception as ex:
-            b.errors += 1
+            b.failed(kind)
             log.exception("book E failed (%d in a row)", b.errors)
             self._log(now, "error", f"book E: {ex} ({b.errors} in a row)")
             if b.errors >= self.max_errors and not b.halted:
