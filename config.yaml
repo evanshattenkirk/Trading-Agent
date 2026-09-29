@@ -133,6 +133,11 @@ robinhood:
   record_option_quotes: true   # log real 0DTE SPY call+put quotes ATM-10..ATM+10 every 10s -> journal.option_quotes
   arg_overrides: {}         # per-tool fixed args if the schema matcher misses one (see rh-inspect)
 
+recorder:
+  # Book E's end-of-day ATM IV (journal.iv_history), inside the standalone record-quotes job. Read-only.
+  iv: {enabled: true, list_from_ct: "13:30", quote_ct: "14:50", stop_ct: "15:00", list_calls_per_s: 0.5,
+       quote_calls_per_s: 1, cache_dir: ~/.agentdesk/cache/iv, retry_sec: 30}
+
 # ---------------------------------------------------------------------------------------------
 # Paper books (HANDOFF section 9). Book A runs in engine.py; B, C and D run in agentdesk/books/ next to it.
 # Book E is not built yet (phase 5). Every B-E fill is simulated; paper_only is enforced.

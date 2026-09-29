@@ -8,9 +8,11 @@ recorder (IVDay, below), or once by hand with `python -m agentdesk iv-snapshot`.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date
 
-from .clock import session_date
+from .clock import ct, session_date
+from .config import hhmm
 from .earnings import trading_days_between
 from .iv import atm_strike, d30_expiry, front_expiry, post_expiry, pre_expiry
 
@@ -108,3 +110,107 @@ class IVSnapshot:
                         "earnings_date": str(ev["date"]) if ev else None, "earnings_timing": ev["timing"] if ev else None,
                         "T": T})
         return out
+
+
+def phase(now: float, s: dict) -> str:
+    d = ct(now)
+    if d.weekday() >= 5:
+        return "closed"
+    t = d.time()
+    if t < hhmm(s["list_from_ct"]):
+        return "wait"
+    if t < hhmm(s["quote_ct"]):
+        return "list"
+    if t < hhmm(s["stop_ct"]):
+        return "quote"
+    return "closed"
+
+
+class IVDay:
+    """One weekday's IV pass. The recorder calls step(now) every few seconds: from list_from_ct it lists strikes once
+    (list pacer), from quote_ct it records every name (quote pacer), retries failed names every retry_sec until
+    stop_ct, then logs the day's summary once."""
+
+    def __init__(self, snap, calendar_fn, s: dict, list_pacer=None, quote_pacer=None, log_fn=None):
+        self.snap, self.calendar_fn, self.s = snap, calendar_fn, s
+        self.list_pacer, self.quote_pacer = list_pacer, quote_pacer
+        self.log_fn = log_fn or (lambda summary: None)
+        self.day = None
+        self._reset(None)
+
+    def _reset(self, d) -> None:
+        self.day, self.listed, self.left, self.done, self.rows = d, False, None, False, 0
+        self._cal, self._last_try = None, -1e18
+
+    async def _calendar(self, today):
+        if self._cal is None:
+            self._cal = await self.calendar_fn(today)
+        return self._cal
+
+    async def step(self, now: float) -> str:
+        today = session_date(now)
+        if today != self.day:
+            self._reset(today)
+        ph = phase(now, self.s)
+        if self.done:
+            return ph
+        if ph == "list" and not self.listed:
+            self.snap.chains.pacer = self.list_pacer
+            await self.snap.warm(today, await self._calendar(today))
+            self.listed = True
+        elif ph == "quote" and now - self._last_try >= float(self.s["retry_sec"]):
+            self._last_try = now
+            self.snap.chains.pacer = self.quote_pacer
+            n, failed = await self.snap.snapshot(now, await self._calendar(today), self.left)
+            self.rows += n
+            self.left = failed
+            if not failed:
+                self._finish(today)
+        elif ph == "closed" and self.left:
+            self._finish(today)
+        return ph
+
+    def _finish(self, today) -> None:
+        self.done = True
+        self.log_fn({"iv_day": str(today), "rows": self.rows, "failed": list(self.left or [])})
+
+
+async def recorder_calendar(rh, cfg, today: date) -> list[dict]:
+    """The 31-day earnings calendar (the Earnings desk's arguments); config's list if Robinhood fails."""
+    from .earnings import parse_calendar
+    try:
+        return parse_calendar(await rh.call("get_earnings_calendar", {
+            "start_date": str(today), "days": 31, "filter": "high_market_cap"}))
+    except Exception as ex:
+        log.warning("iv: earnings calendar unavailable (%s); using config", ex)
+        return parse_calendar(((cfg.get("crew") or {}).get("earnings") or {}).get("calendar") or [])
+
+
+async def run_once(cfg) -> str:
+    """`python -m agentdesk iv-snapshot`: list and record every name now, with the recorder's read-only grant."""
+    from . import recorder
+    from .config import expand
+    from .desks import holidays
+    from .iv import Pacer, RobinhoodChains
+    from .journal import Journal
+    s, ivs = recorder.settings(cfg), settings(cfg)
+    db = expand(cfg["journal_path"])
+    meter = recorder.CallMeter(db, tag="iv")
+    rh = recorder.MeteredRobinhoodMCP(recorder.recorder_cfg(cfg, s), meter)
+    await rh.start()
+    try:
+        chains = RobinhoodChains(rh, ivs["cache_dir"], Pacer(float(ivs["quote_calls_per_s"])))
+        snap = IVSnapshot(chains, Journal(db), ((cfg.get("crew") or {}).get("earnings") or {}).get("universe") or [],
+                          holidays(cfg))
+        now = time.time()
+        today = session_date(now)
+        cal = await recorder_calendar(rh, cfg, today)
+        await snap.warm(today, cal)
+        n, failed = await snap.snapshot(now, cal)
+        return f"{n} iv_history rows for {today}; failed: {', '.join(failed) or 'none'}"
+    finally:
+        meter.flush()
+        try:
+            await rh.close()
+        except BaseException:
+            pass

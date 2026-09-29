@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from e_fakes import FakeChains
 
 from agentdesk.clock import at_ct
-from agentdesk.iv_recorder import IVSnapshot, expiries_for, next_events
+from agentdesk.iv_recorder import DEFAULTS, IVDay, IVSnapshot, expiries_for, next_events, phase
 from agentdesk.journal import Journal
 
 MON = date(2026, 10, 5)
@@ -110,3 +110,70 @@ def test_iv_history_returns_earlier_cycles_at_the_same_T():
                  "earnings_date": "2026-07-28"})
     j.record_iv(rows)
     assert j.iv_history("AMD", "earn", 3, "2026-10-08") == [0.40, 0.45, 0.50]
+
+
+
+def at(h, m, d=MON):
+    return at_ct(d, time(h, m))
+
+
+def test_phases_follow_the_ct_clock():
+    s = dict(DEFAULTS)
+    assert [phase(at(h, m), s) for h, m in ((13, 29), (13, 30), (14, 49), (14, 50), (14, 59), (15, 0))] == \
+        ["wait", "list", "list", "quote", "quote", "closed"]
+    assert phase(at(14, 50, date(2026, 10, 10)), s) == "closed"          # Saturday
+
+
+class Snap:
+    def __init__(self, fail_first=()):
+        self.warmed, self.shots, self.fail = 0, [], list(fail_first)
+        self.chains = FakeChains()
+
+    async def warm(self, today, cal):
+        self.warmed += 1
+        return []
+
+    async def snapshot(self, now, cal, symbols=None):
+        self.shots.append((now, symbols))
+        failed, self.fail = self.fail, []
+        return 3, failed
+
+
+def test_ivday_lists_once_then_quotes_retries_failures_and_logs_the_day():
+    logs, snap = [], Snap(fail_first=["XOM"])
+
+    async def cal(today):
+        return []
+    lp, qp = object(), object()
+    day = IVDay(snap, cal, dict(DEFAULTS), list_pacer=lp, quote_pacer=qp, log_fn=logs.append)
+
+    async def go():
+        for t in (at(13, 29), at(13, 30), at(13, 31)):
+            await day.step(t)
+        assert snap.warmed == 1 and snap.chains.pacer is lp
+        await day.step(at(14, 50))
+        assert snap.shots == [(at(14, 50), None)] and day.left == ["XOM"] and snap.chains.pacer is qp
+        await day.step(at(14, 50) + 10)                  # inside retry_sec: nothing
+        await day.step(at(14, 50) + 30)
+        assert snap.shots[-1] == (at(14, 50) + 30, ["XOM"]) and day.done
+        await day.step(at(14, 55))
+        assert len(snap.shots) == 2
+    asyncio.run(go())
+    assert logs == [{"iv_day": "2026-10-05", "rows": 6, "failed": []}]
+
+
+def test_ivday_logs_what_is_still_missing_at_the_stop_time_and_resets_next_day():
+    logs, snap = [], Snap(fail_first=["XOM"])
+
+    async def cal(today):
+        return []
+    day = IVDay(snap, cal, {**DEFAULTS, "retry_sec": 10_000}, log_fn=logs.append)
+
+    async def go():
+        await day.step(at(14, 50))
+        await day.step(at(15, 0))
+        await day.step(at(14, 50, date(2026, 10, 6)))
+    asyncio.run(go())
+    assert logs == [{"iv_day": "2026-10-05", "rows": 3, "failed": ["XOM"]},
+                    {"iv_day": "2026-10-06", "rows": 3, "failed": []}]      # the new day starts clean and records all
+    assert day.day == date(2026, 10, 6) and len(snap.shots) == 2 and snap.shots[-1][1] is None
