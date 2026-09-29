@@ -40,6 +40,17 @@ from .proposals import ProposalBook
 log = logging.getLogger("agentdesk.crew")
 
 
+# Desk briefs run with web search on a thinking model: thinking, search calls and the JSON all count against
+# max_tokens. At 1400 most desks were cut off before the JSON (stop_reason max_tokens) and fell back to offline.
+DESK_MAX_TOKENS = 16000
+
+
+def cached_system(text: str) -> list[dict]:
+    """System prompt as one text block with an explicit cache breakpoint. Tools render before system, so this one
+    marker caches the tool list plus the prompt; anything that changes per call belongs in the user message."""
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+
+
 @dataclass
 class Desk:
     key: str
@@ -119,6 +130,7 @@ class Crew:
         self.prep: dict[str, dict] = {}                     # briefs the premarket desks wrote at their desks
         self.prep_tasks: dict[str, asyncio.Task] = {}       # ... and the ones still researching
         self._client = None
+        self.cache_usage = {"calls": 0, "input": 0, "cache_read": 0, "cache_write": 0}
         self.directive = {"size_mult": 1.0, "blackouts": [], "summary": "", "votes": {}}
         self.conviction = {"mult": 1.0, "checks": [], "ts": 0}
         path = None if engine.feed.is_sim else expand(cfg["journal_path"]).parent / "proposals.json"
@@ -481,7 +493,8 @@ class Crew:
         evs = [{"time_ct": e.get("time"), "name": e.get("name"), "impact": e.get("impact", "medium")}
                for e in getattr(self, "_config_events", []) if hhmm(e.get("time")) > tnow]
         sim = self.e.feed.is_sim
-        tag = " (sim)" if sim else " (offline: set ANTHROPIC_API_KEY for live research)"
+        tag = (" (sim)" if sim else " (offline: set ANTHROPIC_API_KEY for live research)" if self.offline
+               else " (live research unavailable; offline read)")
         bias, vote, conf = self._mood_vote(key) if sim else ("neutral", 1.0, 0.4)
         if key == "macro":
             hi = [e for e in evs if e["impact"] == "high"]
@@ -607,11 +620,13 @@ class Crew:
                 f"{self.e.risk.st.trades} trades, day P&L ${self.e.risk.st.day_pnl:+.0f}.\nBriefs:\n{json.dumps(briefs)}")
         try:
             msg = await asyncio.wait_for(client.messages.create(
-                model=self.cfg["fast_model"], max_tokens=900, system=ROUNDTABLE_HINT + "\n\n" + SCHEMA_HINT.split("proposals (optional")[1],
+                model=self.cfg["fast_model"], max_tokens=900,
+                system=cached_system(ROUNDTABLE_HINT + "\n\n" + SCHEMA_HINT.split("proposals (optional")[1]),
                 messages=[{"role": "user", "content": user}]), timeout=60)
         except Exception as ex:
             self.e.bus.emit("log", now, level="warn", msg=f"roundtable failed: {ex}")
             return None
+        self.note_usage(msg)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
         return _extract_json(text, key="lines")
 
@@ -636,8 +651,8 @@ class Crew:
                   f"Be terse and numeric. Use web search for today's facts; never invent data. If you cannot verify "
                   f"something, leave it out.\n\n{SCHEMA_HINT}")
         user = ctx + (f"\n\nEngine stats JSON:\n{extra}" if extra else "") + f"\n\nGive the {desk.name} brief."
-        kwargs = dict(model=self.cfg["fast_model"] if key == "quant" else self.cfg["model"], max_tokens=1400,
-                      system=system, messages=[{"role": "user", "content": user}])
+        kwargs = dict(model=self.cfg["fast_model"] if key == "quant" else self.cfg["model"], max_tokens=DESK_MAX_TOKENS,
+                      system=cached_system(system), messages=[{"role": "user", "content": user}])
         if desk.uses_web and self.cfg.get("web_search", True):
             kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}]
         try:
@@ -645,11 +660,27 @@ class Crew:
         except Exception as ex:
             self.e.bus.emit("log", now, level="warn", msg=f"{desk.name} desk LLM call failed: {ex}")
             return None
+        self.note_usage(msg)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
-        return _extract_json(text)
+        b = _extract_json(text)
+        if b is None:
+            why = f"stop_reason={getattr(msg, 'stop_reason', None)}, {len(text)} chars of text"
+            log.warning("crew %s: no JSON brief in the reply (%s); using the offline read", key, why)
+            self.e.bus.emit("log", now, level="warn", msg=f"{desk.name} desk reply had no brief ({why})")
+        return b
+
+    def note_usage(self, msg) -> None:
+        """Tally prompt-cache hits across the day's calls (a cache_read of 0 on repeat calls means a miss)."""
+        u = getattr(msg, "usage", None)
+        c = self.cache_usage
+        c["calls"] += 1
+        for k, attr in (("input", "input_tokens"), ("cache_read", "cache_read_input_tokens"),
+                        ("cache_write", "cache_creation_input_tokens")):
+            c[k] += int(getattr(u, attr, 0) or 0)
+        log.debug("crew cache: %s", c)
 
     def state(self) -> dict:
-        return {"briefs": self.briefs, "directive": self.directive, "offline": self.offline,
+        return {"briefs": self.briefs, "directive": self.directive, "offline": self.offline, "cache_usage": self.cache_usage,
                 "desks": {k: {"name": d.name} for k, d in DESKS.items()}, "conviction": self.conviction,
                 "proposals": self.book.items[-30:]}
 
