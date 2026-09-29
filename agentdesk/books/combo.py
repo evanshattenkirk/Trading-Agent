@@ -53,11 +53,14 @@ class ComboQuote:
         return round(m - h if receiving else m + h, 4)
 
 
-def paper_fair(cq: ComboQuote, credit: bool, opening: bool, model: str, cents_per_leg: float) -> float:
-    """The price a paper combo order fills at: natural, or mid -/+ cents per leg, never worse than natural."""
+def paper_fair(cq: ComboQuote, credit: bool, opening: bool, model: str, cents_per_leg: float, frac: float = 0.0) -> float:
+    """The price a paper combo order fills at: natural; mid -/+ cents per leg, never worse than natural (mid_offset);
+    or `frac` of the way from mid to natural (mid_frac, for single-name options whose markets are wider than SPY's)."""
     mid, nat = cq.mid(credit), cq.natural(credit, opening)
     if model == "natural":
         return round(nat, 2)
+    if model == "mid_frac":
+        return round(mid + min(1.0, max(0.0, frac)) * (nat - mid), 2)
     n = sum(l.ratio for l in cq.legs)
     receiving = credit == opening
     f = mid - cents_per_leg * n if receiving else mid + cents_per_leg * n

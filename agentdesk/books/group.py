@@ -1,4 +1,4 @@
-"""HostGroup: the one `engine.books` object when book F (FHost) and book E (EHost) run next to the B/C/D/G BookHost.
+"""HostGroup: the one `engine.books` object when books F1 (FHost), E (EHost) and F2 (F2Host) run next to BookHost.
 
 The engine keeps calling start / on_bar / on_second / kill / flatten / halt_all / positions / snapshot on one object.
 Every host shares one AccountRisk (paper equity, open-risk cap, global halt): F's and E's open risk is added to
@@ -11,9 +11,9 @@ import asyncio
 
 
 class HostGroup:
-    def __init__(self, bookhost=None, fhost=None, ehost=None):
-        self.bookhost, self.fhost, self.ehost = bookhost, fhost, ehost
-        self.extras = [h for h in (fhost, ehost) if h is not None]
+    def __init__(self, bookhost=None, fhost=None, ehost=None, f2host=None):
+        self.bookhost, self.fhost, self.ehost, self.f2host = bookhost, fhost, ehost, f2host
+        self.extras = [h for h in (fhost, ehost, f2host) if h is not None]
         self.hosts = [h for h in (bookhost, *self.extras) if h is not None]
         self._inline = True
         if len(self.hosts) > 1:
@@ -27,8 +27,8 @@ class HostGroup:
                 bookhost.extra_books = [x.book for x in self.extras]
 
     @classmethod
-    def of(cls, bookhost=None, fhost=None, ehost=None):
-        return cls(bookhost if bookhost is not None and bookhost.enabled else None, fhost, ehost)
+    def of(cls, bookhost=None, fhost=None, ehost=None, f2host=None):
+        return cls(bookhost if bookhost is not None and bookhost.enabled else None, fhost, ehost, f2host)
 
     @property
     def enabled(self) -> bool:
@@ -97,4 +97,6 @@ class HostGroup:
         snap["books"] = list(snap["books"]) + [h.book.to_dict() for h in self.extras]
         if self.fhost:
             snap["f"] = self.fhost.detail()
+        if self.f2host:
+            snap["f2"] = self.f2host.detail()
         return snap

@@ -12,6 +12,7 @@ class PaperBroker(Broker):
     name = "paper"
     combo_model = "mid_offset"      # mid_offset | natural (books.fills.model)
     combo_cents = 0.01              # $ per leg off mid (mid_offset)
+    combo_frac = 0.0                # share of the way from mid to natural (mid_frac)
 
     def __init__(self, quotes, slippage: float = 0.0):
         self.quotes = quotes
@@ -42,7 +43,7 @@ class PaperBroker(Broker):
         if any(q is None for q in qs):
             return OrderResult("rejected", message="no quote on a leg")
         cq = ComboQuote(legs, qs)
-        fair = paper_fair(cq, credit, opening, self.combo_model, self.combo_cents)
+        fair = paper_fair(cq, credit, opening, self.combo_model, self.combo_cents, self.combo_frac)
         receiving = credit == opening
         marketable = limit <= fair + 1e-9 if receiving else limit >= fair - 1e-9
         oid = f"paper-{next(_ids)}"

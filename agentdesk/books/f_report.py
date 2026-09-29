@@ -1,7 +1,10 @@
-"""`python -m agentdesk f-report [--since YYYY-MM-DD]`: book F's paper record (docs/BOOK_F_HANDOFF.md 4.6).
+"""`python -m agentdesk f-report [--since YYYY-MM-DD]`: the paper record of books F1 and F2.
 
-Trades, win rate, mean R, PF, t clustered by day, worst day; split by news tag (priced in), catalyst, RVOL5 bucket
-and AI/memory list vs the rest; and the shadow-shorts summary. Under 50 trades is anecdote, and it says so.
+F1 (shares, docs/BOOK_F_HANDOFF.md 4.6): trades, win rate, mean R, PF, t clustered by day, worst day; split by news
+tag (priced in), catalyst, RVOL5 bucket and AI/memory list vs the rest; the shadow-shorts summary; and the traded
+stop against the published 0.10 x ATR stop on the same trades.
+F2 (debit spreads, research/strategy_f2_prereg.md): the same statistics on net P&L / debit paid, split by setup (C
+calls, P puts) and by the observe-only skew and IV/realized-vol tags. Under 50 trades is anecdote, and it says so.
 """
 from __future__ import annotations
 
@@ -44,6 +47,53 @@ def stats(rows: list[dict]) -> dict:
     return {"trades": n, "win_rate": sum(1 for p in pnl if p > 0) / n, "mean_r": sum(rs) / n,
             "pf": win / loss if loss > 0 else None, "t": clustered_t(rs, [r["session"] for r in rows]),
             "pnl": round(sum(pnl), 2), "worst_day": {"day": wd, "pnl": round(by_day[wd], 2)}}
+
+
+# ------------------------------------------------------------------ F2
+SKEW_BUCKETS = (("short leg IV < long", 0, 1.0), ("short leg IV >= long", 1.0, 1e9))
+IVRV_BUCKETS = (("IV/RV < 1", 0, 1.0), ("IV/RV 1-1.5", 1.0, 1.5), ("IV/RV 1.5+", 1.5, 1e9))
+
+
+def f2_rows(closed: list[dict]) -> list[dict]:
+    """Closed F2 positions (f2_positions JSON) as rows: net P&L and the return on the debit paid."""
+    out = []
+    for d in closed:
+        m = d.get("meta") or {}
+        basis = (d.get("entry") or 0) * 100 * (d.get("qty_initial") or 0)
+        net = (d.get("realized") or 0) - (d.get("fees") or 0)
+        out.append({"session": m.get("entry_day"), "setup": m.get("setup_key"), "symbol": m.get("symbol"),
+                    "pnl": round(net, 2), "r": net / basis if basis else 0.0, "skew": m.get("skew"),
+                    "iv_rv": m.get("iv_rv"), "exit_reason": d.get("exit_reason")})
+    return out
+
+
+def _bucket(v, buckets) -> str:
+    if v is None:
+        return "n/a"
+    return next((name for name, lo, hi in buckets if lo <= v < hi), "n/a")
+
+
+def build_f2_report(j2, since: str | None = None) -> dict:
+    rows = f2_rows(j2.closed(since))
+    split = lambda key: {k: stats(v) for k, v in sorted(_group(rows, key).items())}
+    return {"since": since, "all": stats(rows), "by_setup": split(lambda r: {"C": "C calls", "P": "P puts"}.get(r["setup"], "?")),
+            "by_skew": split(lambda r: _bucket(r["skew"], SKEW_BUCKETS)),
+            "by_iv_rv": split(lambda r: _bucket(r["iv_rv"], IVRV_BUCKETS)),
+            "skipped": sum(1 for d in j2.decisions(since=since) if d["outcome"] == "skipped")}
+
+
+def format_f2_report(r: dict) -> str:
+    a = r["all"]
+    if not a.get("trades"):
+        return ("No closed F2 spreads" + (f" since {r['since']}" if r.get("since") else "") + " yet "
+                f"({r['skipped']} candidates skipped; see f2_decisions).")
+    out = ["Book F2 (debit spreads), paper; 'mean R' is net P&L / debit paid" + (f", since {r['since']}" if r.get("since") else ""),
+           _line("all", a) + ("   (under 50 trades: treat as anecdote)" if a["trades"] < 50 else ""),
+           f"  candidates skipped: {r['skipped']}", "", "By setup:"]
+    out += [_line(k, s) for k, s in r["by_setup"].items()]
+    out += ["", "By skew (observe-only):"] + [_line(k, s) for k, s in r["by_skew"].items()]
+    out += ["", "By ATM IV / 20-day realized vol (observe-only):"] + [_line(k, s) for k, s in r["by_iv_rv"].items()]
+    return "\n".join(out)
 
 
 def _news(r: dict) -> dict:
