@@ -1,4 +1,5 @@
 """Book E rules (HANDOFF 7E; spec section 3): windows, expiries, legs, sizing, filters, limits and exits."""
+import sqlite3
 import sys
 from datetime import date, time
 from pathlib import Path
@@ -6,8 +7,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentdesk.books import earnings_iv as R
+from agentdesk.books.base import Leg
+from agentdesk.books.combo import ComboPosition
+from agentdesk.books.e_journal import EJournal, pos_from_dict, pos_to_dict
 from agentdesk.clock import at_ct
 from agentdesk.config import load_config
+from agentdesk.exits import Contract
 
 C = load_config()["books"]["E_earnings_iv"]
 MON, THU = date(2026, 10, 5), date(2026, 10, 8)
@@ -141,3 +146,49 @@ def test_e2_leaves_on_the_short_legs_expiry_day_first():
 def test_held_through_the_announcement_is_an_error():
     why, err = R.exit_reason(meta(THU, "pm"), at(FRI1, 8, 30), C, False, set())
     assert "held through" in why and err
+
+
+def e2_pos():
+    legs = [Leg("call", 115.0, "sell", dte=4), Leg("call", 115.0, "buy", dte=11)]
+    cs = [Contract("XOM", "2026-10-09", 115.0, "call", "a"), Contract("XOM", "2026-10-16", 115.0, "call", "b")]
+    p = ComboPosition("E", "E2 CALENDAR", legs, cs, 2, 1.55, False, 0.0, 100.0, strike_reason="XOM 115 ATM",
+                      entry_reasons=["2 x $155"], meta={"symbol": "XOM", "structure": R.E2, "earnings_date": "2026-10-16",
+                                                        "timing": "am", "short_expiry": "2026-10-09"}, id="E-abc")
+    p.fees, p.mark, p.target, p.stop = 0.16, 1.60, 1.78, 1.09
+    p.fills.append({"ts": 100.0, "side": "open", "qty": 2, "px": 1.55})
+    return p
+
+
+def test_positions_round_trip_through_json():
+    p = e2_pos()
+    q = pos_from_dict(pos_to_dict(p))
+    assert (q.id, q.book, q.setup, q.qty, q.qty_initial, q.entry, q.credit) == ("E-abc", "E", "E2 CALENDAR", 2, 2, 1.55, False)
+    assert q.legs == p.legs and [c.broker_id for c in q.contracts] == ["a", "b"] and q.contracts[1].expiry == "2026-10-16"
+    assert (q.fees, q.mark, q.target, q.stop, q.meta, q.fills) == (0.16, 1.60, 1.78, 1.09, p.meta, p.fills)
+    assert q.max_loss == 310.0
+
+
+def test_ejournal_keeps_open_rows_and_decisions():
+    ej = EJournal(sqlite3.connect(":memory:"))
+    p = e2_pos()
+    ej.save(p, 100.0)
+    got, bad = ej.open_positions()
+    assert [x.id for x in got] == ["E-abc"] and bad == []
+    p.status = "closed"
+    ej.save(p, 200.0)
+    assert ej.open_positions() == ([], [])
+    ej.decision(day="2026-10-05", ts=1.0, symbol="XOM", structure=R.E2, T=9, earnings_date="2026-10-16", timing="am",
+                outcome="skipped", reason="quote", debit=None, lots=None, iv=None, iv_pct=None, vix=18.0)
+    assert not ej.traded("XOM", "2026-10-16", R.E2)
+    ej.decision(day="2026-10-06", ts=2.0, symbol="XOM", structure=R.E2, T=8, earnings_date="2026-10-16", timing="am",
+                outcome="opened", reason="filled", debit=1.55, lots=1, iv=0.3, iv_pct=None, vix=18.0)
+    assert ej.traded("XOM", "2026-10-16", R.E2) and not ej.traded("XOM", "2026-10-16", R.E1)
+    assert [d["outcome"] for d in ej.decisions()] == ["skipped", "opened"]
+    assert [d["outcome"] for d in ej.decisions("2026-10-06")] == ["opened"]
+
+
+def test_unreadable_rows_are_reported_not_restored():
+    db = sqlite3.connect(":memory:")
+    ej = EJournal(db)
+    db.execute("INSERT INTO e_positions VALUES ('E-bad', 'open', 'AMD', 'straddle_t3', 1, 1, '{not json')")
+    assert ej.open_positions() == ([], ["E-bad"])
