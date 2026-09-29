@@ -73,6 +73,16 @@
     return withSec ? hms(t) : hm(t);
   }
   const barTime = (b) => (b.tf === '144t' ? b.i : b.t);
+  function chartBars(tf) {
+    // one bar per time, ascending: the chart library rejects anything else, and a rejected setData left the old
+    // timeframe on screen with no new candles (Evan, 2026-09-29: 144t then back to 1m)
+    const by = new Map();
+    for (const b of S.bars[tf]) { const t = barTime(b); if (typeof t === 'number' && isFinite(t)) by.set(t, b); }
+    return [...by.values()].sort((a, b) => barTime(a) - barTime(b));
+  }
+  function safeChart(fn) {
+    try { fn(); } catch (err) { console.warn('chart update rejected; redrawing', err); mark('chart'); }
+  }
   function pushBarToChart(b) {
     const t = barTime(b);
     cS.update({ time: t, open: b.o, high: b.h, low: b.l, close: b.c });
@@ -85,7 +95,7 @@
     if (b.rsi != null) rS.update({ time: t, value: b.rsi });
   }
   function redrawChart() {
-    const bars = S.bars[S.tf];
+    const bars = chartBars(S.tf);
     const c = [], v = [], m = [], s = [], h = [], r = [];
     const up = css('--up') + '99', dn = css('--dn') + '99';
     for (const b of bars) {
@@ -180,19 +190,22 @@
     if (e.ts) S.ts = Math.max(S.ts, e.ts);
     switch (e.type) {
       case 'snapshot': loadSnapshot(e); break;
-      case 'batch': e.events.forEach(apply); break;
-      case 'tick': S.price = e.price; S.vwap = e.vwap ?? S.vwap; liveCandle(e); mark('header'); break;
+      case 'batch': e.events.forEach((x) => { try { apply(x); } catch (err) { console.warn('event skipped', x.type, err); mark('chart'); } }); break;
+      case 'tick': S.price = e.price; S.vwap = e.vwap ?? S.vwap; safeChart(() => liveCandle(e)); mark('header'); break;
       case 'bar': {
         const b = { ...e.bar, vw: e.vwap };
         const arr = S.bars[b.tf];
-        if (!arr) break;
-        if (arr.length && barTime(arr[arr.length - 1]) === barTime(b)) arr[arr.length - 1] = b; else arr.push(b);
+        const t = barTime(b);
+        if (!arr || typeof t !== 'number') break;
+        let k = arr.length - 1;                 // keep the list in time order: a late bar goes in its place
+        while (k >= 0 && barTime(arr[k]) > t) k--;
+        if (k >= 0 && barTime(arr[k]) === t) arr[k] = b; else arr.splice(k + 1, 0, b);
         if (arr.length > 4000) arr.shift();
         S.price = b.c; S.vwap = e.vwap ?? S.vwap;
         if (b.tf === S.tf && !S.bulk) {
-          pushBarToChart(b);
+          if (barTime(arr[arr.length - 1]) === t) safeChart(() => pushBarToChart(b)); else mark('chart');
           const lm = S.marks[S.marks.length - 1];
-          if (lm && lm.ts >= b.t - 1) drawMarkers();
+          if (lm && lm.ts >= b.t - 1) safeChart(drawMarkers);
         }
         mark('header');
         break;
@@ -532,9 +545,9 @@
       .sort((a, b) => (b.closed_ts || 0) - (a.closed_ts || 0));
     $('trades-empty').hidden = rows.length > 0;
     $('trades').innerHTML = rows.map((p) => `<tr>
-      <td><b>${esc(p.book)}</b></td><td class="num">${hm(p.opened_ts)}</td><td class="num">${esc(p.contract)}</td><td>${p.setup}</td>
-      <td class="r">${p.qty_initial}</td><td class="r">${px(p.entry)}</td><td class="r">${px(p.peak)}</td>
-      <td class="r ${cls(p.net ?? p.total_pnl)}">${money(p.net ?? p.total_pnl)}</td><td>${esc(p.exit_reason)}</td><td class="wrap">${esc(p.strike_reason)}</td></tr>`).join('');
+      <td><b>${esc(p.book)}</b></td><td class="num">${hm(p.opened_ts)}</td><td class="num">${esc(p.contract ?? p.symbol ?? '')}</td><td>${esc(p.setup ?? (p.symbol ? 'SHARES' : ''))}</td>
+      <td class="r">${p.qty_initial ?? p.qty ?? ''}</td><td class="r">${px(p.entry)}</td><td class="r">${px(p.peak)}</td>
+      <td class="r ${cls(p.net ?? p.total_pnl ?? p.pnl)}">${money(p.net ?? p.total_pnl ?? p.pnl)}</td><td>${esc(p.exit_reason)}</td><td class="wrap">${esc(p.strike_reason ?? '')}</td></tr>`).join('');
   }
 
   function renderFeed() {
@@ -561,7 +574,7 @@
     if (now - lastPanels < 120 && !dirty.has('all') && !dirty.has('chart')) return;
     lastPanels = now;
     const all = dirty.has('all');
-    if (dirty.has('chart') && !S.bulk) redrawChart();
+    if (dirty.has('chart') && !S.bulk) { dirty.delete('chart'); try { redrawChart(); } catch (err) { console.error('chart redraw failed', err); } }
     if (all || dirty.has('header')) renderHeader();
     if (all || dirty.has('books') || dirty.has('header')) renderBooks();
     if (all || dirty.has('signal')) renderSignal();
@@ -653,7 +666,7 @@
     $('btn-kill').onclick = () => confirmBar('Kill switch: flatten everything, cancel orders and stop trading for the day?', () => post('/api/kill'));
     document.querySelectorAll('.tf').forEach((b) => b.onclick = () => {
       document.querySelectorAll('.tf').forEach((x) => x.classList.toggle('on', x === b));
-      S.tf = b.dataset.tf; chart.timeScale().applyOptions({ secondsVisible: S.tf === '144t' }); redrawChart();
+      S.tf = b.dataset.tf; chart.timeScale().applyOptions({ secondsVisible: S.tf === '144t' }); safeChart(redrawChart);
     });
     document.querySelectorAll('.tab').forEach((b) => b.onclick = () => {
       document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === b));

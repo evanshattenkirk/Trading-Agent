@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import stat
 import uuid
 import time
@@ -25,7 +26,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ..feeds.base import Quote, QuoteSource
-from .base import Broker, OrderResult, OrderStateError
+from .base import Broker, OrderResult, OrderStateError, RateLimited
 
 TERMINAL = ("filled", "cancelled", "canceled", "rejected", "failed", "voided")
 from .paper import PaperBroker
@@ -150,6 +151,89 @@ class _Callback:
             self.server = None
 
 
+_HTTP_429 = re.compile(r"(?<![\w.-])429(?![\w.-])")       # not inside an instrument id or a price like 1.429
+
+
+def is_rate_limited(err) -> bool:
+    e = str(err).lower()
+    return "rate_limited" in e or "rate limit" in e or "too many requests" in e or bool(_HTTP_429.search(e))
+
+
+ORDER_TOOLS = ("place_option_order", "cancel_option_order", "get_option_orders")
+
+
+class CallBudget:
+    """One Robinhood account's call budget for this process. Robinhood throttles near 240 calls a minute per account
+    (recorder probe, 2026-09-28) and the standalone quote recorder shares that account, so the engine keeps to
+    `per_min` (and `per_s` in bursts). A RATE_LIMITED answer pauses every call for FIRST_PAUSE_S, doubling up to
+    MAX_PAUSE_S while it repeats; a success resets it. The cap stays under the 10 s quote watchdog, so a throttle
+    alone can't trip a safety halt. Order calls (live only) never wait, but they count."""
+
+    FIRST_PAUSE_S = 2.0
+    MAX_PAUSE_S = 8.0
+
+    def __init__(self, per_min: int = 120, per_s: int = 3, clock=time.monotonic, sleep=asyncio.sleep):
+        self.per_min, self.per_s = int(per_min), int(per_s)
+        self.clock, self.sleep = clock, sleep
+        self.recent: list[float] = []
+        self.paused_until = 0.0
+        self.pause_s = self.FIRST_PAUSE_S
+        self._minute, self._count = None, 0
+
+    @classmethod
+    def from_cfg(cls, rh_cfg: dict) -> "CallBudget | None":
+        c = (rh_cfg or {}).get("call_budget")
+        if not c:
+            return None
+        return cls(per_min=c.get("per_min", 120), per_s=c.get("per_s", 3))
+
+    def _prune(self, now: float) -> None:
+        cut = now - 60.0
+        i = 0
+        while i < len(self.recent) and self.recent[i] <= cut:
+            i += 1
+        if i:
+            del self.recent[:i]
+
+    def last_minute(self) -> int:
+        self._prune(self.clock())
+        return len(self.recent)
+
+    async def acquire(self, urgent: bool = False) -> None:
+        while not urgent:
+            now = self.clock()
+            self._prune(now)
+            wait = self.paused_until - now
+            if len(self.recent) >= self.per_min:
+                wait = max(wait, self.recent[0] + 60.0 - now)
+            last_s = [t for t in self.recent[-self.per_s:] if t > now - 1.0] if self.per_s else []
+            if self.per_s and len(last_s) >= self.per_s:
+                wait = max(wait, last_s[0] + 1.0 - now)
+            if wait <= 0:
+                break
+            await self.sleep(wait + 0.001)
+        now = self.clock()
+        self.recent.append(now)
+        m = int(time.time() // 60)
+        if m != self._minute:
+            if self._minute is not None:
+                log.info("Robinhood: %d calls in the last minute (budget %d)", self._count, self.per_min)
+            self._minute, self._count = m, 0
+        self._count += 1
+
+    def throttled(self) -> float:
+        """Robinhood said RATE_LIMITED: pause every call. Returns the pause in seconds."""
+        pause = self.pause_s
+        self.paused_until = max(self.paused_until, self.clock() + pause)
+        self.pause_s = min(self.pause_s * 2, self.MAX_PAUSE_S)
+        log.warning("Robinhood RATE_LIMITED: pausing calls for %.0fs (%d calls in the last minute)", pause,
+                    self.last_minute())
+        return pause
+
+    def ok(self) -> None:
+        self.pause_s = self.FIRST_PAUSE_S
+
+
 class RobinhoodMCP:
     def __init__(self, cfg):
         self.cfg = cfg["robinhood"]
@@ -162,6 +246,7 @@ class RobinhoodMCP:
         self._lock = asyncio.Lock()
         self._started = False
         self.chain_symbol = cfg.get("symbol", "SPY")
+        self.budget = CallBudget.from_cfg(self.cfg)     # None: no pacing here (the recorder paces itself)
 
     async def start(self) -> None:
         if self._started:
@@ -238,16 +323,25 @@ class RobinhoodMCP:
         args = fit_args(tool, self.tools[tool], args)
         async with self._lock:
             try:
-                res = await self.session.call_tool(tool, args)
-            except Exception:
+                res = await self._send(tool, args)
+            except Exception as ex:
+                if is_rate_limited(ex):
+                    self._throttled()
+                    raise RateLimited(f"{tool} error: {ex}") from ex
                 if tool.startswith(("get_", "review_")):          # read-only: one retry on a transient failure
                     await asyncio.sleep(0.3)
-                    res = await self.session.call_tool(tool, args)
+                    res = await self._send(tool, args)
                 else:
                     raise
-            if getattr(res, "isError", False) and tool.startswith(("get_", "review_")) and "500" in _text(res):
+            if getattr(res, "isError", False) and tool.startswith(("get_", "review_")) and "500" in _text(res) \
+                    and not is_rate_limited(_text(res)):
                 await asyncio.sleep(0.3)
-                res = await self.session.call_tool(tool, args)
+                res = await self._send(tool, args)
+            if getattr(res, "isError", False) and is_rate_limited(_text(res)):
+                self._throttled()
+                raise RateLimited(f"{tool} error: {_text(res)[:400]}")
+            if self.budget is not None:
+                self.budget.ok()
         if getattr(res, "isError", False):
             raise RuntimeError(f"{tool} error: {_text(res)[:400]}")
         data = getattr(res, "structuredContent", None)
@@ -258,6 +352,15 @@ class RobinhoodMCP:
             except json.JSONDecodeError:
                 return {"text": txt}
         return data.get("data", data) if isinstance(data, dict) else data
+
+    async def _send(self, tool: str, args: dict):
+        if self.budget is not None:
+            await self.budget.acquire(urgent=tool in ORDER_TOOLS)
+        return await self.session.call_tool(tool, args)
+
+    def _throttled(self) -> None:
+        if self.budget is not None:
+            self.budget.throttled()
 
     async def _load_accounts(self) -> None:
         data = await self.call("get_accounts", {})

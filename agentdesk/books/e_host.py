@@ -15,6 +15,7 @@ import logging
 import uuid
 from datetime import date, time
 
+from ..brokers.base import RateLimited
 from ..brokers.paper import PaperBroker
 from ..clock import ct_time, is_rth, session_date
 from ..earnings import is_trading_day, screen
@@ -75,6 +76,7 @@ class EHost:
         self.day = self.entered = self.refreshed = None
         self._busy, self._tasks, self._flagged = False, set(), set()
         self._last_poll, self._last_emit = -1e18, -1e18
+        self._last_rate_log = -1e18
         self.vix_prev, self._vix_day, self._vix_try = None, None, -1e18
         self._entry_try, self._exit_tries = -1e18, {}
 
@@ -148,6 +150,10 @@ class EHost:
         try:
             await coro
             b.errors = 0
+        except RateLimited as ex:           # Robinhood is pacing the account: skip this round, never halt over it
+            if now - self._last_rate_log >= 60:
+                self._last_rate_log = now
+                self._log(now, "warn", f"book E: Robinhood rate limit, calls paused and retried ({str(ex)[:120]})")
         except Exception as ex:
             b.errors += 1
             log.exception("book E failed (%d in a row)", b.errors)

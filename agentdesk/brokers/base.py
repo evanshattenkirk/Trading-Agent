@@ -11,6 +11,10 @@ class OrderStateError(Exception):
         self.order_id, self.filled_qty, self.avg_price = order_id, filled_qty, avg_price
 
 
+class RateLimited(RuntimeError):
+    """Robinhood answered RATE_LIMITED / HTTP 429. Transient: the caller skips this round, it is not a broken book."""
+
+
 @dataclass
 class OrderResult:
     status: str                 # filled | partial | unfilled | rejected
