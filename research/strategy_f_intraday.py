@@ -21,6 +21,14 @@ in the report: no macro-event skip (no historical calendar), today's S&P list (s
 from the data (last bar before 15:00 ET).
 
 Outputs: research/strategy_f_intraday_results.json, research/strategy_f_intraday.md, research/strategy_f_equity.png
+
+F1 v2 (research/strategy_f1_prereg.md), after buying Alpaca SIP data:
+
+    python research/strategy_f_intraday.py --universe broad       # every liquid US stock, the v2 rules
+
+pulls into research/data/f1_broad/ (the NASDAQ Trader symbol list is today's, so survivorship bias is larger than
+the S&P version's) and writes research/strategy_f1_results.json and research/strategy_f1.md. The section 3 run above
+is unchanged.
 """
 from __future__ import annotations
 
@@ -52,6 +60,16 @@ PRIMARY = {"rvol5_min": 2.0, "top_n": 5, "first_candle": "green", "entry_cutoff_
 LOOSEST = {"rvol5_min": 1.5, "top_n": 10}
 SENSITIVITY = ([("rvol5_min", v) for v in (1.5, 3.0)] + [("top_n", v) for v in (3, 10)]
                + [("stop_atr_frac", v) for v in (0.05, 0.20)] + [("slip_bp", 5)])
+# F1 v2 (research/strategy_f1_prereg.md): every liquid US stock, top 10, a stop at the OR low clamped to 0.10-0.50 ATR,
+# overextended opening ranges skipped. No universe cap: the backtest reads SIP bars.
+PRIMARY_V2 = {**PRIMARY, "top_n": 10, "stop_mode": "or_low", "stop_atr_min": 0.10, "stop_atr_max": 0.50, "max_or_atr": 0.50,
+              "universe": {"min_price": 10, "min_atr": 0.50, "min_avg_volume": 1_000_000, "min_dollar_vol_20d": 25_000_000,
+                           "extra": list(F.AI_LIST)}}
+LOOSEST_V2 = {"rvol5_min": 1.5, "top_n": 20}     # covers every v2 variant, including names moved up by the wide-OR skip
+SENSITIVITY_V2 = ([("published 0.10 x ATR stop", {"stop_mode": None})] + [("top_n", 5)] + [("rvol5_min", 3.0)]
+                  + [("max_or_atr", None)])
+SYMBOL_DIRS = ("https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+               "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt")
 OR_START, SCAN, CUTOFF = 570, 575, 630          # minutes after midnight ET: 09:30, 09:35, 10:30
 BALANCE = 10_000
 
@@ -197,13 +215,15 @@ def pull_daily(store: Store, h: AlpacaHistory, symbols: list[str], start: date, 
         print(f"  daily bars: {len(grp)} symbols ({h.calls} calls)", flush=True)
 
 
-def pull_candidate_days(store: Store, h: AlpacaHistory, data, sp500, extras, dates: list[date]) -> None:
-    loose = {**PRIMARY, **LOOSEST}
+def pull_candidate_days(store: Store, h: AlpacaHistory, data, sp500, extras, dates: list[date], loose=None,
+                        uni_fn=None) -> None:
+    loose = loose or {**PRIMARY, **LOOSEST}
+    uni_fn = uni_fn or universe_for_day
     hist: list[dict] = []
     for i, d in enumerate(dates):
         orb = store.read_bars(store.or_path(d)) if store.or_path(d).exists() else {}
         if not store.day_path(d).exists():
-            uni = universe_for_day(d, data, sp500, extras, loose)
+            uni = uni_fn(d, data, sp500, extras, loose)
             res = scan_day(uni, orb, hist[-14:], loose)
             syms = [r.symbol for r in res.picks]
             got = h.bars(syms, "1Min", _iso(d, SCAN), _iso(d, 16 * 60)) if syms else {}
@@ -211,6 +231,36 @@ def pull_candidate_days(store: Store, h: AlpacaHistory, data, sp500, extras, dat
         hist.append({s: sum(b["v"] for b in bs) for s, bs in orb.items()})
         if i % 100 == 0:
             print(f"  candidate days {d} ({i + 1}/{len(dates)}, {h.calls} calls)", flush=True)
+
+
+def pull_or_windows_broad(store: Store, h: AlpacaHistory, data, extras, dates: list[date], cfg, batch: int = 100) -> None:
+    """F1 v2: each day's 09:30-09:34 bars for that day's broad universe only (thousands of names; a fixed list for
+    every day would triple the calls). Resumable like pull_or_windows."""
+    for i, d in enumerate(dates):
+        if store.or_path(d).exists():
+            continue
+        names = sorted(universe_for_day_broad(d, data, set(), extras, cfg))
+        got: dict[str, list[dict]] = {}
+        for grp in _chunks(names, batch):
+            got.update(h.bars(grp, "1Min", _iso(d, OR_START), _iso(d, SCAN - 1)))
+        store.write_bars(store.or_path(d), {s: [b for b in bs if OR_START <= b["t"] < SCAN] for s, bs in got.items()})
+        if i % 50 == 0:
+            print(f"  OR windows {d}: {len(names)} names ({i + 1}/{len(dates)}, {h.calls} calls)", flush=True)
+
+
+def load_us_symbols(store: Store) -> set[str]:
+    """Every listed US common stock and ADR today (NASDAQ Trader symbol directory), cached as us_symbols.txt."""
+    p = store.root / "us_symbols.txt"
+    if not p.exists():
+        import httpx
+        from agentdesk.feeds.f_data import parse_symbol_dir
+        syms: set[str] = set()
+        for url in SYMBOL_DIRS:
+            r = httpx.get(url, timeout=60)
+            r.raise_for_status()
+            syms |= parse_symbol_dir(r.text)
+        Store._atomic(p, "\n".join(sorted(syms)).encode())
+    return {l.strip() for l in p.read_text().splitlines() if l.strip()}
 
 
 # ------------------------------------------------------------------ point-in-time universe and scan
@@ -228,7 +278,8 @@ def _features(data: dict[str, list[dict]]) -> dict[str, dict[date, dict]]:
         feats, trs, atr, dv = {}, [], None, []
         for i, b in enumerate(bars):
             feats[b["d"]] = {"atr": atr, "dv20": sum(dv[-20:]) / 20 if len(dv) >= 20 else None,
-                             "close": bars[i - 1]["c"] if i else None, "n": i}
+                             "close": bars[i - 1]["c"] if i else None, "n": i,
+                             "avg_vol14": sum(x["v"] for x in bars[max(0, i - 14):i]) / 14 if i >= 14 else None}
             if i:
                 pc = bars[i - 1]["c"]
                 tr = max(b["h"] - b["l"], abs(b["h"] - pc), abs(b["l"] - pc))
@@ -252,6 +303,21 @@ def universe_for_day(today: date, data, sp500, extras, cfg) -> dict[str, dict]:
     return {s: {"atr": ok[s]["atr"], "dv20": ok[s]["dv20"], "close": ok[s]["close"]} for s in names
             if ok[s]["close"] >= u["min_price"] and ok[s]["atr"] is not None and ok[s]["atr"] >= u["min_atr"]
             and ok[s]["dv20"] >= u["min_dollar_vol_20d"]}
+
+
+def universe_for_day_broad(today: date, data, sp500, extras, cfg) -> dict[str, dict]:
+    """F1 v2: every symbol in `data` (all US common stocks) passing the floors on prior data only, no cap, plus the
+    extras when they pass the same floors. `sp500` is ignored; the signature matches universe_for_day."""
+    u = cfg["universe"]
+    feats = _features(data)
+    out = {}
+    for s, f in feats.items():
+        x = f.get(today)
+        if (x and x["n"] >= 20 and x["dv20"] and x["close"] and x["atr"] is not None and x["avg_vol14"]
+                and x["close"] >= u["min_price"] and x["atr"] >= u["min_atr"] and x["dv20"] >= u["min_dollar_vol_20d"]
+                and x["avg_vol14"] >= u.get("min_avg_volume", 0)):
+            out[s] = {"atr": x["atr"], "dv20": x["dv20"], "close": x["close"]}
+    return out
 
 
 def scan_day(uni: dict, or_bars: dict, hist: list[dict], cfg) -> F.ScanResult:
@@ -296,11 +362,11 @@ def simulate_day(picks: list, bars_by_sym: dict, cfg, slip_bp: float = 2.0, half
                     close(s, px, "stop")
             elif s in armed and not halted and m < CUTOFF and len(pos) < cfg["max_positions"] and b["h"] > p.or_high:
                 limit = F.entry_limit(p.or_high)
-                qty = F.shares_for(limit, limit - cfg["stop_atr_frac"] * p.atr, cfg)
+                qty = F.shares_for(limit, F.stop_price(limit, p.atr, cfg, p.or_low), cfg)
                 if qty < 1:
                     armed.pop(s)
                     continue
-                got = F.bar_entry_then_stop(b, p.or_high, limit, p.atr, cfg, slip_bp)
+                got = F.bar_entry_then_stop(b, p.or_high, limit, p.atr, cfg, slip_bp, or_low=p.or_low)
                 if got is None:
                     sends[s] += 1
                     if sends[s] >= 3:
@@ -353,12 +419,14 @@ def passes(primary: dict, first: dict, second: dict) -> bool:
 
 
 # ------------------------------------------------------------------ backtest over the cache
-def backtest(store: Store, data, sp500, extras, dates: list[date], cfg, slip_bp: float = 2.0) -> list[dict]:
+def backtest(store: Store, data, sp500, extras, dates: list[date], cfg, slip_bp: float = 2.0,
+             uni_fn=None) -> list[dict]:
+    uni_fn = uni_fn or universe_for_day
     trades, hist = [], []
     for d in dates:
         orb = store.read_bars(store.or_path(d)) if store.or_path(d).exists() else {}
         if len(hist) >= 14 and orb and store.day_path(d).exists():
-            uni = universe_for_day(d, data, sp500, extras, cfg)
+            uni = uni_fn(d, data, sp500, extras, cfg)
             res = scan_day(uni, orb, hist[-14:], cfg)
             bars = store.read_bars(store.day_path(d))
             half = bool(bars) and max(b["t"] for bs in bars.values() for b in bs) < 15 * 60
@@ -393,6 +461,39 @@ def report(store: Store, data, sp500, extras, dates: list[date], out_dir: Path) 
     (out_dir / "strategy_f_intraday_results.json").write_text(json.dumps(res, indent=1, default=str))
     _write_md(res, out_dir / "strategy_f_intraday.md")
     _equity_png(trades, out_dir / "strategy_f_equity.png")
+    return res
+
+
+def report_v2(store: Store, data, extras, dates: list[date], out_dir: Path) -> dict:
+    """F1 v2 on the broad universe (research/strategy_f1_prereg.md), with the replication's pass bar."""
+    run = lambda cfg, slip=2.0: backtest(store, data, set(), extras, dates, cfg, slip, uni_fn=universe_for_day_broad)
+    trades = run(PRIMARY_V2)
+    first = [t for t in trades if t["day"].year <= 2020]
+    second = [t for t in trades if t["day"].year >= 2021]
+    res = {"spec": "research/strategy_f1_prereg.md (F1 v2, pre-registered)", "period": [str(dates[0]), str(dates[-1])],
+           "primary": summarize(trades, dates), "2016_2020": summarize(first, [d for d in dates if d.year <= 2020]),
+           "2021_2026": summarize(second, [d for d in dates if d.year >= 2021]),
+           "by_year": {y: summarize([t for t in trades if t["day"].year == y], [d for d in dates if d.year == y])
+                       for y in sorted({d.year for d in dates})},
+           "caveats": ["Survivorship bias: today's US symbol list is used for every year (larger than the S&P version's).",
+                       "No macro-event scan skip (no historical event calendar).",
+                       "Half-days detected from the data (last bar before 15:00 ET).",
+                       "Fills on 1-minute bars: 2 bp slippage per side, no commission; entry and stop in one bar = stop."],
+           "sensitivity": {}}
+    res["pass"] = passes(res["primary"], res["2016_2020"], res["2021_2026"])
+    for k, v in SENSITIVITY_V2:
+        cfg = {**PRIMARY_V2, **(v if isinstance(v, dict) else {k: v})}
+        res["sensitivity"][k if isinstance(v, dict) else f"{k}={v}"] = summarize(run(cfg), dates)
+    (out_dir / "strategy_f1_results.json").write_text(json.dumps(res, indent=1, default=str))
+    p = res["primary"]
+    lines = [f"**{'PASS' if res['pass'] else 'FAIL'}**: book F1 v2 on every liquid US stock, {res['period'][0]} to "
+             f"{res['period'][1]}, after 2 bp costs. Pre-registered in `research/strategy_f1_prereg.md`; not tuned.", "",
+             "Pass bar: PF >= 1.1, t > 2 (clustered by day), and positive in both 2016-2020 and 2021-2026.", "",
+             f"- Primary: {_fmt(p)}", f"- 2016-2020: {_fmt(res['2016_2020'])}", f"- 2021-2026: {_fmt(res['2021_2026'])}",
+             "", "By year:", ""] + [f"- {y}: {_fmt(x)}" for y, x in res["by_year"].items()]
+    lines += ["", "Sensitivity (reported, never selected from):", ""] + [f"- {k}: {_fmt(x)}" for k, x in res["sensitivity"].items()]
+    lines += ["", "Caveats:", ""] + [f"- {c}" for c in res["caveats"]]
+    (out_dir / "strategy_f1.md").write_text("\n".join(lines) + "\n")
     return res
 
 
@@ -467,8 +568,12 @@ def main() -> None:
     ap.add_argument("--data", default=str(ROOT / "research" / "data" / "f_intraday"))
     ap.add_argument("--pull-only", action="store_true")
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--universe", choices=["sp500", "broad"], default="sp500",
+                    help="broad: F1 v2 on every liquid US stock (research/strategy_f1_prereg.md)")
     a = ap.parse_args()
     start, end = date.fromisoformat(a.start), date.fromisoformat(a.end)
+    if a.universe == "broad":
+        return main_broad(a, start, end)
     store = Store(Path(a.data))
     sp500 = load_constituents(store)
     extras = list(F.AI_LIST)
@@ -493,6 +598,33 @@ def main() -> None:
     res = report(store, data, sp500, extras, dates, ROOT / "research")
     print((ROOT / "research" / "strategy_f_intraday.md").read_text())
     print(f"Daily CSVs for the strategy_f.py rerun: {store.root / 'daily'}")
+    print(f"verdict: {'PASS' if res['pass'] else 'FAIL'}")
+
+
+def main_broad(a, start: date, end: date) -> None:
+    data_dir = a.data if a.data != str(ROOT / "research" / "data" / "f_intraday") else str(ROOT / "research" / "data" / "f1_broad")
+    store = Store(Path(data_dir))
+    extras = list(F.AI_LIST)
+    symbols = sorted(load_us_symbols(store) | set(extras) | {"SPY"})
+    h = AlpacaHistory(HttpxGet()) if not a.report_only else None
+    if h:
+        print(f"Daily bars for {len(symbols)} US symbols ...", flush=True)
+        pull_daily(store, h, symbols, start - timedelta(days=120), end)
+    data = {s: store.read_daily(s) for s in symbols if store.daily_path(s).exists()}
+    dates = [b["d"] for b in data.get("SPY", []) if start <= b["d"] <= end]
+    if not dates:
+        raise SystemExit("No SPY daily bars cached; run without --report-only first.")
+    if h:
+        print(f"Opening-range windows for each day's broad universe over {len(dates)} sessions ...", flush=True)
+        pull_or_windows_broad(store, h, data, extras, dates, PRIMARY_V2)
+        print("Candidate full days ...", flush=True)
+        pull_candidate_days(store, h, data, set(), extras, dates, loose={**PRIMARY_V2, **LOOSEST_V2},
+                            uni_fn=universe_for_day_broad)
+        print(f"Pull complete: {h.calls} Alpaca calls this run.", flush=True)
+    if a.pull_only:
+        return
+    res = report_v2(store, data, extras, dates, ROOT / "research")
+    print((ROOT / "research" / "strategy_f1.md").read_text())
     print(f"verdict: {'PASS' if res['pass'] else 'FAIL'}")
 
 

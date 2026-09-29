@@ -16,6 +16,22 @@ Book F replication (docs/BOOK_F_HANDOFF.md section 5; Alpaca SIP 1-minute bars, 
 
     python research/strategy_f_intraday.py      # writes strategy_f_intraday.md / _results.json / strategy_f_equity.png
 
+Book F1 v2 on the broad universe (rules in strategy_f1_prereg.md; free SIP history, a larger pull):
+
+    python research/strategy_f_intraday.py --universe broad      # writes strategy_f1.md / strategy_f1_results.json
+
+Book F2 (rules in strategy_f2_prereg.md). The C premise on the shares data already cached, then the real-quote replay
+once ThetaData's equity options history is bought (resumable; only signal days are pulled):
+
+    python research/f2c_drift.py                                 # f2c_drift.md / f2c_drift_results.json (f2c_drift_prereg.md)
+    python research/f2_real_quotes.py pull                       # SIP 1-minute bars for F2's 34 names (Alpaca keys)
+    python research/f2_real_quotes.py signals                    # research/data/f2/signals.csv
+    python research/fetch_thetadata_equity.py --smoke            # one signal, printed; then without --smoke for all
+    python research/f2_real_quotes.py run --earnings reports.csv # f2_real_quotes.md / .json
+
+Other single-name candidates for the purchased data are drafted in strategies_equity_prereg.md, for Evan's approval
+before any script is written. nyse_calendar.py holds the NYSE closures and early closes the F2 scripts use.
+
 Book F daily study (HANDOFF v3.1 section 7F), rebuilt because the original strategy_f.py isn't in the repo; checked
 against 7F's 2013-2018 table in strategy_f_daily.md. Any folder of per-symbol daily CSVs:
 

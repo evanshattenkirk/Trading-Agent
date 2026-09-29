@@ -30,7 +30,7 @@ This is the account where I take concentrated risk on purpose; retirement accoun
 - **Safety you can test.** A daily loss limit that counts open P&L at the bid, per-book halts, a stale-quote watchdog, day risk state that survives restarts, every position sold on Ctrl-C, and dashboard controls behind a per-run token with Origin and Host checks. `risk.py`, `lifecycle.py`, `server.py`
 - **Research that reports its failures.** Rules are pre-registered before results, split in-sample and out-of-sample, and re-run at taker fills. Most candidates fail, and the write-ups say so. `research/`
 - **Cost-aware model use.** Prompt-cache breakpoints on every Claude call, about 3 web-search calls a day, and a per-desk tally of tokens and estimated cost.
-- **564 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
+- **567 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. `tests/`
 
 ## Strategy books
 
@@ -219,7 +219,7 @@ Book E buys the implied-volatility run-up into an earnings report and always sel
 - F2 holds overnight like E: positions persist in `f2_positions` and are not sold at shutdown. Every candidate, traded or not, is logged in `f2_decisions` with each leg's IV, the skew between them and ATM IV ÷ realized vol.
 - F2 is idle in the simulator (no single-name option data there).
 
-`python -m agentdesk f-report` shows both books' paper records. `research/strategy_f_intraday.py` is the original replication backtest.
+`python -m agentdesk f-report` shows both books' paper records. `research/strategy_f_intraday.py` is the original replication backtest; `--universe broad` runs F1 v2. F2's backtest on real option quotes (`research/f2_real_quotes.py`) is ready to run once single-name option history is bought (`research/README.md`).
 
 ## Things to know before real money
 

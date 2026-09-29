@@ -72,4 +72,17 @@ Each setup (C and P) is judged separately: PF ≥ 1.1 at taker fills, t > 2 clus
 There is no historical single-name option data in the repo. With ThetaData's US equity options history,
 `research/fetch_thetadata_equity.py` pulls 1-minute quotes only for the (date, name, expiry, strikes) where these
 signals fired in 2018–2026, and `research/f2_real_quotes.py` replays both setups with the rules above. Until then, the
-free shares data can test only the stock's own drift after each signal (the F-hold study).
+free shares data can test only the stock's own drift after each signal (`research/f2c_drift.py`).
+
+Replay details, fixed before any quotes are pulled:
+- Signals come from Alpaca SIP 1-minute bars. C's RVOL5 uses a 14-session base of the same 09:30–09:35 SIP volume; C
+  enters at max(OR high, the breakout bar's open) on the first bar before 10:30 ET whose high clears the OR high.
+  P uses the bars before 15:40 ET and the 20-day average daily volume from SIP daily bars.
+- Strikes, the straddle, the structure check and the exits come from `agentdesk/books/f2_spreads.py`, the paper
+  book's own code. Exits are checked every minute on the spread mid; C's first-day stop fires on the first 1-minute
+  bar whose low is at or below the OR low. Exit days and 12:45 ET half-day exits use the NYSE calendar
+  (`research/nyse_calendar.py`).
+- Fills on the whole spread: taker (natural, the judged model), mid_frac 35% (the paper book's) and mid. Fees are
+  $0.04 per contract per leg per side. One lot per signal; returns are on the debit paid.
+- Halves: 2018–2021 and 2022–2026. Earnings holds are skipped only when a report-date file is supplied
+  (`--earnings`); otherwise the report says they are in the sample.

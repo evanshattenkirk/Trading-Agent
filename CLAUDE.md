@@ -52,11 +52,12 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 - 11 published intraday strategies: none significant out-of-sample. Evan's MACD proxy: t 0.23 / 1.69 / 0.39.
 - The variance risk premium (short 0DTE premium) is the one robust effect, modeled from VIX. B and D both rely on it.
 - `strategies_bcd.py` -> `strategies_bcd_results.json` covers B, C (both directions), D and cost/IV sensitivity. Options are modeled with Black-Scholes from VIX (M_RTH 0.80), re-based to SPY 765.
+- F1/F2 research track (scripts and pre-registrations committed, no results yet; runs on Evan's Mac): `strategy_f_intraday.py --universe broad` (F1 v2), `f2c_drift.py` (does the stock drift after F2-C's entry; cached shares data), `f2_real_quotes.py` + `fetch_thetadata_equity.py` (F2 on real single-name quotes, needs ThetaData equity options). `strategies_equity_prereg.md` is a draft list of other candidates (earnings IV crush, post-earnings drift, reversal and gap-fade holdouts on names the daily study never saw); nothing in it is built until Evan approves it.
 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (564 pass today; the full run takes about 2.5 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (567 pass today; the full run takes about 2.5 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.
