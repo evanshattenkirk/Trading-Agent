@@ -40,6 +40,11 @@ from .proposals import ProposalBook
 log = logging.getLogger("agentdesk.crew")
 
 
+# Desk briefs run with web search on a thinking model: thinking, search calls and the JSON all count against
+# max_tokens. At 1400 most desks were cut off before the JSON (stop_reason max_tokens) and fell back to offline.
+DESK_MAX_TOKENS = 16000
+
+
 def cached_system(text: str) -> list[dict]:
     """System prompt as one text block with an explicit cache breakpoint. Tools render before system, so this one
     marker caches the tool list plus the prompt; anything that changes per call belongs in the user message."""
@@ -488,7 +493,8 @@ class Crew:
         evs = [{"time_ct": e.get("time"), "name": e.get("name"), "impact": e.get("impact", "medium")}
                for e in getattr(self, "_config_events", []) if hhmm(e.get("time")) > tnow]
         sim = self.e.feed.is_sim
-        tag = " (sim)" if sim else " (offline: set ANTHROPIC_API_KEY for live research)"
+        tag = (" (sim)" if sim else " (offline: set ANTHROPIC_API_KEY for live research)" if self.offline
+               else " (live research unavailable; offline read)")
         bias, vote, conf = self._mood_vote(key) if sim else ("neutral", 1.0, 0.4)
         if key == "macro":
             hi = [e for e in evs if e["impact"] == "high"]
@@ -645,7 +651,7 @@ class Crew:
                   f"Be terse and numeric. Use web search for today's facts; never invent data. If you cannot verify "
                   f"something, leave it out.\n\n{SCHEMA_HINT}")
         user = ctx + (f"\n\nEngine stats JSON:\n{extra}" if extra else "") + f"\n\nGive the {desk.name} brief."
-        kwargs = dict(model=self.cfg["fast_model"] if key == "quant" else self.cfg["model"], max_tokens=1400,
+        kwargs = dict(model=self.cfg["fast_model"] if key == "quant" else self.cfg["model"], max_tokens=DESK_MAX_TOKENS,
                       system=cached_system(system), messages=[{"role": "user", "content": user}])
         if desk.uses_web and self.cfg.get("web_search", True):
             kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}]
@@ -656,7 +662,12 @@ class Crew:
             return None
         self.note_usage(msg)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
-        return _extract_json(text)
+        b = _extract_json(text)
+        if b is None:
+            why = f"stop_reason={getattr(msg, 'stop_reason', None)}, {len(text)} chars of text"
+            log.warning("crew %s: no JSON brief in the reply (%s); using the offline read", key, why)
+            self.e.bus.emit("log", now, level="warn", msg=f"{desk.name} desk reply had no brief ({why})")
+        return b
 
     def note_usage(self, msg) -> None:
         """Tally prompt-cache hits across the day's calls (a cache_read of 0 on repeat calls means a miss)."""
