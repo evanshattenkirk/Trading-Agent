@@ -163,7 +163,7 @@
     S.books = bk ? bk.books.map(({ open, closed, ...x }) => x) : [];
     S.account = bk?.account || null;
     S.combos = new Map((bk?.books || []).flatMap((b) => b.open || []).map((p) => [p.id, p]));
-    S.bookClosed = (bk?.books || []).flatMap((b) => (b.closed || []).map((p) => ({ ...p, net: p.total_pnl })));
+    S.bookClosed = (bk?.books || []).flatMap((b) => (b.closed || []).map((p) => ({ ...p, net: p.total_pnl ?? p.pnl })));
     S.marks = [];
     for (const p of [...S.closed, ...S.positions.values()]) for (const f of p.fills || []) addMark(f.side === 'buy', f.ts, f.qty, p, f.px);
     for (const p of [...S.bookClosed, ...S.combos.values()]) for (const f of p.fills || []) addComboMark(p, f.ts, f.side === 'open');
@@ -260,9 +260,24 @@
         S.combos.delete(e.pos.id); S.bookClosed.push({ ...e.pos, net: e.net }); addComboMark(e.pos, e.ts, false); if (!S.bulk) drawMarkers();
         feedPush(e.ts, 'sell', `Book ${e.pos.book} closed ${e.pos.contract} · ${e.pos.exit_reason} · ${money(e.net)}`);
         mark('pos', 'trades', 'header'); break;
-      case 'book_order':
-        feedPush(e.ts, e.action === 'open' ? 'buy' : 'sell', `Book ${e.book} ${e.action.toUpperCase()} ${e.qty}× lim ${px(e.limit)} (mid ${px(e.mid)}, natural ${px(e.natural)}) → ${e.status}${e.filled ? ` @ ${px(e.price)}` : ''}${e.review ? ' (reviewed by Robinhood)' : ''}`);
+      case 'book_order': {
+        // combo books send open/close with mid and natural; book F sends buy/sell with a symbol and no mid
+        const quote = e.mid != null || e.natural != null ? ` (mid ${px(e.mid)}, natural ${px(e.natural)})` : '';
+        feedPush(e.ts, e.action === 'open' || e.action === 'buy' ? 'buy' : 'sell', `Book ${e.book} ${e.action.toUpperCase()} ${e.qty}×${e.symbol ? ' ' + e.symbol : ''} lim ${px(e.limit)}${quote} → ${e.status}${e.filled ? ` @ ${px(e.price)}` : ''}${e.review ? ' (reviewed by Robinhood)' : ''}`);
         break;
+      }
+      case 'f_position':          // book F holds shares: its positions ride with the combos for the strip, position card and trades
+        if (e.event === 'closed') {
+          S.combos.delete(e.pos.id); S.bookClosed.push({ ...e.pos, net: e.pos.pnl });
+          feedPush(e.ts, 'sell', `Book F closed ${e.pos.symbol} · ${e.pos.exit_reason} · ${money(e.pos.pnl, 2)}`);
+          mark('pos', 'trades', 'header');
+        } else {
+          S.combos.set(e.pos.id, e.pos);
+          if (e.event === 'open') feedPush(e.ts, 'buy', `Book F bought ${e.pos.qty} ${e.pos.symbol} @ ${px(e.pos.entry)} · stop ${px(e.pos.stop)}`);
+          mark('pos', 'office', 'header');
+        }
+        break;
+      case 'f_positions': for (const p of e.positions || []) S.combos.set(p.id, p); mark('pos', 'header'); break;
       case 'book_skip': feedPush(e.ts, 'skip', `Book ${e.book} passed: ${e.why}`); mark('pos'); break;
       case 'session': for (const tf of Object.keys(S.bars)) S.bars[tf] = []; S.closed = []; S.bookClosed = []; S.combos = new Map(); S.marks = []; mark('all', 'chart'); break;
       case 'final': break;
@@ -281,6 +296,9 @@
   /* ------------------------------------------------------------------ books */
   const aOpenPnl = () => [...S.positions.values()].reduce((a, p) => a + (p.unrealized || 0), 0);
   const combosOf = (k) => [...S.combos.values()].filter((p) => p.book === k);
+  const isShares = (p) => p.book === 'F';
+  const pnlPct = (p) => (p.pnl_pct != null ? Number(p.pnl_pct) : p.entry && p.mark != null ? (p.mark / p.entry - 1) * 100 : 0);
+  const posName = (p) => (isShares(p) ? `${p.qty}× ${p.symbol}` : p.setup);
   function bookPnl(k) {
     if (k === 'A') return (S.risk?.day_pnl || 0) + aOpenPnl();
     const b = S.books.find((x) => x.book === k);
@@ -369,7 +387,9 @@
     if (act !== 'ALL' && act !== 'A') return renderCombo(combosOf(act)[0], act);
     const combos = [...S.combos.values()];
     if (act === 'ALL' && !S.positions.size && combos.length) return renderCombo(combos[0], combos[0].book);
-    renderAPosition(act === 'ALL' ? combos.map((c) => `<p class="note">Book ${esc(c.book)} · ${esc(c.setup)} · ${c.credit ? 'credit' : 'debit'} ${px(c.entry)} · mark ${px(c.mark)} · <span class="${cls(c.total_pnl)}">${money(c.total_pnl)}</span></p>`).join('') : '');
+    renderAPosition(act === 'ALL' ? combos.map((c) => (isShares(c)
+      ? `<p class="note">Book F · ${esc(posName(c))} · entry ${px(c.entry)} · mark ${px(c.mark)} · <span class="${cls(c.unrealized)}">${money(c.unrealized)}</span></p>`
+      : `<p class="note">Book ${esc(c.book)} · ${esc(c.setup)} · ${c.credit ? 'credit' : 'debit'} ${px(c.entry)} · mark ${px(c.mark)} · <span class="${cls(c.total_pnl)}">${money(c.total_pnl)}</span></p>`)).join('') : '');
   }
 
   function renderCombo(p, k) {
@@ -380,9 +400,10 @@
       const last = S.bookClosed.filter((x) => x.book === k).slice(-1)[0];
       body.innerHTML = `<p class="note">Book ${esc(k)} (${esc(b.name || '')}) has no open position.${b.halted ? ` <b>Halted: ${esc(b.halt_reason)}</b>.` : ''}${b.blocked ? ` <b>${esc(b.blocked)}</b>.` : ''}</p>`
         + (b.last_skip ? `<p class="note">Last pass <b>${hm(b.last_skip.ts)}</b>: ${esc(b.last_skip.why)}</p>` : '')
-        + (last ? `<p class="note">Last trade: <b>${esc(last.contract)}</b> <span class="${cls(last.net)}">${money(last.net)}</span> · ${esc(last.exit_reason)}</p>` : '');
+        + (last ? `<p class="note">Last trade: <b>${esc(last.contract ?? last.symbol)}</b> <span class="${cls(last.net)}">${money(last.net)}</span> · ${esc(last.exit_reason)}</p>` : '');
       return;
     }
+    if (isShares(p)) return renderShares(p);
     pill.textContent = `Book ${p.book} · ${p.setup}`; pill.className = 'pill acc';
     const legs = (p.legs || []).map((l) => `<tr><td>${l.side === 'sell' ? 'Short' : 'Long'}</td><td class="r num">${l.ratio > 1 ? l.ratio + '× ' : ''}${Number(l.strike).toFixed(0)}</td><td>${l.right}</td></tr>`).join('');
     const priced = p.stop > 0;
@@ -399,6 +420,25 @@
       </div>
       <p class="note">${esc(p.strike_reason)}.</p>
       ${p.meta?.plan ? `<p class="note">Exit plan${priced ? '' : ' (exits on SPY)'}: <b>${esc(p.meta.plan)}</b></p>` : ''}`;
+  }
+
+  function renderShares(p) {        // book F: long whole shares, one card per name; the rest are listed underneath
+    const body = $('pos-body'), pill = $('pos-setup');
+    const others = combosOf('F').filter((x) => x.id !== p.id);
+    const pct = pnlPct(p);
+    pill.textContent = `Book F · ${combosOf('F').length} open`; pill.className = 'pill acc';
+    body.innerHTML = `
+      <div class="pos-title"><span class="c">${esc(posName(p))}</span><span class="p ${cls(pct)}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span></div>
+      <div class="kv">
+        <div><span class="k">Entry</span><span class="v">${px(p.entry)}</span></div>
+        <div><span class="k">Mark</span><span class="v">${px(p.mark)}</span></div>
+        <div><span class="k">Stop</span><span class="v neg">${px(p.stop)}</span></div>
+        <div><span class="k">Risk</span><span class="v">${money(-p.risk, 2)}</span></div>
+        <div><span class="k">R</span><span class="v ${cls(p.r)}">${p.r == null ? '—' : (p.r >= 0 ? '+' : '') + Number(p.r).toFixed(2)}</span></div>
+        <div><span class="k">P&amp;L</span><span class="v ${cls(p.unrealized)}">${money(p.unrealized, 2)}</span></div>
+      </div>
+      <p class="note">Long shares, paper only. Exits at the stop or at the day's exit time.</p>
+      ${others.map((x) => `<p class="note">Also open: <b>${esc(posName(x))}</b> · <span class="${cls(x.unrealized)}">${money(x.unrealized, 2)}</span></p>`).join('')}`;
   }
 
   function renderAPosition(extra) {
@@ -559,11 +599,12 @@
     const act = S.activeBook;
     const aPos = act === 'ALL' || act === 'A' ? [...S.positions.values()][0] : null;
     const p = aPos || (act === 'ALL' ? [...S.combos.values()][0] : combosOf(act)[0]);
-    const lbl = !p ? null : aPos ? `${S.books.length ? 'A ' : ''}${p.qty}X ${p.contract.split(' ')[1]}` : `${p.book} ${p.qty}X ${p.setup}`;
+    const lbl = !p ? null : aPos ? `${S.books.length ? 'A ' : ''}${p.qty}X ${p.contract.split(' ')[1]}` : `${p.book} ${isShares(p) ? `${p.qty}X ${p.symbol}` : `${p.qty}X ${p.setup}`}`;
+    const pct = p ? pnlPct(p) : null;
     office.setMarket({
       price: S.price, prev: S.prevClose, pnl: selectedBooks().reduce((a, k) => a + bookPnl(k), 0), ts: S.ts || Date.now() / 1000, open: isRTH(S.ts),
-      closes: S.bars['1m'].slice(-60).map((b) => b.c), pos: p ? `${lbl} ${p.pnl_pct >= 0 ? '+' : ''}${Number(p.pnl_pct).toFixed(0)}%` : null,
-      posPct: p ? p.pnl_pct : null, halted: !!S.risk?.halted, imb: S.l2?.book?.imbalance ?? null,
+      closes: S.bars['1m'].slice(-60).map((b) => b.c), pos: p ? `${lbl} ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : null,
+      posPct: pct, halted: !!S.risk?.halted, imb: S.l2?.book?.imbalance ?? null,
     });
     $('office-status').textContent = office.current || office.queue.length ? 'IN A HUDDLE' : (ACT_LABEL[S.agent.activity] || String(S.agent.activity || '').toUpperCase());
   }
@@ -609,7 +650,10 @@
     }
     reset() { this.i = 0; this.clock = this.ev[0].ts; }
     restart() {
-      Object.assign(S, { bars: { '144t': [], '1m': [], '5m': [], '15m': [] }, positions: new Map(), targets: new Map(), closed: [], skips: [], marks: [], feed: [], crew: { briefs: {}, offline: true, directive: null }, signal: null, risk: null, l2: null, conviction: null, proposals: new Map(), books: [], account: null, combos: new Map(), bookClosed: [] });
+      // ts too: the clock only moves forward, so a kept end-of-day time froze the header clock after a restart
+      Object.assign(S, { ts: 0, bars: { '144t': [], '1m': [], '5m': [], '15m': [] }, positions: new Map(), targets: new Map(), closed: [], skips: [], marks: [], feed: [], crew: { briefs: {}, offline: true, directive: null }, signal: null, risk: null, l2: null, conviction: null, proposals: new Map(), books: [], account: null, combos: new Map(), bookClosed: [] });
+      if (office) office.queue.length = 0;     // don't replay the rest of a huddle from later in the day
+      this.holding = false;
       this.reset(); this.seek(this.startTs, true); this.playing = true; $('rp-play').textContent = 'Pause';
     }
     seek(ts, animateLast) {
