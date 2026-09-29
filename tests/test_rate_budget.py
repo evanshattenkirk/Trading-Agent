@@ -90,6 +90,14 @@ def test_rate_limited_text_is_recognised():
     assert not is_rate_limited("get_option_quotes error: no quote for 5f2a4290-19c1-4d3e-a429-0b1c2d3e4f50")
 
 
+def test_a_429_inside_an_id_or_price_is_not_a_throttle():                 # merge-thread review of PR #29
+    assert not is_rate_limited("get_option_quotes error: instrument 9f3a4291-0c2e-4d1b-8429-aa1b2c3d4e5f not found")
+    assert not is_rate_limited("review_option_order error: limit 4.29 below the minimum")
+    assert not is_rate_limited("review_option_order error: limit 1.429 below the minimum")
+    assert is_rate_limited("Error: 429 Too Many Requests")
+    assert is_rate_limited("status_code=429")
+
+
 # ------------------------------------------------------------------ RobinhoodMCP.call
 class FakeSession:
     def __init__(self, answers):

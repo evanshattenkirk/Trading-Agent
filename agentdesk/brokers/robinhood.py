@@ -151,10 +151,12 @@ class _Callback:
             self.server = None
 
 
+_HTTP_429 = re.compile(r"(?<![\w.-])429(?![\w.-])")       # not inside an instrument id or a price like 1.429
+
+
 def is_rate_limited(err) -> bool:
     e = str(err).lower()
-    return ("rate_limited" in e or "rate limit" in e or "too many requests" in e
-            or re.search(r"\b429\b", e) is not None)       # a bare "429" can sit inside an instrument id
+    return "rate_limited" in e or "rate limit" in e or "too many requests" in e or bool(_HTTP_429.search(e))
 
 
 ORDER_TOOLS = ("place_option_order", "cancel_option_order", "get_option_orders")
