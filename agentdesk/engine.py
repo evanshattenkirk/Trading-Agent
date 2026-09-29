@@ -286,7 +286,8 @@ class Engine:
 
     def _watchdog(self, now: float) -> None:
         stale = self.wd["quote_stale_sec"]
-        held = [p for p, _ in self.open] + (self.books.positions() if self.books else [])
+        held = [p for p, _ in self.open] + [p for p in (self.books.positions() if self.books else [])
+                                            if not getattr(p, "watchdog_exempt", False)]   # book E checks its own multi-day positions
         for pos in held:
             age = now - pos.last_quote_ts
             if age > stale:

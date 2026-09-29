@@ -6,6 +6,7 @@
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
   python -m agentdesk record-quotes [--once|--status|--report|--probe]   standalone 0DTE quote recorder (read-only)
   python -m agentdesk f-report [--since YYYY-MM-DD]                      book F paper record
+  python -m agentdesk iv-snapshot                                        book E's end-of-day ATM IV for the universe, now (read-only)
 """
 from __future__ import annotations
 
@@ -99,7 +100,9 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     host = BookHost(engine, cfg, vix=vix, reviewer=rh if mode in ("shadow", "live") else None)
     from .books.f_host import build_f
     from .books.group import HostGroup
-    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed))
+    from .books.e_host import build_e
+    group = HostGroup.of(host, build_f(engine, cfg, rh=rh, mode=mode, provider=provider, feed=feed),
+                         build_e(engine, cfg, rh=rh, mode=mode, provider=provider, vix=vix))
     engine.books = group if group.enabled else None
     engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
     return engine, bus
@@ -228,6 +231,11 @@ def cmd_f_clear_stale(args) -> None:
     print(f"Marked {n} F paper position(s) from earlier sessions as cleared (no P&L). Book F starts clean next run.")
 
 
+def cmd_iv_snapshot(args) -> None:
+    from .iv_recorder import run_once
+    print(asyncio.run(run_once(load_config(args.config))))
+
+
 def cmd_backtest(args) -> None:
     from .backtest import main as bt_main
     asyncio.run(bt_main(load_config(args.config), args))
@@ -279,6 +287,9 @@ def main() -> None:
     fc = sub.add_parser("f-clear-stale", help="after checking the account: clear F paper positions left open by a crash")
     fc.add_argument("--all", action="store_true", help="also clear today's open rows")
     fc.set_defaults(fn=cmd_f_clear_stale)
+
+    iv = sub.add_parser("iv-snapshot", help="book E: record ATM IV for the earnings universe now (read-only)")
+    iv.set_defaults(fn=cmd_iv_snapshot)
 
     bt = sub.add_parser("backtest")
     bt.add_argument("--days", type=int, default=20)

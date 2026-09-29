@@ -66,6 +66,7 @@ class BookHost:
         self.exec = ComboExecutor(self.broker, self.f, reviewer)
         self.vix = vix
         self.books = build_books(cfg) if books is None else books
+        self.extra_books: list = []     # F and E (HostGroup): kept on the book strip
         self.fee = self.account.c["fee_per_leg"]
         self.max_errors = (cfg["risk"].get("watchdog") or {}).get("max_consecutive_errors", 3)
         self.day = None
@@ -460,12 +461,12 @@ class BookHost:
 
     def summary(self) -> list[dict]:
         return [self._a_summary()] + [{k: v for k, v in b.to_dict().items() if k not in ("open", "closed")}
-                                      for b in self.books]
+                                      for b in list(self.books) + list(self.extra_books)]
 
     def _emit_books(self, now: float) -> None:
         self.e.bus.emit("books", now, books=self.summary(),
                         account=self.account.to_dict(self.open_risk(), self.e.risk.st.day_pnl))
 
     def snapshot(self) -> dict:
-        return {"books": [self._a_summary()] + [b.to_dict() for b in self.books],
+        return {"books": [self._a_summary()] + [b.to_dict() for b in list(self.books) + list(self.extra_books)],
                 "account": self.account.to_dict(self.open_risk(), self.e.risk.st.day_pnl)}

@@ -121,3 +121,18 @@ def test_rate_report_and_day_summary(tmp_path):
     assert s["calls"] == 31 and s["outcomes"] == {"ok": 30, "throttled": 1}
     rep = recorder.rate_report(db, days=10000)
     assert "get_option_quotes" in rep and "throttled" in rep
+
+
+def test_iv_pass_tools_are_read_only():
+    from agentdesk.recorder import READ_ONLY_TOOLS
+    assert "get_earnings_calendar" in READ_ONLY_TOOLS and "get_option_chains" in READ_ONLY_TOOLS
+    assert not {"place_option_order", "cancel_option_order", "exercise_option", "review_option_order"} & READ_ONLY_TOOLS
+
+
+def test_meter_rows_can_carry_the_iv_tag(tmp_path):
+    from agentdesk.recorder import CallMeter
+    m = CallMeter(tmp_path / "j.db")
+    m.add(1.0, "get_option_quotes", 12.0, True, "ok", None, tag="iv")
+    m.add(2.0, "get_option_quotes", 12.0, True, "ok", None)
+    m.flush()
+    assert [r[0] for r in m.db.execute("SELECT tag FROM rh_calls ORDER BY ts")] == ["iv", "recorder"]

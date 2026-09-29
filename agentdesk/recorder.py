@@ -25,14 +25,15 @@ from pathlib import Path
 from .brokers.robinhood import OptionQuoteRecorder, RobinhoodMCP, dict_items
 from .clock import CT, is_rth, session_date
 from .config import expand, hhmm
+from .iv_recorder import settings as iv_settings
 
 log = logging.getLogger("agentdesk.recorder")
 
 RECORDER_DIR = Path(os.path.expanduser("~/.agentdesk/recorder"))
 HEARTBEAT = RECORDER_DIR / "heartbeat"
 DAYS_LOG = RECORDER_DIR / "days.jsonl"
-READ_ONLY_TOOLS = frozenset({"get_accounts", "get_equity_quotes", "get_option_chains", "get_option_instruments",
-                             "get_option_quotes"})
+READ_ONLY_TOOLS = frozenset({"get_accounts", "get_earnings_calendar", "get_equity_quotes", "get_option_chains",
+                             "get_option_instruments", "get_option_quotes"})
 DEFAULTS = {"start_ct": "08:25", "end_ct": "15:05", "every_sec": 10, "width": 10,
             "token_dir": "~/.agentdesk/recorder", "redirect_port": 8767, "alert_after_sec": 300}
 
@@ -91,8 +92,8 @@ class CallMeter:
         self.tag = tag
         self.buf: list[tuple] = []
 
-    def add(self, ts: float, tool: str, ms: float, ok: bool, kind: str, err: str | None) -> None:
-        self.buf.append((ts, tool, round(ms, 1), int(ok), kind, err, self.tag))
+    def add(self, ts: float, tool: str, ms: float, ok: bool, kind: str, err: str | None, tag: str | None = None) -> None:
+        self.buf.append((ts, tool, round(ms, 1), int(ok), kind, err, tag or self.tag))
         if len(self.buf) >= 50:
             self.flush()
 
@@ -110,16 +111,16 @@ class MeteredRobinhoodMCP(RobinhoodMCP):
         super().__init__(cfg)
         self.meter = meter
 
-    async def call(self, tool: str, args: dict):
+    async def call(self, tool: str, args: dict, tag: str | None = None):
         if tool not in READ_ONLY_TOOLS:
             raise PermissionError(f"recorder is read-only; refused {tool}")
         t0 = time.time()
         try:
             out = await super().call(tool, args)
         except Exception as ex:
-            self.meter.add(t0, tool, (time.time() - t0) * 1000, False, classify(str(ex)), str(ex)[:300])
+            self.meter.add(t0, tool, (time.time() - t0) * 1000, False, classify(str(ex)), str(ex)[:300], tag)
             raise
-        self.meter.add(t0, tool, (time.time() - t0) * 1000, True, "ok", None)
+        self.meter.add(t0, tool, (time.time() - t0) * 1000, True, "ok", None, tag)
         return out
 
 
@@ -150,6 +151,17 @@ def notify(msg: str) -> None:
         pass
 
 
+class IVClient:
+    """The IV pass's view of the recorder's session: same read-only grant, calls metered under tag 'iv'."""
+
+    def __init__(self, daemon):
+        self.d = daemon
+
+    async def call(self, tool: str, args: dict):
+        await self.d.connect()
+        return await self.d.rh.call(tool, args, tag="iv")
+
+
 class RecorderDaemon:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -168,6 +180,8 @@ class RecorderDaemon:
         self.last_ok = 0.0
         self.last_alert = 0.0
         self.fails = 0
+        self.iv_task: asyncio.Task | None = None
+        self.ivs = iv_settings(cfg)
         RECORDER_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------------------------------- session
@@ -197,6 +211,36 @@ class RecorderDaemon:
         elif not on and self.caff is not None:
             self.caff.terminate()
             self.caff = None
+
+    # ---------------------------------------------------------------- book E's IV pass
+    def _iv_day(self):
+        from .desks import holidays
+        from .iv import Pacer, RobinhoodChains
+        from .iv_recorder import IVDay, IVSnapshot, recorder_calendar
+        client = IVClient(self)
+        snap = IVSnapshot(RobinhoodChains(client, self.ivs["cache_dir"]), self.journal,
+                          ((self.cfg.get("crew") or {}).get("earnings") or {}).get("universe") or [], holidays(self.cfg))
+        return IVDay(snap, lambda d: recorder_calendar(client, self.cfg, d), self.ivs,
+                     list_pacer=Pacer(float(self.ivs["list_calls_per_s"])),
+                     quote_pacer=Pacer(float(self.ivs["quote_calls_per_s"])), log_fn=self._iv_log)
+
+    def _iv_log(self, summary: dict) -> None:
+        log.info("iv day done: %s", summary)
+        try:
+            with DAYS_LOG.open("a") as f:
+                f.write(json.dumps(summary) + "\n")
+        except OSError as ex:
+            log.warning("iv day log failed: %s", ex)
+
+    async def iv_loop(self) -> None:
+        day = self._iv_day()
+        while True:
+            try:
+                await day.step(time.time())
+            except Exception as ex:
+                log.warning("iv pass: %s", str(ex)[:300])
+            self.meter.flush()
+            await asyncio.sleep(5)
 
     # ---------------------------------------------------------------- one poll
     async def tick(self, now: float) -> int:
@@ -233,6 +277,8 @@ class RecorderDaemon:
                 await asyncio.sleep(min(60.0, max(1.0, nxt - now)))
                 continue
             self.awake(True)
+            if not once and self.ivs.get("enabled") and self.iv_task is None:
+                self.iv_task = asyncio.create_task(self.iv_loop())
             if self.day is None:
                 self.day = str(session_date(now))
                 self.last_ok = now
