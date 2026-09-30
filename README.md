@@ -6,7 +6,7 @@ An options trading desk for SPY that runs on Robinhood's Agentic Trading MCP. En
 
 **Status:** every strategy book runs on paper. Nothing trades live. A book reaches real money only through the promotion ladder below, one book at a time, at one contract.
 
-![AgentDesk dashboard during a simulated session: SPY chart with MACD and RSI, per-book P&L chips, signal gate, book F1's scan, and the pixel-art office where the research crew meets](docs/img/dashboard.png)
+![AgentDesk dashboard during a live paper session: SPY chart with MACD and RSI, per-book P&L chips, signal gate, book F1's scan, today's trades, and the pixel-art office where the research crew meets](docs/img/dashboard.png)
 
 ## Background
 
