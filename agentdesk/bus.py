@@ -1,9 +1,12 @@
-"""In-process pub/sub for the dashboard websocket, with an optional JSONL recorder."""
+"""In-process pub/sub for the dashboard websocket, with an optional JSONL recorder and taps (the session archive)."""
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import IO
+import logging
+from typing import IO, Callable
+
+log = logging.getLogger("agentdesk.bus")
 
 
 class Bus:
@@ -11,6 +14,7 @@ class Bus:
         self.subs: set[asyncio.Queue] = set()
         self.recorder: IO | None = None
         self.record_filter: set[str] | None = None
+        self.taps: list[Callable[[dict], None]] = []     # called with every event; an error in one never reaches the emitter
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=5000)
@@ -29,6 +33,11 @@ class Bus:
                 pass
         if self.recorder and (self.record_filter is None or type_ in self.record_filter):
             self.recorder.write(json.dumps(msg, separators=(",", ":"), default=_round) + "\n")
+        for tap in self.taps:
+            try:
+                tap(msg)
+            except Exception:
+                log.exception("bus tap failed on %s", type_)
 
 
 def _round(o):
