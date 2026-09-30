@@ -108,17 +108,19 @@ class RobinhoodChains:
         return out
 
     async def expirations(self, symbol: str) -> list[date]:
-        from .brokers.robinhood import find_key
+        from .brokers.robinhood import dict_items, find_key
         from .clock import session_date
         from .earnings import _day
         today = session_date(self.clock())
         hit = self._exps.get(symbol)
         if hit and hit[0] == today:
             return hit[1]
-        # the schema isn't verified yet: fit_args keeps whichever of these names the server declares
-        data = await self._call("get_option_chains", {"symbol": symbol, "symbols": [symbol], "chain_symbol": symbol,
-                                                      "equity_symbol": symbol})
-        raw = find_key(data, ["expiration_dates", "expirations"])
+        # live schema (2026-09-29): ids or underlying_symbol; the reply is {"chains": [...]}, one entry per chain
+        data = await self._call("get_option_chains", {"underlying_symbol": symbol})
+        chains = dict_items(data)
+        mine = [c for c in chains if str(c.get("symbol") or "").upper() == symbol.upper()]
+        raw = find_key(mine[0] if mine else (chains[0] if len(chains) == 1 else data),
+                       ["expiration_dates", "expirations"])
         if not isinstance(raw, list):
             keys = sorted(data.keys()) if isinstance(data, dict) else type(data).__name__
             raise RuntimeError(f"get_option_chains {symbol}: no expiration_dates in the response (keys: {keys})")

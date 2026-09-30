@@ -175,3 +175,58 @@ def test_calls_wait_for_the_pacer():
     ch = RobinhoodChains(rh, pacer=CountPacer(), clock=lambda: NOW)
     assert asyncio.run(ch.spots(["AMD", "XOM"])) == {"AMD": 100.2, "XOM": 115.1}
     assert CountPacer.n == 1
+
+
+# Robinhood's live schemas and response shapes, read 2026-09-29 (after the first IV pass failed every name with
+# "one of ids or underlying_symbol is required"). The real client runs fit_args against these schemas, so any
+# argument name the server doesn't declare is dropped before the call goes out.
+LIVE_SCHEMAS = {
+    "get_option_chains": {"properties": {"ids": {}, "underlying_symbol": {}}},
+    "get_option_instruments": {"properties": {k: {} for k in ("chain_id", "chain_symbol", "cursor", "expiration_dates",
+                                                              "ids", "state", "strike_price", "tradability", "type")}},
+    "get_option_quotes": {"properties": {"instrument_ids": {}}, "required": ["instrument_ids"]},
+}
+
+
+class SchemaRH(FakeRH):
+    """FakeRH that filters arguments the way the real client does and rejects calls the server would reject."""
+
+    async def call(self, tool, args):
+        from agentdesk.brokers.robinhood import fit_args
+        args = fit_args(tool, LIVE_SCHEMAS[tool], args)
+        if tool == "get_option_chains" and not (args.get("ids") or args.get("underlying_symbol")):
+            raise RuntimeError("one of ids or underlying_symbol is required")
+        return await super().call(tool, args)
+
+
+def test_expirations_ask_for_underlying_symbol_and_take_the_matching_chain():
+    live = {"chains": [                                  # an adjusted chain (after a corporate action) can come first
+        {"id": "c-adj", "symbol": "AMD1", "expiration_dates": ["2026-10-02"]},
+        {"id": "c-std", "symbol": "AMD", "expiration_dates": ["2026-10-09", "2026-10-16"], "settle_on_open": False},
+    ]}
+    rh = SchemaRH({"get_option_chains": live})
+    exps = asyncio.run(RobinhoodChains(rh, clock=lambda: NOW).expirations("AMD"))
+    assert rh.calls == [("get_option_chains", {"underlying_symbol": "AMD"})]
+    assert exps == [date(2026, 10, 9), date(2026, 10, 16)]
+
+
+def test_expirations_fall_back_to_the_only_chain_when_symbols_differ():
+    rh = SchemaRH({"get_option_chains": {"chains": [{"symbol": "BRK.B", "expiration_dates": ["2026-10-09"]}]}})
+    assert asyncio.run(RobinhoodChains(rh, clock=lambda: NOW).expirations("BRK-B")) == [date(2026, 10, 9)]
+
+
+def test_strike_listing_and_quotes_pass_the_live_schemas(tmp_path):
+    inst = {"instruments": instruments("2026-10-09", [100])["results"]}
+    quote = {"results": [{"quote": {"instrument_id": "c100-2026-10-09", "bid_price": "1.00", "ask_price": "1.20",
+                                    "implied_volatility": "0.41"}}]}
+    rh = SchemaRH({"get_option_instruments": inst, "get_option_quotes": quote})
+    ch = RobinhoodChains(rh, cache_dir=tmp_path, clock=lambda: NOW)
+
+    async def go():
+        ks = await ch.strikes("AMD", date(2026, 10, 9))
+        return ks, await ch.quotes([ch.contract("AMD", date(2026, 10, 9), 100.0, "call")])
+    ks, (q,) = asyncio.run(go())
+    assert ks == {100.0}
+    assert rh.calls[0] == ("get_option_instruments", {"chain_symbol": "AMD", "expiration_dates": "2026-10-09",
+                                                      "state": "active"})
+    assert q.iv == 0.41 and q.mark == 1.1

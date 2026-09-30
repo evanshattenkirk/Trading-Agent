@@ -258,7 +258,7 @@ def test_e2_retries_inside_its_window_and_trades_once():
 
 def test_open_risk_cap_counts_other_books():
     h, _, ch = make(cal=(AMD_EV,))
-    h.other_risk = lambda: 1100.0
+    h.other_risk = lambda: h.account.c["open_risk_cap"] - 400.0            # the $472 straddle no longer fits
     tick(h, ch, at(MON, 14, 45))
     assert h.book.open == [] and "open-risk cap" in h.ej.decisions()[0]["reason"]
 

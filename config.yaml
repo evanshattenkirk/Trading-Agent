@@ -150,7 +150,7 @@ recorder:
 # Paper books (HANDOFF section 9). Book A runs in engine.py; B, C and D run in agentdesk/books/ next to it.
 # Book E runs in agentdesk/books/e_host.py. Every B-G fill is simulated; paper_only is enforced.
 books:
-  account: {paper_balance: 10000, open_risk_cap: 1500, per_position_max_loss: 300, fee_per_leg: 0.04}   # $10k paper (section 11 row); cap = sum of open max losses incl. A
+  account: {paper_balance: 10000, open_risk_cap: 2500, per_position_max_loss: 300, fee_per_leg: 0.04}   # $10k paper (section 11 row); cap = sum of open max losses incl. A
   fills: {model: mid_offset, cents_per_leg: 1, reprice_step_c: 1, max_reprices: 4, max_quote_age_s: 5, max_leg_spread_pct: 0.25, tick_exempt: 0.02}
   history_days: 20        # 1m history the books load at startup (D's 14-day quiet filter, C's indicators)
   A_macd_calls:    {enabled: true,  paper_only: true,  risk_per_trade: 500, max_contracts: 5, daily_loss: 400}
@@ -190,7 +190,7 @@ books:
   # 10:30 ET, held up to 3 days. P: put spread at 15:40 ET on a name up >= 3% on >= 1.8x average volume, held to the
   # next day's 15:40 ET. Nearest expiry 5-12 days out; long leg at the money, short leg one straddle-width out (>= 2
   # strikes); skip above 60% debit/width. Exits: 2x debit or 80% of width, stop 0.5x debit, C's day-1 stop below the
-  # OR low, the time exit. Never held through a report. Limits proposed 2026-09-29: $200 max debit, 3 open, -$300 day.
+  # OR low, the time exit. Never held through a report. Limits (Evan, 2026-09-29): $750 max debit, 3 open, -$300 day.
   F2_debit_spreads: {enabled: true, paper_only: true,
                      universe: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, AVGO, TSLA, JPM, V, MA, UNH, XOM, LLY, COST, NFLX,
                                 AMD, ORCL, CRM, ADBE, BAC, WMT, HD, DIS, INTC, QCOM, MU, PLTR, SMCI, ARM, MRVL, COIN,
@@ -201,7 +201,7 @@ books:
                      dte: [5, 12], width_straddle_x: 1.0, min_steps: 2, max_debit_width: 0.60,
                      max_leg_spread_pct: 0.08, tick_exempt: 0.05, fill_frac: 0.35,
                      take_profit_x: 2.0, take_profit_width: 0.80, stop_x: 0.50,
-                     max_debit: 200, max_open: 3, max_new_day: 3, daily_loss: 300, poll_sec: 5, require_calendar: true}
+                     max_debit: 750, max_open: 3, max_new_day: 3, daily_loss: 300, poll_sec: 5, require_calendar: true}
   # Book G = research candidate F3 (research/strategies_new_prereg.md, rules frozen; Evan approved paper 2026-09-28).
   # 0DTE/1DTE SPY ATM call calendar, Mon-Thu when the next session is tomorrow. Correlates 0.84 with D: one bet, compare side by side.
   G_call_calendar: {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, max_debit: 3.00, take_profit_pct: 0.25, stop_pct: 0.35, close_ct: "14:25"}

@@ -58,6 +58,13 @@ def test_structure_check_sizing_and_exits():
     assert S.tp_stop(2.0, 2.5, 10.0, C2) is None
 
 
+def test_configured_limits_evan_set_2026_09_29():
+    assert C2["max_debit"] == 750 and BASE["books"]["account"]["open_risk_cap"] == 2500
+    n, why = S.lots_for(2.40, C2)
+    assert n == 3 and "max $750" in why
+    assert S.lots_for(7.60, C2)[0] == 0                                    # one lot above $750: skipped
+
+
 def test_exit_days_count_trading_days_and_skip_holidays():
     assert S.exit_day(THU, S.CALL, set(), C2) == MON          # Thu, Fri, Mon: day 3
     assert S.exit_day(THU, S.PUT, set(), C2) == FRI
