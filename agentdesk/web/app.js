@@ -1,6 +1,8 @@
-/* AgentDesk dashboard. Consumes engine events from the local websocket, or replays a recorded session. */
+/* AgentDesk dashboard. Consumes engine events from the local websocket, replays a recorded session, or (review)
+   shows the last saved session read-only while the engine is off. */
 (function () {
   const CFG = window.AGENTDESK || { source: 'ws' };
+  const READ_ONLY = CFG.source === 'replay' || CFG.source === 'review';
   const $ = (id) => document.getElementById(id);
   const TF_SEC = { '1m': 60, '5m': 300, '15m': 900 };
   const DESK_ORDER = ['macro', 'rates', 'fed', 'vol', 'quant', 'risk', 'tape', 'ops', 'earnings', 'postmortem'];
@@ -340,8 +342,8 @@
 
   /* ------------------------------------------------------------------ renderers */
   function renderHeader() {
-    $('mode').textContent = CFG.source === 'replay' ? 'DEMO REPLAY' : S.mode.toUpperCase();
-    $('mode').className = 'pill mode ' + (CFG.source === 'replay' ? 'replay' : S.mode);
+    $('mode').textContent = CFG.source === 'replay' ? 'DEMO REPLAY' : CFG.source === 'review' ? `REVIEW · ${S.mode.toUpperCase()}` : S.mode.toUpperCase();
+    $('mode').className = 'pill mode ' + (CFG.source === 'ws' ? S.mode : CFG.source);
     $('s-px').textContent = px(S.price);
     const chg = S.price && S.prevClose ? S.price - S.prevClose : null;
     $('s-chg').textContent = chg == null ? '' : `${chg >= 0 ? '+' : '−'}${Math.abs(chg).toFixed(2)} (${(chg / S.prevClose * 100).toFixed(2)}%)`;
@@ -548,7 +550,7 @@
     const pend = items.filter((p) => p.status === 'pending').length;
     $('props-state').textContent = pend ? `${pend} awaiting you` : items.length ? 'Up to date' : 'None';
     $('props-state').className = 'pill ' + (pend ? 'acc' : '');
-    const demo = CFG.source === 'replay';
+    const demo = READ_ONLY;
     const scopeLbl = { trade: 'Next trade', day: 'Today', standing: 'Standing change', new_strategy: 'New strategy' };
     $('props').innerHTML = items.slice(0, 8).map((p) => `<li class="${p.status === 'pending' ? 'pending' : ''}">
       <div class="ph"><span class="pt">${esc(p.title)}</span><span class="pill ${p.status === 'applied' ? 'good' : p.status === 'pending' ? 'acc' : ''}">${scopeLbl[p.scope] || p.scope}</span></div>
@@ -557,7 +559,7 @@
       ${Object.keys(p.params || {}).length ? `<span class="pm">${Object.entries(p.params).map(([k, v]) => `<code>${esc(k)} = ${esc(JSON.stringify(v))}</code>`).join(' ')}</span>` : ''}
       ${p.spec ? `<span class="pm"><b>Rules:</b> ${esc(p.spec)}</span>` : ''}
       ${p.evidence ? `<span class="pm"><b>Evidence:</b> ${esc(p.evidence)}</span>` : ''}
-      ${p.status === 'pending' ? `<div class="pa"><button class="btn" data-approve="${p.id}" ${demo ? 'disabled title="Approvals work in the local app"' : ''}>Approve</button><button class="btn" data-reject="${p.id}" ${demo ? 'disabled' : ''}>Reject</button></div>` : ''}
+      ${p.status === 'pending' ? `<div class="pa"><button class="btn" data-approve="${p.id}" ${demo ? `disabled title="${CFG.source === 'review' ? 'Approvals work while the engine runs' : 'Approvals work in the local app'}"` : ''}>Approve</button><button class="btn" data-reject="${p.id}" ${demo ? 'disabled' : ''}>Reject</button></div>` : ''}
     </li>`).join('') || '<li class="pm">Desks can pitch per-trade or per-day tweaks (applied within set limits), standing changes and new strategies (both wait for you).</li>';
     $('props').querySelectorAll('[data-approve]').forEach((b) => b.onclick = () => post(`/api/proposals/${b.dataset.approve}/approve`));
     $('props').querySelectorAll('[data-reject]').forEach((b) => b.onclick = () => post(`/api/proposals/${b.dataset.reject}/reject`));
@@ -681,6 +683,42 @@
     }
   }
 
+  /* review: the last saved session (python -m agentdesk review), read-only */
+  const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+  const dayName = (d) => dayFmt.format(new Date(d + 'T12:00:00Z'));
+  async function loadReview(day) {
+    let r;
+    try { r = await fetch('/api/review' + (day ? '?day=' + encodeURIComponent(day) : ''), { cache: 'no-store' }); }
+    catch (e) { banner('<b>Could not reach the review server.</b>'); return; }
+    if (!r.ok) {
+      banner('<b>The engine is off</b> and no session has been saved yet. The live view starts at 08:10 CT on the next trading day; after that, this page shows the day read-only.');
+      return;
+    }
+    const data = await r.json();
+    Object.assign(S, { ts: 0, bars: { '144t': [], '1m': [], '5m': [], '15m': [] }, positions: new Map(), targets: new Map(), closed: [], skips: [], marks: [], feed: [], crew: { briefs: {}, offline: true, directive: null }, signal: null, risk: null, l2: null, conviction: null, proposals: new Map(), books: [], account: null, combos: new Map(), bookClosed: [] });
+    S.bulk = true;             // the saved feed events rebuild the Activity tab; the snapshot then sets the state
+    for (const e of data.events || []) { try { apply(e); } catch (err) { console.warn('saved event skipped', e.type, err); } }
+    S.bulk = false;
+    loadSnapshot({ ...data.snapshot, type: 'snapshot' });
+    S.ts = data.snapshot.ts || S.ts;
+    S.agent = { activity: 'offline', text: 'Engine off' };
+    if (office) { office.queue.length = 0; office.onAgent('offline', 'Engine off'); }
+    window.__reviewSnapshot = data.snapshot;          // book_f.js reads it once mounted, or now if it already is
+    if (window.AgentDeskBookF) window.AgentDeskBookF.fromSnapshot(data.snapshot);
+    const sel = $('rv-day');
+    sel.innerHTML = (data.days || []).map((d) => `<option value="${esc(d)}"${d === data.day ? ' selected' : ''}>${esc(dayName(d))}</option>`).join('');
+    sel.onchange = () => loadReview(sel.value);
+    const latest = data.days && data.day === data.days[0];
+    banner(`<b>Review.</b> The engine is off, so this is the ${esc(dayName(data.day))} session as saved at ${hm(data.saved_ts)} CT, read-only. ${latest ? 'The live view comes back at 08:10 CT on the next trading day.' : 'Pick another day above.'}`);
+    mark('all', 'chart');
+  }
+  function watchForEngine() {    // when the engine takes the port back (08:10 CT), switch to the live page
+    setInterval(async () => {
+      try { const t = await (await fetch('/config.js', { cache: 'no-store' })).text(); if (!t.includes("'review'")) location.reload(); }
+      catch (e) { /* in between servers */ }
+    }, 30000);
+  }
+
   function banner(html) { const b = $('banner'); if (!html) { b.hidden = true; return; } b.innerHTML = html; b.hidden = false; }
 
   /* ------------------------------------------------------------------ controls */
@@ -739,6 +777,10 @@
       replay = new Replay(evs);
       replay.startTs = CFG.startTs || evs[0].ts;
       replay.seek(replay.startTs);
+    } else if (CFG.source === 'review') {
+      $('live').hidden = true; $('review').hidden = false;
+      await loadReview(null);
+      watchForEngine();
     } else {
       connectWS();
     }

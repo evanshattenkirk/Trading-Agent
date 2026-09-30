@@ -26,6 +26,7 @@ log = logging.getLogger("agentdesk.archive")
 # what app.js turns into Activity lines (plus the state those handlers touch; the snapshot overrides that state)
 FEED_EVENTS = frozenset({"order", "fill", "position", "trade_closed", "skip", "crew", "proposal", "log",
                          "book_order", "book_position", "book_closed", "book_skip", "f_position"})
+POSITION_EVENTS = frozenset({"book_position", "position", "f_position"})   # saved only when they open or close
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SNAP_SUFFIX, EVENTS_SUFFIX = ".snapshot.json", ".events.jsonl"
 
@@ -74,8 +75,9 @@ class EventLog:
         self.failed = False
 
     def __call__(self, msg: dict) -> None:
-        if msg.get("type") not in self.types:
-            return
+        kind = msg.get("type")
+        if kind not in self.types or (kind in POSITION_EVENTS and msg.get("event") not in ("open", "closed")):
+            return                               # position mark updates come with every quote
         try:
             day = str(session_date(float(msg["ts"])))
             if day != self.day or self.fh is None:

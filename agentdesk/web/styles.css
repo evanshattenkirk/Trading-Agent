@@ -67,7 +67,7 @@ table.legs td { padding: 2px 4px; border-bottom: 1px solid var(--line); color: v
 .stat .v { font-family: var(--mono); font-size: 15px; font-weight: 500; }
 .stat .d { font-family: var(--mono); font-size: 11px; }
 .controls { display: flex; gap: 8px; flex-wrap: wrap; }
-.replay, .live { display: flex; gap: 6px; align-items: center; }
+.replay, .live, .review { display: flex; gap: 6px; align-items: center; }
 .btn { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-2); border-radius: var(--r); padding: 6px 11px; cursor: pointer; }
 .btn:hover { border-color: var(--ink-3); }
 .btn:focus-visible, .tf:focus-visible, .tab:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -82,7 +82,7 @@ table.legs td { padding: 2px 4px; border-bottom: 1px solid var(--line); color: v
 .pill.acc { background: var(--acc-bg); color: var(--accent); border-color: transparent; }
 .pill.mode.live { background: var(--dn); color: #fff; }
 .pill.mode.shadow { background: var(--warn-bg); color: var(--warn); }
-.pill.mode.sim, .pill.mode.replay { background: var(--acc-bg); color: var(--accent); }
+.pill.mode.sim, .pill.mode.replay, .pill.mode.review { background: var(--acc-bg); color: var(--accent); }
 
 .confirm, .banner { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--dn-bg); flex-wrap: wrap; }
 .banner { background: var(--acc-bg); color: var(--ink-2); font-size: 12px; }

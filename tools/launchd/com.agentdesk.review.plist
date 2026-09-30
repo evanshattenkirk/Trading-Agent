@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: tools/install_paper.sh fills in __APP__ and __HOME__ and loads it as a per-user LaunchAgent.
+     The after-hours dashboard (python -m agentdesk review): the last saved paper session, read-only, on the
+     engine's port whenever the engine isn't running. It steps aside by itself while the engine (or
+     paper_session.sh) holds a claim in ~/.agentdesk/claims, so the job simply stays up; KeepAlive restarts it after
+     a crash, RunAtLoad starts it at login and after a reboot. It makes no broker, data or Claude calls. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agentdesk.review</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__APP__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>agentdesk</string>
+    <string>--config</string>
+    <string>__APP__/src/config.yaml</string>
+    <string>review</string>
+  </array>
+  <key>WorkingDirectory</key><string>__APP__/src</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>__HOME__/.agentdesk/review/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.agentdesk/review/launchd.err.log</string>
+</dict>
+</plist>

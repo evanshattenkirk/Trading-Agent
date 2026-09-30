@@ -139,3 +139,14 @@ def test_load_day_unknown_or_bad_day(tmp_path):
 
 def test_missing_dir_lists_nothing(tmp_path):
     assert list_days(tmp_path / "nope") == []
+
+
+def test_position_mark_updates_are_not_saved(tmp_path):
+    """Position updates arrive with every quote (thousands a day); only opens and closes make Activity lines."""
+    log = EventLog(tmp_path)
+    for kind in ("book_position", "position", "f_position"):
+        for ev in ("open", "update", "scale", "closed"):
+            log({"type": kind, "ts": ts("2026-09-29"), "event": ev, "pos": {"id": 1}})
+    log.close()
+    kept = [(e["type"], e["event"]) for e in map(json.loads, (tmp_path / "2026-09-29.events.jsonl").read_text().splitlines())]
+    assert kept == [(k, ev) for k in ("book_position", "position", "f_position") for ev in ("open", "closed")]
