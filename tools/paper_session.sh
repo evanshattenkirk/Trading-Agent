@@ -2,7 +2,7 @@
 # One market day of the engine in PAPER mode. launchd (com.agentdesk.paper) starts it at 08:10 CT on weekdays.
 # Places no orders: forces --mode paper and refuses to start unless config says live_enabled: false.
 # Skips NYSE holidays, restarts the engine (up to 5 times) if it dies before 15:00 CT, stops it at 15:10 CT,
-# and keeps the Mac from idle-sleeping while it runs. Option quotes are left to the standalone recorder
+# and keeps the Mac from idle-sleeping while it runs. The after-hours review page gives the port back at start. Option quotes are left to the standalone recorder
 # (com.agentdesk.recorder), which writes the same journal, so the engine's own recorder is switched off.
 set -u
 APP="$HOME/.agentdesk/paper-app"
@@ -18,6 +18,15 @@ HOLIDAYS=(2026-11-26 2026-12-25 2027-01-01 2027-01-18 2027-02-15 2027-03-26 2027
           2027-09-06 2027-11-25 2027-12-24)
 if (( ${HOLIDAYS[(Ie)$DAY]} )); then log "market holiday, not running"; exit 0; fi
 if [ "$(now_ct)" -ge 1500 ]; then log "started after 15:00 CT (Mac asleep at 08:10?), not running today"; exit 0; fi
+# Claim the dashboard port so the after-hours review page (com.agentdesk.review) steps aside; the claim goes when
+# this script exits, and one left by a crash is ignored because its process is gone.
+CLAIMS="$HOME/.agentdesk/claims"          # review.claims_dir in config.yaml
+mkdir -p "$CLAIMS"; : > "$CLAIMS/$$"; trap 'rm -f "$CLAIMS/$$"' EXIT
+for i in {1..20}; do
+  lsof -iTCP:8765 -sTCP:LISTEN >/dev/null 2>&1 || break
+  [ $i -eq 1 ] && log "waiting for the review page to free port 8765"
+  sleep 1
+done
 if lsof -iTCP:8765 -sTCP:LISTEN >/dev/null 2>&1; then log "port 8765 already in use (another engine running?), not starting"; exit 1; fi
 
 caffeinate -i -w $$ &

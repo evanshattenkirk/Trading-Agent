@@ -204,6 +204,7 @@ Book E buys the implied-volatility run-up into an earnings report and always sel
 - E holds for days, so its positions live in `e_positions`, are restored when the engine starts, and are **not** sold at shutdown. The kill switch, safety halts, an E halt and the dashboard's Flatten button still sell them.
 - The IV data comes from the standalone quote recorder: from 13:30 CT it lists strikes (≤ 0.5 calls/s), and from 14:50 CT it records the ATM IV per name (≤ 1 call/s) into `journal.iv_history`. `python -m agentdesk iv-snapshot` runs that pass once by hand.
 - The paper session and the recorder run as launchd jobs from pinned copies of the code; after updating, redeploy both with `tools/install_recorder.sh && tools/install_paper.sh`.
+- After hours the same address shows the last paper session read-only (`python -m agentdesk review`, launchd `com.agentdesk.review`, installed by `tools/install_paper.sh`): chart, books, trades, activity and crew as saved at the close, with no controls and no broker calls. Each paper/shadow/live run saves `~/.agentdesk/sessions/YYYY-MM-DD.snapshot.json` (every 60 s and at shutdown) and `.events.jsonl`, and claims the port in `~/.agentdesk/claims` so the review page steps aside while the engine runs.
 
 ## Books F1 and F2: stocks in play (paper)
 
@@ -235,6 +236,7 @@ Book E buys the implied-volatility run-up into an earnings report and always sel
 agentdesk/   engine.py strategy.py indicators.py bars.py strikes.py levels.py exits.py risk.py lifecycle.py
              crew.py desks.py proposals.py      research crew (Claude) and its proposal book
              server.py web/                     FastAPI + websocket dashboard and the pixel office
+             archive.py review.py claims.py     saved sessions and the read-only after-hours dashboard
              brokers/   paper, robinhood (options), paper_equity, robinhood_equity
              feeds/     sim, alpaca, massive, prints (bad-print filter), f_data
              books/     host, account, group, fills, plus one module per book (iron_fly, orb_bull_put,

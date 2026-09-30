@@ -218,4 +218,10 @@ server:
   port: 8765
   token: null             # null = new random token each run (or set AGENTDESK_TOKEN in .env)
 
+review:                   # after-hours dashboard: python -m agentdesk review (launchd com.agentdesk.review), read-only
+  sessions_dir: ~/.agentdesk/sessions    # each paper/shadow/live run saves YYYY-MM-DD.snapshot.json + .events.jsonl here
+  claims_dir: ~/.agentdesk/claims        # a run (and tools/paper_session.sh) claims the port here; review steps aside
+  snapshot_every_sec: 60
+  modes: [paper, shadow, live]           # sim runs are not saved
+
 journal_path: ~/.agentdesk/journal.db

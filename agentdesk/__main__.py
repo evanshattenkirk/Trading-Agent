@@ -1,6 +1,7 @@
 """AgentDesk CLI.
 
   python -m agentdesk run [--mode sim|paper|shadow|live] [--speed 60]   dashboard + engine
+  python -m agentdesk review                                             after-hours dashboard: last saved session, read-only
   python -m agentdesk rh-inspect                                         connect to Robinhood MCP, dump tool schemas (read-only)
   python -m agentdesk backtest --days 20 [--ticks] [--options model|alpaca]
   python -m agentdesk record-demo --seed 21 --out demo.jsonl             record a sim day for the demo page
@@ -12,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
+import os
 import sys
 import webbrowser
 from datetime import date
@@ -110,6 +113,39 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
     return engine, bus
 
 
+@contextlib.contextmanager
+def dashboard_claim(cfg):
+    """Claims the dashboard port for this process, so the after-hours review server steps aside (agentdesk/claims.py)."""
+    from . import claims
+    from .archive import review_cfg
+    path = claims.claim(os.path.expanduser(review_cfg(cfg)["claims_dir"]))
+    try:
+        yield path
+    finally:
+        claims.release(path)
+
+
+async def run_session(engine, bus, server, cfg, mode: str, host: str, port: int, **serve_kw):
+    """Waits for the review server to free the port, saves the session for review (paper/shadow/live), then serves
+    the engine and dashboard until shutdown; the snapshot is saved once more after shutdown sold what was open."""
+    from . import claims, lifecycle
+    from .archive import attach, review_cfg
+    if not await claims.wait_port_free(host, port, timeout=15):
+        logging.getLogger("agentdesk").warning("port %s still in use after 15 s; starting anyway", port)
+    archive = attach(cfg, mode, bus)
+    saver = asyncio.create_task(archive.run(engine, float(review_cfg(cfg)["snapshot_every_sec"])),
+                                name="session-archive") if archive else None
+    try:
+        return await lifecycle.serve(engine, server, getattr(engine, "closers", ()), **serve_kw)
+    finally:
+        if saver:
+            saver.cancel()
+        if archive:
+            archive.save(engine)
+            for tap in bus.taps:
+                getattr(tap, "close", lambda: None)()
+
+
 def cmd_run(args) -> None:
     import uvicorn
     from . import lifecycle
@@ -117,28 +153,44 @@ def cmd_run(args) -> None:
 
     cfg = load_config(args.config)
     mode = args.mode or cfg["mode"]
-    engine, bus = build(cfg, mode, args.speed, args.seed, args.day)
-    engine.risk.clear_halt_on_restore = args.clear_halt
+    with dashboard_claim(cfg):
+        engine, bus = build(cfg, mode, args.speed, args.seed, args.day)
+        engine.risk.clear_halt_on_restore = args.clear_halt
+        host, port = cfg["server"]["host"], cfg["server"]["port"]
+        token = resolve_token(cfg["server"])
+        app = create_app(engine, bus, token=token, allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])])
+        if host not in LOCAL_HOSTS:
+            logging.getLogger("agentdesk").warning("dashboard bound to %s: reachable from the network (controls still "
+                                                   "need the token)", host)
+        link = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/#token={token}"
+
+        async def main():
+            server = lifecycle.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
+                                                     timeout_graceful_shutdown=2))
+            print(f"\n  AgentDesk [{mode.upper()}] -> {link}\n  (open this link for the controls; Ctrl-C to stop)\n",
+                  flush=True)
+            if not args.no_browser:
+                webbrowser.open(link)
+            return await run_session(engine, bus, server, cfg, mode, host, port)
+
+        timer = asyncio.run(main())
+        if timer:
+            timer.cancel()
+
+
+def cmd_review(args) -> None:
+    """After-hours dashboard: the last saved session, read-only, whenever the engine isn't running."""
+    from .archive import review_cfg
+    from .review import create_review_app, serve_forever
+
+    cfg = load_config(args.config)
+    rv = review_cfg(cfg)
     host, port = cfg["server"]["host"], cfg["server"]["port"]
-    token = resolve_token(cfg["server"])
-    app = create_app(engine, bus, token=token, allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])])
-    if host not in LOCAL_HOSTS:
-        logging.getLogger("agentdesk").warning("dashboard bound to %s: reachable from the network (controls still need "
-                                               "the token)", host)
-    link = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/#token={token}"
-
-    async def main():
-        server = lifecycle.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
-                                                 timeout_graceful_shutdown=2))
-        print(f"\n  AgentDesk [{mode.upper()}] -> {link}\n  (open this link for the controls; Ctrl-C to stop)\n",
-              flush=True)
-        if not args.no_browser:
-            webbrowser.open(link)
-        return await lifecycle.serve(engine, server, engine.closers)
-
-    timer = asyncio.run(main())
-    if timer:
-        timer.cancel()
+    app = create_review_app(os.path.expanduser(rv["sessions_dir"]),
+                            allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])])
+    print(f"\n  AgentDesk review -> http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/  "
+          f"(read-only; steps aside while the engine runs)\n", flush=True)
+    asyncio.run(serve_forever(app, host, port, os.path.expanduser(rv["claims_dir"])))
 
 
 def cmd_record(args) -> None:
@@ -262,6 +314,9 @@ def main() -> None:
     r.add_argument("--clear-halt", action="store_true",
                    help="lift today's saved halt (kill switch, safety halt); day P&L, trade count and limits carry over")
     r.set_defaults(fn=cmd_run)
+
+    rv = sub.add_parser("review", help="after-hours dashboard: the last saved session, read-only (launchd runs this)")
+    rv.set_defaults(fn=cmd_review)
 
     rec = sub.add_parser("record-demo")
     rec.add_argument("--seed", type=int, default=21)

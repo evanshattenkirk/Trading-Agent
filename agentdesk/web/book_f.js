@@ -92,6 +92,11 @@
 
   function connect() {
     if (!/^https?:$/.test(location.protocol)) return;
+    if ((window.AGENTDESK || {}).source === 'review') {           // no engine after hours: use the saved snapshot app.js loaded
+      window.AgentDeskBookF = { fromSnapshot: (sn) => { S.positions = {}; fromSnapshot(sn); } };   // a new day replaces the old
+      if (window.__reviewSnapshot) window.AgentDeskBookF.fromSnapshot(window.__reviewSnapshot);
+      return;
+    }
     fetch('/api/state').then((r) => (r.ok ? r.json() : null)).then(fromSnapshot).catch(() => {});
     let ws;
     try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); } catch (_) { return; }
