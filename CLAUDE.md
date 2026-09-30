@@ -57,7 +57,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (571 pass today; the full run takes about 2.5 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (590 pass today; the full run takes about 2.5 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.

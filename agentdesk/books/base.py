@@ -19,7 +19,7 @@ class Leg:
 
 @dataclass
 class OrderIntent:
-    legs: list[Leg]         # sold legs first for a credit structure, so the order's direction comes out right
+    legs: list[Leg]         # any order; the review's direction comes from `credit`, not from which leg is first
     credit: bool
     width: float            # widest wing in $: max loss per share = width - credit
     reason: str

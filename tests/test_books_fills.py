@@ -8,6 +8,7 @@ from agentdesk.books.fills import ComboExecutor, rh_legs
 from agentdesk.books.legs import fetch_quotes
 from agentdesk.brokers.paper import PaperBroker
 from agentdesk.brokers.robinhood import order_args
+from agentdesk.exits import Contract
 
 FLY = [Leg("call", 765, "sell"), Leg("put", 765, "sell"), Leg("call", 770, "buy"), Leg("put", 760, "buy")]
 TIGHT = [(2.00, 2.02), (1.90, 1.92), (0.40, 0.41), (0.35, 0.36)]      # mid 3.16, natural 3.13
@@ -135,3 +136,78 @@ def test_fetch_quotes_treats_a_missing_bid_as_zero():                 # review #
     src = RHQ(lambda ids: {"results": [{"instrument_id": i, "quote": {"bid_price": None, "ask_price": "0.01"}} for i in ids]})
     qs = run(fetch_quotes(src, contracts(FLY)))
     assert all(q is not None and q.bid == 0.0 and q.ask == 0.01 for q in qs)
+
+
+# The review's direction comes from the position's credit flag, never from leg order. E2 and G list their sold
+# (near-expiry) leg first but are paid debits; before this fix their shadow reviews went out as "credit".
+def g_legs():
+    from datetime import date
+    from books_fakes import ct_ts
+    from agentdesk.books.base import MarketContext
+    from agentdesk.books.call_calendar import CallCalendar
+    from agentdesk.config import load_config
+    s = CallCalendar(load_config()["books"]["G_call_calendar"])
+    now = ct_ts(9, 0)
+    return s.on_clock(now, MarketContext(now=now, day=date(2026, 9, 28), spot=765.3, vwap=765.3)).legs
+
+
+def e_legs(structure):
+    from datetime import date
+    from agentdesk.books.earnings_iv import legs_for
+    return legs_for(structure, 150.0, date(2026, 10, 1), {"short": date(2026, 10, 9), "long": date(2026, 10, 16)})
+
+
+def f2_legs():
+    from agentdesk.books.f2_spreads import legs_for
+    return legs_for("C", 150.0, 155.0, 7)
+
+
+def c_legs():
+    return [Leg("put", 760, "sell"), Leg("put", 758, "buy")]            # orb_bull_put.py
+
+
+def d_legs():
+    return [Leg("call", 775, "sell"), Leg("put", 755, "sell"), Leg("call", 777, "buy"), Leg("put", 753, "buy")]
+
+
+BOOK_LEGS = {
+    "B": (lambda: FLY, True), "C": (c_legs, True), "D": (d_legs, True),
+    "E1": (lambda: e_legs("straddle_t3"), False), "E2": (lambda: e_legs("calendar_t10"), False),
+    "F2": (f2_legs, False), "G": (g_legs, False),
+}
+
+
+@pytest.mark.parametrize("book", sorted(BOOK_LEGS))
+@pytest.mark.parametrize("opening", [True, False])
+def test_review_direction_follows_the_credit_flag(book, opening):
+    make, credit = BOOK_LEGS[book]
+    legs = make()
+    rh = FakeRH()
+    ex = ComboExecutor(broker(quotes(TIGHT)), FILLS, reviewer=rh)
+    run(ex._review(legs, contracts(legs), 1, 1.00, opening, credit))
+    receiving = credit == opening
+    assert rh.calls[0][0] == "review_option_order"
+    assert rh.calls[0][1]["direction"] == ("credit" if receiving else "debit")
+
+
+def test_g_calendar_shadow_review_is_a_debit_and_fill_stays_paper():
+    legs = g_legs()
+    assert legs[0].side == "sell"                                       # leg order is unchanged
+    fq = FakeQuotes()
+    fq.set("call", 765, 1.00, 1.02, expiry="2026-09-28")
+    fq.set("call", 765, 2.00, 2.02, expiry="2026-09-29")
+    cs = [Contract("SPY", "2026-09-28", 765.0, "call"), Contract("SPY", "2026-09-29", 765.0, "call")]
+    rh = FakeRH()
+    r = run(ComboExecutor(broker(fq), FILLS, reviewer=rh).work(legs, cs, 1, False, True, False, 100.0))
+    assert [t for t, _ in rh.calls] == ["review_option_order"]
+    assert rh.calls[0][1]["direction"] == "debit"
+    assert r.status == "filled"                                         # the fill itself is still paper
+
+
+def test_order_args_explicit_direction_overrides_leg_order():
+    legs = [{"option_id": "S", "side": "sell", "position_effect": "open"},
+            {"option_id": "L", "side": "buy", "position_effect": "open"}]
+    assert order_args("acct", legs, 1, 1.0, True)["direction"] == "credit"              # inferred
+    assert order_args("acct", legs, 1, 1.0, True, direction="debit")["direction"] == "debit"
+    single = order_args("acct", legs[:1], 1, 1.0, True, direction="debit")
+    assert "direction" not in single                                                     # single leg: none

@@ -542,11 +542,14 @@ class RobinhoodQuotes(QuoteSource):
         return q
 
 
-def order_args(account: str, legs: list[dict], qty: int, price: float, review: bool, symbol: str = "SPY") -> dict:
+def order_args(account: str, legs: list[dict], qty: int, price: float, review: bool, symbol: str = "SPY",
+               direction: str | None = None) -> dict:
+    """`direction` ("debit"/"credit") should come from the position's credit flag; without it a multi-leg order
+    falls back to the first leg's side, which is wrong for a debit calendar that lists its sold leg first."""
     a = {"account_number": account, "legs": legs, "quantity": str(int(qty)), "price": f"{price:.2f}",
          "type": "limit", "time_in_force": "gfd"}
     if len(legs) > 1:
-        a["direction"] = "debit" if legs[0]["side"] == "buy" else "credit"
+        a["direction"] = direction or ("debit" if legs[0]["side"] == "buy" else "credit")
     if review:
         a.update({"chain_symbol": symbol, "underlying_type": "equity"})
     return a

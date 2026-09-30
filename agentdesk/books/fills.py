@@ -9,8 +9,8 @@ from .combo import ComboQuote
 
 
 def rh_legs(legs, ids, opening: bool) -> list[dict]:
-    """Robinhood legs. Closing flips every side, so a credit structure closes as a debit (order_args reads the
-    direction from the first leg)."""
+    """Robinhood legs. Closing flips every side. The order's direction comes from the position's credit flag
+    (ComboExecutor._review), not from leg order: E2 and G list their sold leg first but are debits."""
     out = []
     for l, oid in zip(legs, ids):
         side = l.side if opening else ("buy" if l.side == "sell" else "sell")
@@ -42,7 +42,7 @@ class ComboExecutor:
                 limit = max(limit, nat) if receiving else min(limit, nat)
             limit = round(limit, 2)
             if self.reviewer is not None and review is None:
-                review = await self._review(legs, contracts, qty, limit, opening)
+                review = await self._review(legs, contracts, qty, limit, opening, credit)
             res = await self.broker.submit_combo(legs, contracts, qty, limit, credit, opening, now)
             tries += 1
             res.raw = {**res.raw, "ref_id": ref, "limit": limit, "tries": tries}
@@ -50,11 +50,13 @@ class ComboExecutor:
             if res.status != "unfilled" or res.filled_qty or limit == round(nat, 2):
                 return res
 
-    async def _review(self, legs, contracts, qty: int, limit: float, opening: bool) -> dict:
+    async def _review(self, legs, contracts, qty: int, limit: float, opening: bool, credit: bool) -> dict:
         from ..brokers.robinhood import _short, order_args
+        direction = "credit" if credit == opening else "debit"      # opening a credit or closing a debit receives
         try:
             ids = [await self.reviewer.instrument_id(c) for c in contracts]
-            args = order_args(self.reviewer.account, rh_legs(legs, ids, opening), qty, limit, True, contracts[0].symbol)
+            args = order_args(self.reviewer.account, rh_legs(legs, ids, opening), qty, limit, True, contracts[0].symbol,
+                              direction=direction)
             return _short(await self.reviewer.call("review_option_order", args))
         except Exception as ex:
             return {"error": str(ex)[:200]}
