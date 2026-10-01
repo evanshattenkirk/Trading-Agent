@@ -21,6 +21,7 @@ from __future__ import annotations
 import copy
 import itertools
 import json
+import os
 import re
 import time
 from datetime import date, datetime
@@ -271,6 +272,8 @@ def _set_list_override(cur: dict, key: str, value) -> None:
 
 
 def apply_overrides(cfg, path: Path | None = None) -> None:
+    if path is None and os.environ.get("AGENTDESK_IGNORE_OVERRIDES") == "1":     # the test suite (tests/conftest.py)
+        return
     path = path or ROOT / "overrides.yaml"
     if not path.exists():
         return

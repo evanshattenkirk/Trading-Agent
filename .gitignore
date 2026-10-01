@@ -22,3 +22,6 @@ rh_oauth*.json
 *.sqlite3
 *.db-journal
 *.log
+
+# standing changes approved in the dashboard (machine state, written by the engine)
+overrides.yaml
