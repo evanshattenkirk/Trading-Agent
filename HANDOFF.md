@@ -240,8 +240,8 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
 - Flatten at 14:40 CT, 5 minutes before sellout, before high-impact events, or on the kill switch.
 
 **Risk:**
-- −$400 day halts trading.
-- Profit lock: after +$600, giving back 40% halts trading.
+- −$400 day halts trading (book A only: A flattens and stops; the other books keep their own limits, Evan 2026-10-01).
+- Profit lock: after +$600, giving back 40% halts trading (book A only).
 - 12 trades a day, one position at a time.
 - 2 straight losses start a 15-minute cooldown.
 - Event blackouts from 10 minutes before to 20 minutes after.
@@ -461,7 +461,7 @@ The rule behind the table: max per trade ≈ 15% of the account, capped at $500;
 
 - Claude Code never calls `place_option_order`, `cancel_option_order` or `exercise_option` directly. Orders go only through the engine, in live mode, with `live_enabled: true` and an Evan-set account number. Keep MCP permission prompts on for those tools.
 - Paper is the default and must survive restarts. Promotion needs an explicit config change plus Evan's confirmation.
-- Stops live in the engine process; no multi-leg stop orders exist at Robinhood. Monitor the process health; halt on connector errors, stale quotes, a position mismatch or an ambiguous order state.
+- Stops live in the engine process; no multi-leg stop orders exist at Robinhood. Monitor the process health; halt on connector errors, stale quotes, a position mismatch or an ambiguous order state. If the engine task itself crashes, the process sells what is open and exits with status 1. Robinhood calls time out after `robinhood.call_timeout_sec`, and a dropped session reconnects.
 - Never hold short legs into 3:30 PM ET, or into earnings for E.
 - Don't change strategy rules without Evan. Propose, backtest, then apply. Don't add filters after seeing results without calling it a new, separately tested variant.
 
