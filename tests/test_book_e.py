@@ -96,7 +96,8 @@ def test_limits():
 
 
 def test_vix_filter():
-    assert R.vix_problem(None, C) is None and R.vix_problem(30.0, C) is None
+    assert R.vix_problem(30.0, C) is None
+    assert "no prior VIX close" in R.vix_problem(None, C)          # like book D: no VIX, no entry (2026-10-01 sweep)
     assert "VIX 31.2 > 30" in R.vix_problem(31.2, C)
 
 

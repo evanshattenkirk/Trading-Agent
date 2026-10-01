@@ -28,7 +28,7 @@ from ..clock import session_date
 from ..config import hhmm
 from . import f_stocks_in_play as F
 from .account import AccountRisk
-from .book import Book
+from .book import Book, todays_trades
 from .f_journal import FJournal, TradeRow
 
 log = logging.getLogger("agentdesk.book_f")
@@ -136,6 +136,11 @@ class FHost:
             self.book.trades += 1
             self.status[p.symbol] = "filled"
             self._log(now, "warn", f"book F1: restored open paper position {p.symbol} {p.qty} @ {p.entry:.2f}, stop {p.stop:.2f}")
+        done = todays_trades(self.e.journal, str(today), BOOK)       # a restart mid-day keeps today's limits
+        self.account.on_closed(self.book.restore_day(done, str(today)))
+        for r in done:                                                # one entry per name, restart or not
+            self.status[str(r.get("occ") or "")] = "stopped" if str(r.get("exit_reason") or "").startswith("stop") else "closed"
+        self._check_day_loss(now)
         await self._check_account(now)
 
     async def _check_account(self, now: float) -> None:
@@ -275,7 +280,7 @@ class FHost:
                 rows.append(r)
         res = F.rank_candidates(rows, self.c)
         self.scan, self.rows = res, {r.symbol: r for r in res.rows}
-        self.armed = {r.symbol: r for r in res.picks if self.status.get(r.symbol) != "filled"}
+        self.armed = {r.symbol: r for r in res.picks if self.status.get(r.symbol) not in ("filled", "stopped", "closed")}
         for r in res.picks:
             self.status.setdefault(r.symbol, "armed")
         for r in res.shorts:
@@ -340,7 +345,7 @@ class FHost:
         st = self.e.risk.st
         if self.account.halted and self.account.flatten:
             return self.account.halt_reason
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return st.halt_reason or "kill switch"
         if self.book.halted:
             return f"book halted: {self.book.halt_reason}"
@@ -367,7 +372,7 @@ class FHost:
         st = self.e.risk.st
         if self.account.halted:
             return False, f"halted: {self.account.halt_reason}"
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return False, f"halted: {st.halt_reason}"
         if st.paused:
             return False, "paused"
@@ -480,6 +485,9 @@ class FHost:
         self.e.bus.emit("f_position", now, pos=p.to_dict(), event="closed")
         self.books_changed(now)
         self._emit_scan(now)
+        self._check_day_loss(now)
+
+    def _check_day_loss(self, now: float) -> None:
         lim = abs(self.c["daily_loss"])
         if not self.book.halted and self.book.day_pnl <= -lim:
             self.book.halt(f"daily loss -${lim:g} (F only)")

@@ -26,7 +26,7 @@ from . import f2_spreads as S
 from . import f_stocks_in_play as F
 from .account import AccountRisk
 from .base import ExitIntent
-from .book import Book
+from .book import Book, todays_trades
 from .combo import ComboPosition, ComboQuote, leg_problem, paper_fair
 from .f2_journal import F2Journal
 from .fills import ComboExecutor
@@ -140,6 +140,9 @@ class F2Host:
         if bad:
             self.book.halt(f"unreadable f2_positions rows: {', '.join(bad)}")
             self._log(now, "error", f"book F2 halted: {self.book.halt_reason}")
+        today = str(session_date(now))                                 # a restart mid-day keeps today's limits
+        self.account.on_closed(self.book.restore_day(todays_trades(self.e.journal, today, S.BOOK), today))
+        self._check_day_loss(now)
 
     async def on_bar(self, bar) -> None:
         return None
@@ -255,7 +258,7 @@ class F2Host:
         st = self.e.risk.st
         if self.account.halted:
             return f"halted: {self.account.halt_reason}"
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return f"halted: {st.halt_reason}"
         if st.paused:
             return "paused"
@@ -384,7 +387,7 @@ class F2Host:
         st = self.e.risk.st
         if self.account.halted and self.account.flatten:
             return self.account.halt_reason
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return st.halt_reason or "kill switch"
         if self.book.halted:
             return f"book halted: {self.book.halt_reason}"
@@ -488,11 +491,14 @@ class F2Host:
         self.e.journal.record_trade(str(session_date(now)), self.e.mode, pos, book=S.BOOK)
         self.j.save(pos, now)
         self.e.bus.emit("book_closed", now, pos=pos.to_dict(), net=round(net, 2))
+        self._check_day_loss(now)
+        self.books_changed(now)
+
+    def _check_day_loss(self, now: float) -> None:
         lim = abs(float(self.c["daily_loss"]))
         if self.book.day_pnl <= -lim and not self.book.blocked:
             self.book.blocked = f"daily loss ${self.book.day_pnl:.0f} <= -${lim:.0f}: no new F2 spreads today"
             self._log(now, "warn", f"book F2: {self.book.blocked}")
-        self.books_changed(now)
 
     # ------------------------------------------------------------ engine controls
     def halt_all(self, reason: str, flatten: bool = False) -> None:

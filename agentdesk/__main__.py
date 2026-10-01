@@ -173,7 +173,11 @@ def cmd_run(args) -> None:
                 webbrowser.open(link)
             return await run_session(engine, bus, server, cfg, mode, host, port)
 
-        timer = asyncio.run(main())
+        try:
+            timer = asyncio.run(main())
+        except lifecycle.EngineCrashed as ex:        # exit with an error so launchd's log shows it and review takes over
+            logging.getLogger("agentdesk").error("%s; exiting", ex)
+            raise SystemExit(1) from ex
         if timer:
             timer.cancel()
 

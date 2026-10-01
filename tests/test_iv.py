@@ -244,3 +244,29 @@ def test_quotes_never_return_an_old_cached_quote_as_current():                  
     assert asyncio.run(ch.quotes([c]))[0].iv == 0.40
     clock[0] += 86400
     assert asyncio.run(ch.quotes([c])) == [None]
+
+
+def test_the_in_memory_strike_list_expires_like_the_file(tmp_path):                # 2026-10-01 sweep item 12
+    rh = FakeRH({"get_option_instruments": instruments("2026-10-09", [100])})
+    t = [NOW]
+    ch = RobinhoodChains(rh, cache_dir=tmp_path, clock=lambda: t[0])
+    asyncio.run(ch.strikes("AMD", date(2026, 10, 9)))
+    t[0] = NOW + 86400                                           # next day, file still fresh: no call
+    asyncio.run(ch.strikes("AMD", date(2026, 10, 9)))
+    assert len(rh.calls) == 1
+    rh.responses["get_option_instruments"] = instruments("2026-10-09", [100, 105])
+    t[0] = NOW + 4 * 86400                                       # the same process, days later: listed again
+    assert asyncio.run(ch.strikes("AMD", date(2026, 10, 9))) == {100.0, 105.0}
+    assert len(rh.calls) == 2
+
+
+def test_the_in_memory_strike_list_without_a_cache_dir_is_relisted_each_day():
+    rh = FakeRH({"get_option_instruments": instruments("2026-10-09", [100])})
+    t = [NOW]
+    ch = RobinhoodChains(rh, clock=lambda: t[0])
+    asyncio.run(ch.strikes("AMD", date(2026, 10, 9)))
+    asyncio.run(ch.strikes("AMD", date(2026, 10, 9)))
+    assert len(rh.calls) == 1
+    t[0] = NOW + 86400
+    asyncio.run(ch.strikes("AMD", date(2026, 10, 9)))
+    assert len(rh.calls) == 2

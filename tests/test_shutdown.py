@@ -293,3 +293,40 @@ def test_cli_run_exits_on_signal_with_dashboard_open(tmp_path, sig):
     finally:
         if p.poll() is None:
             p.kill()
+
+
+class CrashingEngine(HoldingEngine):
+    async def run(self):
+        await asyncio.sleep(0.2)
+        raise RuntimeError("boom")
+
+
+def test_an_engine_crash_sells_what_is_open_and_exits_with_an_error():             # 2026-10-01 sweep item 6
+    async def main():
+        port = free_port()
+        engine = CrashingEngine()
+        server = lifecycle.Server(uvicorn.Config(create_app(engine, Bus()), host="127.0.0.1", port=port,
+                                                 log_level="error", timeout_graceful_shutdown=1))
+        with pytest.raises(lifecycle.EngineCrashed):
+            await asyncio.wait_for(lifecycle.serve(engine, server, [], stop=asyncio.Event(), grace=1,
+                                                   close_timeout=0.5, hard_exit_sec=None), 10)
+        return engine
+    engine = asyncio.run(main())
+    assert engine.calls[0][:2] == ("flatten", "shutdown") and ("stop",) in engine.calls
+
+
+def test_cli_run_exits_nonzero_when_the_engine_crashes(monkeypatch, tmp_path):
+    from agentdesk import __main__ as M
+
+    async def crashed(*a, **k):
+        raise lifecycle.EngineCrashed("engine stopped with an error: boom")
+    monkeypatch.setattr(M, "run_session", crashed)
+    eng = QuietEngine()
+    eng.risk = type("R", (), {})()
+    monkeypatch.setattr(M, "build", lambda *a, **k: (eng, Bus()))
+    monkeypatch.setattr(M, "dashboard_claim", lambda cfg: __import__("contextlib").nullcontext())
+    args = type("A", (), {"config": None, "mode": "paper", "speed": 1.0, "seed": 1, "day": None, "clear_halt": False,
+                          "no_browser": True})()
+    with pytest.raises(SystemExit) as ex:
+        M.cmd_run(args)
+    assert ex.value.code == 1

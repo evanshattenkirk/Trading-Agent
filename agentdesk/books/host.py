@@ -18,7 +18,7 @@ from ..config import hhmm
 from ..exits import Contract
 from .account import AccountRisk
 from .base import ExitIntent, MarketContext, OrderIntent, Skip
-from .book import Book
+from .book import Book, todays_trades
 from .combo import ComboPosition, ComboQuote, leg_problem, paper_fair
 from .fills import ComboExecutor
 from .legs import fetch_quotes
@@ -98,7 +98,12 @@ class BookHost:
             self._log(self.e.feed.now(), "warn", f"books: history load failed ({ex}); indicators warm up live")
         for b in self.books:
             b.strategy.warmup(hist)
-        self._emit_books(self.e.feed.now())
+        now = self.e.feed.now()
+        today = session_date(now)
+        self._new_day(today)
+        for b in self.books:                    # a restart mid-day keeps today's counts and P&L
+            self.account.on_closed(b.restore_day(todays_trades(self.e.journal, str(today), b.letter), str(today)))
+        self._emit_books(now)
 
     async def _history(self) -> list:
         f = self.e.feed
@@ -288,7 +293,7 @@ class BookHost:
         st = self.e.risk.st
         if self.account.halted:
             return False, f"halted: {self.account.halt_reason}"
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return False, f"halted: {st.halt_reason}"
         if st.paused:
             return False, "paused"
@@ -402,7 +407,7 @@ class BookHost:
         st = self.e.risk.st
         if self.account.halted and self.account.flatten:
             return self.account.halt_reason
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return st.halt_reason or "kill switch"
         if book.halted:
             return f"book halted: {book.halt_reason}"

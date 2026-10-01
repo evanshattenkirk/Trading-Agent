@@ -23,7 +23,7 @@ from ..iv import atm_strike
 from . import earnings_iv as R
 from .account import AccountRisk
 from .base import ExitIntent
-from .book import Book
+from .book import Book, todays_trades
 from .combo import ComboQuote, ComboPosition, leg_problem, paper_fair
 from .e_journal import EJournal
 from .fills import ComboExecutor
@@ -119,6 +119,8 @@ class EHost:
         if bad:
             self.book.halt(f"unreadable e_positions rows: {', '.join(bad)}")
             self._log(now, "error", f"book E halted: {self.book.halt_reason}")
+        today = str(self.day)                                          # a restart mid-day keeps today's counts
+        self.account.on_closed(self.book.restore_day(todays_trades(self.e.journal, today, "E"), today))
 
     async def on_bar(self, bar) -> None:
         return None
@@ -198,7 +200,7 @@ class EHost:
         st = self.e.risk.st
         if self.account.halted:
             return f"halted: {self.account.halt_reason}"
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return f"halted: {st.halt_reason}"
         if st.paused:
             return "paused"
@@ -239,15 +241,16 @@ class EHost:
 
     async def _consider(self, row: dict, st: str, now: float) -> None:
         sym, ev, timing, T = row["symbol"], row["date"], row["timing"], row["T"]
+        vix = self.vix_prev if self._vix_day == self.day else None            # never yesterday's close
         rec = {"day": str(self.day), "ts": now, "symbol": sym, "structure": st, "T": T, "earnings_date": str(ev),
-               "timing": timing, "vix": self.vix_prev, "debit": None, "iv": None, "iv_pct": None}
+               "timing": timing, "vix": vix, "debit": None, "iv": None, "iv_pct": None}
 
         def skip(reason: str) -> None:
             self.ej.decision(**rec, outcome="skipped", reason=reason, lots=None)
             self._skip(now, f"{sym} {R.SETUP[st]}: {reason}")
 
         why = self._gate() or R.limit_problem(sym, [p.meta.get("symbol") for p in self.book.open], self.c["sectors"],
-                                              int(self.c["max_open"])) or R.vix_problem(self.vix_prev, self.c)
+                                              int(self.c["max_open"])) or R.vix_problem(vix, self.c)
         if why:
             return skip(why)
         exp, why = R.pick_expiries(st, await self.chains.expirations(sym), self.day, ev, timing, self.c)
@@ -288,7 +291,7 @@ class EHost:
         meta = {"symbol": sym, "structure": st, "earnings_date": str(ev), "timing": timing, "T": T,
                 "exit_day": str(R.exit_day(ev, timing, self.holidays)),
                 "short_expiry": str(exp["short"]) if exp["short"] else ""}
-        vix_note = f"VIX {self.vix_prev:.1f}" if self.vix_prev else "VIX n/a"
+        vix_note = f"VIX {vix:.1f}"
         pos = ComboPosition("E", R.SETUP[st], legs, cs, res.filled_qty, res.avg_price, False, 0.0, now,
                             strike_reason=f"{sym} {k:g} ATM (spot {spot:.2f}); reports {ev} {timing or 'time n/a'}, T-{T}",
                             entry_reasons=[size_why, iv_note, vix_note], meta=meta, id=f"E-{uuid.uuid4().hex[:8]}")
@@ -335,7 +338,7 @@ class EHost:
         st = self.e.risk.st
         if self.account.halted and self.account.flatten:
             return self.account.halt_reason
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return st.halt_reason or "kill switch"
         if self.book.halted:
             return f"book halted: {self.book.halt_reason}"

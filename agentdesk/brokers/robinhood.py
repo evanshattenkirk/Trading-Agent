@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import stat
@@ -160,6 +161,23 @@ def is_rate_limited(err) -> bool:
 
 
 ORDER_TOOLS = ("place_option_order", "cancel_option_order", "get_option_orders")
+CONNECT_TIMEOUT_S = 60.0          # covers a token refresh; a fresh browser sign-in needs a restart anyway
+TIMEOUTS_BEFORE_RECONNECT = 2
+
+
+def is_dead_session(ex: BaseException) -> bool:
+    """A transport-level failure: the MCP session can't carry another call and has to be reopened."""
+    import anyio
+    if isinstance(ex, (anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream, ConnectionError)):
+        return True
+    try:
+        import httpx
+        if isinstance(ex, httpx.TransportError):
+            return True
+    except ImportError:
+        pass
+    text = str(ex).lower()
+    return any(k in text for k in ("session terminated", "session not found", "connection closed"))
 
 
 class CallBudget:
@@ -235,6 +253,8 @@ class CallBudget:
 
 
 class RobinhoodMCP:
+    RECONNECT_GAP_S = 5.0                 # at most one reconnect try per this many seconds
+
     def __init__(self, cfg):
         self.cfg = cfg["robinhood"]
         self.url = self.cfg["mcp_url"]
@@ -247,6 +267,12 @@ class RobinhoodMCP:
         self._started = False
         self.chain_symbol = cfg.get("symbol", "SPY")
         self.budget = CallBudget.from_cfg(self.cfg)     # None: no pacing here (the recorder paces itself)
+        self.call_timeout = float(self.cfg.get("call_timeout_sec", 20))
+        self._connect = None                # (transport factory, session class), kept so a dropped session reconnects
+        self._owner = None
+        self._closing = asyncio.Event()
+        self._closed = self._dead = False
+        self._timeouts, self._last_connect = 0, -1e18
 
     async def start(self) -> None:
         if self._started:
@@ -275,14 +301,42 @@ class RobinhoodMCP:
         # The MCP client's anyio task groups must be entered and exited by the same task, so one task owns the
         # session for its whole life. Closing it from anywhere else (shutdown, a finished engine) is then safe,
         # and a dropped connection can't cancel whichever task happened to open it.
-        ready = asyncio.get_running_loop().create_future()
-        self._closing = asyncio.Event()
-        self._owner = asyncio.create_task(self._own_session(
-            lambda: streamablehttp_client(self.url, auth=provider, timeout=30), ClientSession, ready), name="robinhood-mcp")
-        await ready
-        self._started = True
+        self._connect = (lambda: streamablehttp_client(self.url, auth=provider, timeout=30), ClientSession)
+        await self._open()
         log.info("Robinhood MCP connected: %d tools", len(self.tools))
         await self._load_accounts()
+
+    async def _open(self) -> None:
+        transport, session_cls = self._connect
+        self._last_connect = time.monotonic()
+        ready = asyncio.get_running_loop().create_future()
+        self._closing = asyncio.Event()
+        self._owner = asyncio.create_task(self._own_session(transport, session_cls, ready), name="robinhood-mcp")
+        await asyncio.wait_for(asyncio.shield(ready), CONNECT_TIMEOUT_S)
+        self._started, self._dead, self._timeouts = True, False, 0
+
+    async def _ensure_session(self) -> None:
+        """Reconnects when the session ended or looks dead (a connection error, or TIMEOUTS_BEFORE_RECONNECT calls
+        in a row timed out). Runs under the call lock, so only one reconnect happens at a time."""
+        if self._closed:
+            raise RuntimeError("Robinhood MCP is closed")
+        owner = self._owner
+        if self._connect is None or not (self._dead or owner is None or owner.done()):
+            return
+        if time.monotonic() - self._last_connect < self.RECONNECT_GAP_S:
+            raise ConnectionError("Robinhood MCP session dropped; reconnecting shortly")
+        if owner is not None and not owner.done():
+            self._closing.set()
+            await asyncio.wait({owner}, timeout=2.0)
+            if not owner.done():
+                owner.cancel()
+        log.warning("Robinhood MCP session dropped; reconnecting")
+        try:
+            await self._open()
+        except Exception as ex:
+            self._dead = True
+            raise ConnectionError(f"Robinhood MCP reconnect failed: {ex!r}") from ex
+        log.warning("Robinhood MCP reconnected: %d tools", len(self.tools))
 
     async def _own_session(self, transport, session_cls, ready: asyncio.Future) -> None:
         try:
@@ -303,10 +357,12 @@ class RobinhoodMCP:
             if isinstance(ex, (KeyboardInterrupt, SystemExit)):
                 raise
         finally:
-            self.stack, self._started = None, False
+            if self._owner is None or self._owner is asyncio.current_task():     # not a replaced, older session
+                self.stack, self._started = None, False
 
     async def close(self, timeout: float = 3.0) -> None:
-        owner = getattr(self, "_owner", None)
+        self._closed = True
+        owner = self._owner
         if owner is None or owner.done():
             return
         self._closing.set()
@@ -354,9 +410,21 @@ class RobinhoodMCP:
         return data.get("data", data) if isinstance(data, dict) else data
 
     async def _send(self, tool: str, args: dict):
+        await self._ensure_session()
         if self.budget is not None:
             await self.budget.acquire(urgent=tool in ORDER_TOOLS)
-        return await self.session.call_tool(tool, args)
+        try:
+            res = await asyncio.wait_for(self.session.call_tool(tool, args), self.call_timeout)
+        except asyncio.TimeoutError:
+            self._timeouts += 1
+            self._dead = self._dead or self._timeouts >= TIMEOUTS_BEFORE_RECONNECT
+            raise TimeoutError(f"{tool} got no reply in {self.call_timeout:g}s") from None
+        except Exception as ex:
+            if is_dead_session(ex):
+                self._dead = True
+            raise
+        self._timeouts = 0
+        return res
 
     def _throttled(self) -> None:
         if self.budget is not None:
@@ -673,7 +741,13 @@ class RobinhoodBroker(Broker):
 
 
 def _per_share(avg: float, limit: float) -> float:
-    return avg / 100 if avg > 20 and limit < 20 else avg     # some fields report premium per contract
+    """Some order fields report the premium per contract (100 shares), others per share. A fill is never 10x away
+    from its own limit, so take whichever reading is closer to the limit (a $0.15 fill reported as 15 reads 0.15)."""
+    if avg <= 0:
+        return avg
+    if limit <= 0:
+        return avg / 100 if avg > 20 else avg
+    return min((avg, avg / 100), key=lambda v: abs(math.log(v / limit)))
 
 
 def _short(d, n=600):

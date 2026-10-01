@@ -3,6 +3,18 @@ from __future__ import annotations
 
 from collections import deque
 
+from ..clock import session_date
+
+
+def todays_trades(journal, today: str, letter: str) -> list[dict]:
+    """Today's closed trades for one book from the journal (book 'F' rows read as F1)."""
+    names = {letter, "F"} if letter == "F1" else {letter}
+    try:
+        rows = journal.trades(session=today, limit=10000)
+    except Exception:
+        return []
+    return [r for r in rows if (r.get("book") or "A") in names]
+
 
 class Book:
     def __init__(self, key: str, cfg: dict, strategy):
@@ -56,6 +68,22 @@ class Book:
             self.wins += 1
         else:
             self.losses += 1
+
+    def restore_day(self, rows: list[dict], today: str) -> float:
+        """A restart mid-day (Evan, 2026-10-01): today's closed trades from the journal count toward today's P&L,
+        wins and losses, and the ones opened today toward the trade limit. Returns their net for the account."""
+        total = 0.0
+        for r in rows:
+            net = float(r.get("pnl") or 0.0)
+            total += net
+            self.day_pnl += net
+            if net >= 0:
+                self.wins += 1
+            else:
+                self.losses += 1
+            if r.get("opened_ts") and str(session_date(float(r["opened_ts"]))) == today:
+                self.trades += 1
+        return total
 
     def halt(self, reason: str) -> None:
         if not self.halted:

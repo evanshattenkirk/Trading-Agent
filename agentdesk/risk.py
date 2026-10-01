@@ -24,6 +24,7 @@ class Blackout:
     end: float
     name: str
     flatten_at: float | None = None
+    added_ts: float | None = None          # when the desk learned of it (the post-mortem judges trades by what was known)
 
 
 @dataclass
@@ -39,6 +40,7 @@ class RiskState:
     halt_reason: str | None = None
     flatten_all: bool = False       # set by the kill switch and the safety watchdog
     halt_sticky: bool = True        # False for startup checks, which re-run on every start
+    halt_scope: str = "account"     # "A": book A's own limits (daily loss, profit lock) halt and flatten book A only
     paused: bool = False
     size_mult: float = 1.0          # book A's crew multiplier
     book_mults: dict = field(default_factory=dict)      # crew multiplier per book letter (A..G), <= 1.0; missing = 1.0
@@ -49,7 +51,7 @@ class RiskStore:
     """Today's risk state on disk, so a restart can't reset the daily loss, trade count, cooldown or a halt.
     One small JSON file per mode, rewritten atomically on every change."""
     FIELDS = ("day_pnl", "peak_day_pnl", "trades", "wins", "losses", "loss_streak", "cooldown_until",
-              "halted", "halt_reason", "flatten_all", "paused", "size_mult", "book_mults")
+              "halted", "halt_reason", "flatten_all", "paused", "size_mult", "book_mults", "halt_scope")
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
@@ -66,7 +68,7 @@ class RiskStore:
     def save(self, day: str, st: RiskState) -> None:
         d = {"day": day, **{k: getattr(st, k) for k in self.FIELDS}}
         if st.halted and not st.halt_sticky:      # re-checked at startup; don't carry it over
-            d.update(halted=False, halt_reason=None, flatten_all=False)
+            d.update(halted=False, halt_reason=None, flatten_all=False, halt_scope="account")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(d, indent=1))
@@ -115,7 +117,7 @@ class RiskManager:
                 + (f", halted: {st.halt_reason}" if st.halted else ""))
         if st.halted and self.clear_halt_on_restore:
             note += " (halt cleared by --clear-halt)"
-            st.halted, st.halt_reason, st.flatten_all = False, None, False
+            st.halted, st.halt_reason, st.flatten_all, st.halt_scope = False, None, False, "account"
         self._save()
         return note
 
@@ -145,11 +147,11 @@ class RiskManager:
         if st.trades >= r["max_trades_per_day"]:
             return False, f"max {r['max_trades_per_day']} trades hit"
         if st.day_pnl + min(0.0, open_pnl) <= -abs(r["max_daily_loss"]):
-            self.halt(f"daily loss limit -${r['max_daily_loss']}")
+            self.halt(f"daily loss limit -${r['max_daily_loss']}", scope="A")
             return False, st.halt_reason
         pl = r.get("profit_lock")
         if pl and st.peak_day_pnl >= pl["trigger"] and st.day_pnl <= st.peak_day_pnl * (1 - pl["giveback_pct"]):
-            self.halt(f"profit lock: gave back {int(pl['giveback_pct'] * 100)}% of +${st.peak_day_pnl:.0f}")
+            self.halt(f"profit lock: gave back {int(pl['giveback_pct'] * 100)}% of +${st.peak_day_pnl:.0f}", scope="A")
             return False, st.halt_reason
         if now < st.cooldown_until:
             return False, f"cooldown until {hm(st.cooldown_until)}"
@@ -164,8 +166,7 @@ class RiskManager:
         (1.0 gives the quantity the crew's vote would have left alone, for the crew log)."""
         if ask <= 0:
             return 0, "no ask"
-        cut = self.st.size_mult if cut is None else cut
-        m = cut if cut < 1.0 else min(max(1.0, up_mult), self.cfg["crew"].get("max_size_multiplier", 1.25))
+        m = self._mult(up_mult, cut)
         budget = self.s["max_trade_dollars"] * m
         cap = round(self.s["max_contracts"] * m) if m > 1.0 else self.s["max_contracts"]
         qty = min(cap, int(budget // (ask * 100)))
@@ -173,6 +174,15 @@ class RiskManager:
             return 0, f"1 contract costs ${ask * 100:.0f} > budget ${budget:.0f}"
         tag = f" SIZE-UP {m:.2f}x" if m > 1.0 else ""
         return qty, f"{qty} x ${ask:.2f} = ${qty * ask * 100:.0f} (budget ${budget:.0f}{tag})"
+
+    def _mult(self, up_mult: float = 1.0, cut: float | None = None) -> float:
+        cut = self.st.size_mult if cut is None else cut
+        return cut if cut < 1.0 else min(max(1.0, up_mult), self.cfg["crew"].get("max_size_multiplier", 1.25))
+
+    def trade_budget(self, up_mult: float = 1.0) -> float:
+        """The dollars one book A entry may spend: $max_trade x the same multiplier size() uses. A repriced buy
+        re-sizes against this, so chasing the ask never spends more than the sizing allowed."""
+        return self.s["max_trade_dollars"] * self._mult(up_mult)
 
     def early_close(self, now: float) -> bool:
         return str(session_date(now)) in {str(d) for d in (self.cfg.get("calendar") or {}).get("early_close", [])}
@@ -198,7 +208,7 @@ class RiskManager:
         lim = abs(self.r["max_daily_loss"])
         if self.st.halted or self.st.day_pnl + min(0.0, self.open_pnl(positions)) > -lim:
             return False
-        self.halt(f"daily loss limit -${lim:g} hit including open positions", flatten=True)
+        self.halt(f"daily loss limit -${lim:g} hit including open positions", flatten=True, scope="A")
         return True
 
     # ---- bookkeeping --------------------------------------------------
@@ -223,24 +233,35 @@ class RiskManager:
         self.st.peak_day_pnl = max(self.st.peak_day_pnl, self.st.day_pnl)
         self._save()
 
-    def halt(self, reason: str, flatten: bool = False, sticky: bool = True) -> None:
-        """sticky=False for startup checks that re-run on every start; every other halt survives a restart."""
+    def halt(self, reason: str, flatten: bool = False, sticky: bool = True, scope: str = "account") -> None:
+        """sticky=False for startup checks that re-run on every start; every other halt survives a restart.
+        scope="A" for book A's own limits: they halt and flatten book A only (Evan, 2026-10-01). An account-wide
+        halt (kill, safety, a startup account check) always wins over an A-only one."""
         st = self.st
         st.halt_sticky = sticky if not st.halted else (st.halt_sticky or sticky)
+        st.halt_scope = scope if not st.halted else ("account" if "account" in (st.halt_scope, scope) else "A")
         st.halted, st.halt_reason = True, reason
         st.flatten_all = st.flatten_all or flatten
         self._save()
+
+    def account_flatten(self) -> bool:
+        """An account-wide halt that sells every book (kill switch, safety halt), not book A's own limits."""
+        st = self.st
+        return bool(st.halted and st.flatten_all and st.halt_scope == "account")
+
+    def account_halted(self) -> bool:
+        return bool(self.st.halted and self.st.halt_scope == "account")
 
     def set_paused(self, on: bool) -> None:
         self.st.paused = on
         self._save()
 
-    def add_blackout(self, event_ts: float, name: str) -> None:
+    def add_blackout(self, event_ts: float, name: str, added_ts: float | None = None) -> None:
         eb = self.r["event_blackout"]
         fl = self.r.get("flatten_before_high_impact_min")
         self.st.blackouts.append(Blackout(
             event_ts - eb["before_min"] * 60, event_ts + eb["after_min"] * 60, name,
-            event_ts - fl * 60 if fl is not None else None))
+            event_ts - fl * 60 if fl is not None else None, added_ts))
 
     def set_size_mult(self, m: float) -> None:
         lo = self.cfg["crew"]["min_size_multiplier"]

@@ -215,7 +215,7 @@ class Crew:
             evs.append({"time": self.e.feed.event["time"], "name": self.e.feed.event["name"], "impact": "high"})
         for ev in evs:
             if ev.get("impact") == "high":
-                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time"])), ev["name"])
+                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time"])), ev["name"], added_ts=now)
                 self._event_src.setdefault(ev["name"], "config")
         self._config_events = evs
 
@@ -423,7 +423,7 @@ class Crew:
             for ev in b.get("events", []) or []:
                 if ev.get("impact") == "high" and ev.get("time_ct") and ev.get("name") not in have:
                     try:
-                        self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"])
+                        self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
                         have.add(ev["name"])
                         self._event_src.setdefault(ev["name"], k)
                     except Exception:
@@ -920,7 +920,8 @@ class Crew:
     async def _vol_read(self, slot: str, now: float) -> dict:
         """Vol's numbers come from Robinhood: VIX now (prior close as fallback) and the expected move from the recorded
         0DTE ATM straddle (from VIX before the open). Robinhood has no VIX1D, so the premarket read makes one web call
-        for vix1d_flag, the bias and the vote; later reads keep that vote. VIX above 28 cuts to 75%."""
+        for vix1d_flag, the bias and the vote; later reads keep that vote (`vote_base`). Each read re-applies the VIX
+        rule from the current VIX: above 28 cuts to 75%, and the cut lifts when VIX falls back."""
         vix_prev = await self._vix("prev")
         vix = await self._vix("now") or vix_prev
         em, src = self._expected_move(now, vix)
@@ -933,7 +934,8 @@ class Crew:
             parts.append(f"{'straddle implies' if src.endswith('straddle') else 'expected move'} ±${em:.2f}"
                          + (" for the rest of today" if src.endswith("straddle") else ""))
         b = {"headline": ", ".join(parts)[:90], "bias": prev.get("bias", "neutral"),
-             "confidence": prev.get("confidence", 0.5), "events": [], "size_multiplier": prev.get("size_multiplier", 1.0),
+             "confidence": prev.get("confidence", 0.5), "events": [],
+             "size_multiplier": prev.get("vote_base", prev.get("size_multiplier", 1.0)),
              "em": em, "vix": vix, "vix_prev": vix_prev, "notes": [f"Source: Robinhood VIX, {src or 'no'} expected move"]}
         if "vix1d_flag" in prev:
             b["vix1d_flag"] = prev["vix1d_flag"]
@@ -943,6 +945,7 @@ class Crew:
             if llm:
                 b.update({k: llm[k] for k in ("headline", "bias", "confidence", "size_multiplier", "vix1d_flag") if k in llm})
                 b["notes"] = ([str(x) for x in llm.get("notes") or []] + b["notes"])[:4]
+        b["vote_base"] = b["size_multiplier"]
         if vix and vix > 28:
             b["size_multiplier"] = min(float(b.get("size_multiplier") or 1.0), 0.75)
             b["headline"] = f"VIX {vix:.1f} is above 28: cutting size to 75%."
@@ -980,7 +983,7 @@ class Crew:
         have = {b.name for b in self.e.risk.st.blackouts}
         for ev in self._calendar_today(d):
             if ev["impact"] == "high" and ev["name"] not in have:
-                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"])
+                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
                 have.add(ev["name"])
                 self._event_src.setdefault(ev["name"], "calendar")
 

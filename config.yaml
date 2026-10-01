@@ -141,6 +141,7 @@ robinhood:
   # got RATE_LIMITED 773 times, starving the recorder. The engine keeps to half the ceiling; the recorder (42 quotes
   # every 10 s, book E's IV pass 13:30-15:00 CT at <= 1 call/s) uses its own grant and pacing within the rest.
   call_budget: {per_min: 120, per_s: 3}
+  call_timeout_sec: 20      # a call with no reply by then fails (2 in a row, or a dropped connection, reconnect the session)
   record_option_quotes: true   # log real 0DTE SPY call+put quotes ATM-10..ATM+10 every 10s -> journal.option_quotes
   arg_overrides: {}         # per-tool fixed args if the schema matcher misses one (see rh-inspect)
 

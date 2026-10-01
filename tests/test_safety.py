@@ -307,3 +307,77 @@ def test_a_clean_call_of_another_kind_does_not_hide_failing_exit_checks():
             await e._run(fine(), "position check")
     run(go())
     assert e.risk.st.halted and "3 broker/API errors" in e.risk.st.halt_reason
+
+
+def test_watchdog_skips_a_position_that_is_mid_exit():                              # 2026-10-01 sweep item 7
+    e = engine()
+    pos = open_pos(e)
+    pos._exiting = True                         # a slow live sell is in flight; its own order checks guard it
+    e._watchdog(e.feed.t + 30)
+    assert not e.risk.st.halted
+    pos._exiting = False
+
+    async def go():
+        e._watchdog(e.feed.t + 30)
+    run(go())
+    assert e.risk.st.halted and "no fresh quote" in e.risk.st.halt_reason
+
+
+def test_watchdog_skips_a_paper_book_position_that_is_mid_exit():
+    e = engine()
+    p = type("P", (), {"label": "B fly", "last_quote_ts": e.feed.t, "exiting": True, "watchdog_exempt": False})()
+    e.books = type("H", (), {"positions": lambda s: [p]})()
+    e._watchdog(e.feed.t + 30)
+    assert not e.risk.st.halted
+
+
+class PartialBroker(FakeBroker):
+    """Fills `first` contracts of the first order, then everything."""
+    def __init__(self, first):
+        super().__init__()
+        self.first = first
+
+    async def submit(self, contract, side, qty, limit, now):
+        self.submits.append((side, qty, limit))
+        if len(self.submits) == 1:
+            return OrderResult("partial" if self.first else "unfilled", self.first, limit, "x")
+        return OrderResult("filled", qty, limit, "x")
+
+
+def test_a_repriced_buy_stays_within_the_trade_budget():                          # 2026-10-01 sweep item 9
+    e = engine()
+    e.broker = PartialBroker(first=1)
+    e.quotes.q = Quote(1.20, 1.30, NOW)            # the ask ran from 1.00 to 1.30
+    res = run(e._work_order(C, "buy", 5, 1.00, NOW, budget=500.0))
+    assert e.broker.submits[1] == ("buy", 3, 1.30)  # $100 spent; 3 x $130 = $390 fits in the $400 left, 4 would not
+    assert res.filled_qty == 4 and res.filled_qty * res.avg_price * 100 <= 500.0
+
+
+def test_a_repriced_buy_that_cannot_afford_one_more_stops():
+    e = engine()
+    e.broker = PartialBroker(first=4)
+    e.quotes.q = Quote(1.20, 1.30, NOW)
+    res = run(e._work_order(C, "buy", 5, 1.00, NOW, budget=500.0))
+    assert len(e.broker.submits) == 1 and res.filled_qty == 4
+
+
+def test_a_buy_entry_passes_its_budget_to_the_order():
+    from agentdesk.risk import RiskManager
+    r = RiskManager(copy.deepcopy(CFG))
+    assert r.trade_budget(1.0) == CFG["sizing"]["max_trade_dollars"]
+    r.st.size_mult = 0.5
+    assert r.trade_budget(1.25) == CFG["sizing"]["max_trade_dollars"] * 0.5
+
+
+@pytest.mark.parametrize("avg,limit,want", [
+    (0.15, 0.15, 0.15),        # per share
+    (15.0, 0.15, 0.15),        # a $0.15 option reported per contract (the old avg > 20 check kept 15)
+    (102.0, 1.02, 1.02),       # per contract
+    (1.04, 1.02, 1.04),        # per share, filled a bit off the limit
+    (25.0, 24.0, 25.0),        # a $25 option per share
+    (2500.0, 24.0, 25.0),      # the same, per contract
+    (0.0, 1.0, 0.0),
+])
+def test_fill_price_units_are_read_against_the_limit(avg, limit, want):           # 2026-10-01 sweep item 10
+    from agentdesk.brokers.robinhood import _per_share
+    assert _per_share(avg, limit) == pytest.approx(want)

@@ -168,6 +168,18 @@ def test_vol_cuts_to_75_when_vix_is_above_28(monkeypatch):
     assert b["size_multiplier"] == 0.75 and "31.2" in b["headline"]
 
 
+def test_vol_re_votes_from_the_current_vix_each_read(monkeypatch):                # 2026-10-01 sweep item 5
+    e, c = online(monkeypatch, '{"headline": "unused"}', now=at_ct(D, time(11, 30)))
+    c.vix = FakeVix(current=31.2)
+    c.briefs["vol"] = {"headline": "am", "day": str(D), "ts": at_ct(D, time(8, 25)), "size_multiplier": 1.15,
+                       "confidence": 0.7, "bias": "bullish"}
+    c.briefs["vol"] = run(c._brief("vol", "midday", e.feed.now())) | {"day": str(D)}
+    assert c.briefs["vol"]["size_multiplier"] == 0.75
+    c.vix.cur = 24.0                                                       # VIX back under 28
+    b = run(c._brief("vol", "postclose", at_ct(D, time(13, 30))))
+    assert b["size_multiplier"] == 1.15 and "above 28" not in b["headline"]
+
+
 def test_expected_move_comes_from_the_recorded_atm_straddle_during_the_session(monkeypatch):
     now = at_ct(D, time(11, 30))
     e, c = online(monkeypatch, '{"headline": "unused"}', now=now)

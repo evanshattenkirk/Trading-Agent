@@ -100,7 +100,9 @@ def limit_problem(sym: str, open_syms: list, sectors: dict, max_open: int) -> st
 
 
 def vix_problem(vix: float | None, c: dict) -> str | None:
-    return f"VIX {vix:.1f} > {c['vix_max']}" if vix is not None and vix > c["vix_max"] else None
+    if vix is None:
+        return "no prior VIX close"                    # as book D does: no VIX, no entry
+    return f"VIX {vix:.1f} > {c['vix_max']}" if vix > c["vix_max"] else None
 
 
 def iv_check(iv: float | None, history: list, c: dict) -> tuple[bool, str, float | None]:

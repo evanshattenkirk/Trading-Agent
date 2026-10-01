@@ -5,6 +5,8 @@ book are flattened through engine.flatten("shutdown") while the engine, quotes a
 `flatten_timeout` to finish. Then it stops the engine loop, closes the dashboard (open websockets included), closes
 the broker/data sessions with a timeout each, and exits. Whatever is still open after the timeout is logged. A
 second Ctrl-C or SIGTERM, or shutdown taking longer than `hard_exit_sec`, exits the process immediately.
+If the engine task dies with an error, the same shutdown runs and serve() raises EngineCrashed, so `run` exits with
+status 1 instead of leaving a dashboard up with nothing trading; the after-hours review page then takes the port.
 Book E's paper positions are kept overnight on purpose (saved in e_positions; spec E-Q1).
 """
 from __future__ import annotations
@@ -20,6 +22,10 @@ import uvicorn
 
 log = logging.getLogger("agentdesk.lifecycle")
 SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
+
+class EngineCrashed(RuntimeError):
+    """The engine task stopped with an error; raised by serve() after the normal shutdown ran."""
 
 
 class Server(uvicorn.Server):
@@ -65,9 +71,12 @@ async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, g
     eng = asyncio.create_task(engine.run(), name="engine")
     eng.add_done_callback(_report_engine_exit)
     waiter = asyncio.create_task(stop.wait())
-    timer = None
+    timer, crash = None, None
     try:
-        await asyncio.wait({srv, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait({srv, waiter, eng}, return_when=asyncio.FIRST_COMPLETED)
+        crash = _crash(eng)
+        if crash is None and eng.done() and not (srv.done() or waiter.done()):
+            await asyncio.wait({srv, waiter}, return_when=asyncio.FIRST_COMPLETED)   # a finished day keeps the page
     finally:
         waiter.cancel()
         if hard_exit_sec:
@@ -77,7 +86,15 @@ async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, g
         await shutdown(engine, server, srv, eng, closers, grace, close_timeout, before, flatten_timeout)
         for sig in installed:
             loop.remove_signal_handler(sig)
+    if crash is not None:
+        if timer:
+            timer.cancel()
+        raise EngineCrashed(f"engine stopped with an error: {crash!r}") from crash
     return timer
+
+
+def _crash(t: asyncio.Task) -> BaseException | None:
+    return t.exception() if t.done() and not t.cancelled() else None
 
 
 def _report_engine_exit(t: asyncio.Task) -> None:

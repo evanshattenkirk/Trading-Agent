@@ -344,3 +344,21 @@ def test_failed_report_date_check_is_retried_the_same_day():                    
     assert by_symbol(h)["AMD"].meta["exit_day"] != "2026-10-06"
     tick(h, ch, at(TUE, 8, 32))
     assert by_symbol(h)["AMD"].meta["exit_day"] == "2026-10-06"
+
+
+def test_no_prior_vix_close_skips_entries():                                      # 2026-10-01 sweep item 4
+    h, eng, ch = make(vix=None)
+    tick(h, ch, at(MON, 14, 45))
+    assert h.book.open == []
+    assert {d["reason"] for d in h.ej.decisions()} == {"no prior VIX close"}
+
+
+def test_yesterdays_vix_is_not_used_today():                                      # 2026-10-01 sweep item 4
+    h, eng, ch = make(vix=18.0)
+    tick(h, ch, at(MON, 9, 0))
+    assert h.vix_prev == 18.0
+    h.vix.v = None                                                                # Tuesday's read fails
+    h.cal_rows[:] = [{**AMD_EV, "date": FRI1}]                                    # Tuesday is T-3 for a Friday report
+    tick(h, ch, at(TUE, 14, 45))
+    assert not h.book.open
+    assert [d["reason"] for d in h.ej.decisions() if d["day"] == str(TUE)] == ["no prior VIX close"]
