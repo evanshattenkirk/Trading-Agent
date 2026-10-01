@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import stat
@@ -740,7 +741,13 @@ class RobinhoodBroker(Broker):
 
 
 def _per_share(avg: float, limit: float) -> float:
-    return avg / 100 if avg > 20 and limit < 20 else avg     # some fields report premium per contract
+    """Some order fields report the premium per contract (100 shares), others per share. A fill is never 10x away
+    from its own limit, so take whichever reading is closer to the limit (a $0.15 fill reported as 15 reads 0.15)."""
+    if avg <= 0:
+        return avg
+    if limit <= 0:
+        return avg / 100 if avg > 20 else avg
+    return min((avg, avg / 100), key=lambda v: abs(math.log(v / limit)))
 
 
 def _short(d, n=600):

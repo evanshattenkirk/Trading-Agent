@@ -367,3 +367,17 @@ def test_a_buy_entry_passes_its_budget_to_the_order():
     assert r.trade_budget(1.0) == CFG["sizing"]["max_trade_dollars"]
     r.st.size_mult = 0.5
     assert r.trade_budget(1.25) == CFG["sizing"]["max_trade_dollars"] * 0.5
+
+
+@pytest.mark.parametrize("avg,limit,want", [
+    (0.15, 0.15, 0.15),        # per share
+    (15.0, 0.15, 0.15),        # a $0.15 option reported per contract (the old avg > 20 check kept 15)
+    (102.0, 1.02, 1.02),       # per contract
+    (1.04, 1.02, 1.04),        # per share, filled a bit off the limit
+    (25.0, 24.0, 25.0),        # a $25 option per share
+    (2500.0, 24.0, 25.0),      # the same, per contract
+    (0.0, 1.0, 0.0),
+])
+def test_fill_price_units_are_read_against_the_limit(avg, limit, want):           # 2026-10-01 sweep item 10
+    from agentdesk.brokers.robinhood import _per_share
+    assert _per_share(avg, limit) == pytest.approx(want)
