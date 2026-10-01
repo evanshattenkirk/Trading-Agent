@@ -79,6 +79,7 @@ class RobinhoodChains:
     (symbol, expiry) for LIST_MAX_AGE_DAYS; each quote pass is one batched get_option_quotes call."""
 
     LIST_MAX_AGE_DAYS = 3
+    QUOTE_MAX_AGE_SEC = 120     # a cached quote older than this is not returned by quotes()
 
     def __init__(self, rh, cache_dir=None, pacer=None, clock=time.time):
         self.rh, self.pacer, self.clock = rh, pacer, clock
@@ -152,7 +153,9 @@ class RobinhoodChains:
             if oid and ask is not None:          # no bid means nobody bids: 0, not "no quote"
                 self.cache[oid] = IVQuote(_num(q.get("bid_price", q.get("bid"))) or 0.0, ask, now,
                                           _num(q.get("implied_volatility", q.get("iv"))))
-        return [self.cache.get(i) if i else None for i in ids]
+        got = [self.cache.get(i) if i else None for i in ids]
+        return [q if q is not None and now - q.ts <= self.QUOTE_MAX_AGE_SEC else None    # an id missing from this
+                for q in got]                                                          # reply isn't yesterday's quote
 
     async def quote(self, contract) -> IVQuote | None:
         return self.cache.get(contract.broker_id) if contract.broker_id else None

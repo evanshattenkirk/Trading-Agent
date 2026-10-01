@@ -230,3 +230,17 @@ def test_strike_listing_and_quotes_pass_the_live_schemas(tmp_path):
     assert rh.calls[0] == ("get_option_instruments", {"chain_symbol": "AMD", "expiration_dates": "2026-10-09",
                                                       "state": "active"})
     assert q.iv == 0.41 and q.mark == 1.1
+
+
+def test_quotes_never_return_an_old_cached_quote_as_current():                   # 2026-10-01 sweep
+    from agentdesk.exits import Contract
+    clock = [NOW]
+    replies = [{"results": [{"quote": {"instrument_id": "c1", "bid_price": "1.00", "ask_price": "1.10",
+                                       "implied_volatility": "0.40"}}]},
+               {"results": []}]                       # next day: no ask, so Robinhood's reply leaves c1 out
+    rh = FakeRH({"get_option_quotes": lambda a: replies.pop(0)})
+    ch = RobinhoodChains(rh, clock=lambda: clock[0])
+    c = Contract("AMD", "2026-10-09", 100.0, "call", "c1")
+    assert asyncio.run(ch.quotes([c]))[0].iv == 0.40
+    clock[0] += 86400
+    assert asyncio.run(ch.quotes([c])) == [None]
