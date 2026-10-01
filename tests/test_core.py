@@ -273,3 +273,16 @@ def test_size_up_scales_budget_and_cap_but_cuts_win():
     r.set_size_mult(0.75)
     assert r.size(0.60, 1.25)[0] == 5          # a cut is active: no size-up, $375 budget
     assert r.size(1.25, 1.25)[0] == 3
+
+
+def test_tests_ignore_the_deployed_overrides_but_the_engine_reads_them(tmp_path, monkeypatch):
+    """The paper engine writes Evan's approved standing changes to overrides.yaml next to config.yaml, and
+    install_paper.sh runs the tests in that same folder. The tests check the rules as committed, so they skip it."""
+    import os
+    from agentdesk import proposals
+    (tmp_path / "overrides.yaml").write_text("exits:\n  scalp:\n    time_stop_min: 8\n")
+    monkeypatch.setattr(proposals, "ROOT", tmp_path)
+    assert os.environ.get("AGENTDESK_IGNORE_OVERRIDES") == "1"            # set by tests/conftest.py
+    assert load_config()["exits"]["scalp"]["time_stop_min"] == 6
+    monkeypatch.delenv("AGENTDESK_IGNORE_OVERRIDES")
+    assert load_config()["exits"]["scalp"]["time_stop_min"] == 8
