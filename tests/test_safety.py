@@ -316,7 +316,10 @@ def test_watchdog_skips_a_position_that_is_mid_exit():                          
     e._watchdog(e.feed.t + 30)
     assert not e.risk.st.halted
     pos._exiting = False
-    e._watchdog(e.feed.t + 30)
+
+    async def go():
+        e._watchdog(e.feed.t + 30)
+    run(go())
     assert e.risk.st.halted and "no fresh quote" in e.risk.st.halt_reason
 
 
