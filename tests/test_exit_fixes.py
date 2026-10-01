@@ -73,10 +73,14 @@ def test_flatten_waits_for_an_exit_in_flight():
 
 
 def test_entry_fee_counts_toward_day_pnl():
+    from agentdesk.strategy import EntrySignal
     e = engine()
-    pos = open_pos(e, qty=2)
-    fee = e.cfg["sizing"]["fee_per_contract"]
+    e.price = 660.0
     e.quotes.q = Quote(1.00, 1.00, NOW)
-    run(e.exit(pos, e.open[0][1], ExitIntent(2, "test", urgent=True), NOW))
-    # bought at 1.00, sold at 1.00: the day is down exactly the two fees (entry + exit)
-    assert e.risk.st.day_pnl == pytest.approx(-(fee * 2) * 2)
+    run(e.enter(EntrySignal("call", "SWING", NOW, 660.0, "1m", ("1m", 1))))
+    assert len(e.open) == 1
+    pos, plan = e.open[0]
+    fee = e.cfg["sizing"]["fee_per_contract"]
+    assert e.risk.st.day_pnl == pytest.approx(-fee * pos.qty)      # the entry fee is a cost the moment it's paid
+    run(e.exit(pos, plan, ExitIntent(pos.qty, "test", urgent=True), NOW))
+    assert e.risk.st.day_pnl == pytest.approx(pos.realized - pos.fees)   # matches the journaled net

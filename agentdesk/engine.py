@@ -455,6 +455,7 @@ class Engine:
             pos.mark, pos.bid, pos.ask = q.mark, q.bid, q.ask
             pos.crew = crew_fx
             pos.fees += self.cfg["sizing"]["fee_per_contract"] * res.filled_qty
+            self.risk.on_realized(-pos.fees)           # the entry fee counts toward today's P&L, as the exit fee does
             pos.fills.append({"ts": now, "side": "buy", "qty": res.filled_qty, "px": res.avg_price, "why": "entry"})
             ecfg = self.cfg["exits"]
             ex_tw = {k: v for k, v in self.trade_tweaks.items() if k.startswith("exits.")}
@@ -545,13 +546,18 @@ class Engine:
                 self.bus.emit("position", now, pos=pos.to_dict(), targets=plan.targets(), event="update")
 
     async def exit(self, pos: Position, plan: ExitPlan, intent: ExitIntent, now: float) -> None:
-        if pos.qty <= 0 or pos.status != "open" or getattr(pos, "_exiting", False):
-            return
-        pos._exiting = True
+        held = pos.qty
         try:
-            await self._exit(pos, plan, intent, now)
+            if pos.qty <= 0 or pos.status != "open" or getattr(pos, "_exiting", False):
+                return
+            pos._exiting = True
+            try:
+                await self._exit(pos, plan, intent, now)
+            finally:
+                pos._exiting = False
         finally:
-            pos._exiting = False
+            if intent.scale and pos.qty == held:     # nothing sold (no quote, unfilled, another exit busy): retry it
+                pos.scales_done = max(0, pos.scales_done - 1)
 
     async def _exit(self, pos: Position, plan: ExitPlan, intent: ExitIntent, now: float) -> None:
         q = await self.quotes.quote(pos.contract)
@@ -650,6 +656,10 @@ class Engine:
         now = self.feed.now()
         try:
             for pos, plan in list(self.open):
+                for _ in range(400):                 # an exit already in flight (a scale-out): let it finish, then sell the rest
+                    if not getattr(pos, "_exiting", False):
+                        break
+                    await asyncio.sleep(0.05)
                 await self.exit(pos, plan, ExitIntent(pos.qty, reason, urgent=True), now)
         finally:
             if self.books:
