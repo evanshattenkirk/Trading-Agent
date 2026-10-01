@@ -45,6 +45,7 @@ class ExitIntent:
     qty: int
     reason: str
     urgent: bool            # urgent = hit the bid now; otherwise work a limit
+    scale: bool = False     # a scale-out: counted done only once something sells (engine.exit rolls it back)
 
 
 @dataclass
@@ -151,7 +152,7 @@ class ExitPlan:
                 pos.scales_done += 1
                 self._update_stop()
                 if n > 0:
-                    return ExitIntent(n, f"scale +{int(s['at'] * 100)}%", urgent=False)
+                    return ExitIntent(n, f"scale +{int(s['at'] * 100)}%", urgent=False, scale=True)
 
         mins = (now - pos.opened_ts) / 60
         if pos.scales_done == 0 and mins >= self.p["time_stop_min"] and pos.pnl_pct < self.p["time_stop_min_gain"]:

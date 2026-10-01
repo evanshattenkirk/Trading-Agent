@@ -30,6 +30,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
   - Next-trade and today tweaks auto-apply, but only for the `TWEAKS` whitelist within hard bounds: stop 10–25%, trail, first target, RSI cap, earlier cutoff, fewer trades, skip a setup, strike distance.
   - The crew can never change size or loss limits, including anything under `books.*`.
   - Standing changes and new strategies wait for Evan's Approve button. Approved strategies are built and backtested first; nothing new trades on its own.
+  - Suggestions clear once their reason has passed (Evan, 2026-10-01): today's tweaks at the end of the day; a standing change at the desk's `until`, else after the event it cites (FOMC, CPI, payrolls..., from blackouts, the weekly calendar or config), else after `crew.proposal_ttl_days.standing` (5); new strategies only at a desk's `until`. Expired items keep status `expired` in proposals.json, leave the dashboard and can't be approved. Re-pitching the same standing change refreshes its card.
 - Offline (no `ANTHROPIC_API_KEY`) the crew runs templated briefs and roundtables. Online, Macro (08:25, 11:30), Vol (08:25) and the weekly calendar use web search, about 3 calls a day.
 - Every Claude call (desk briefs, roundtable, book F news tag) puts an explicit `cache_control` breakpoint on its stable system block via `crew.cached_system`; time, price, briefs and stats stay in the user message after it. `Crew.cache_usage` (also in the dashboard state) tallies calls, input/output tokens, cache reads and writes, web searches and estimated cost, in total and per desk.
 
@@ -58,7 +59,7 @@ Evan's automated options trading desk on Robinhood Agentic Trading (MCP), built 
 ## Rules for working on this repo
 - Never call `place_option_order`, `cancel_option_order` or `exercise_option` yourself. Orders go only through the engine in `--mode live` with `live_enabled: true`. Keep MCP permission prompts ON for those tools.
 - Paper stays the default. Don't change strategy rules (A as Evan trades it, B as specified) without asking. A filter added after seeing results is a new variant to test separately.
-- Run `python -m pytest -q tests` after changes (626 pass today; the full run takes about 3 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
+- Run `python -m pytest -q tests` after changes (653 pass today; the full run takes about 3 min). Rebuild the demo with `tools/build_demo.py` if the UI changes.
 
 ## Next steps (HANDOFF section 10)
 1. Mac setup + sim. 2. Alpaca keys + `rh-inspect`. 3. One full paper session of book A. 4. Multi-book framework + B, C, D. 5. Book E + `iv_history`. 6. Four or more weeks of paper with weekly Quant reports. 7. Real-quote analyses. 8. Evan promotes at most one book, then shadow for a week, then live at 1 lot.

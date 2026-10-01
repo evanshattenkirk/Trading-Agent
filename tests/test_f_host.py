@@ -333,6 +333,22 @@ def test_unexpected_equity_position_halts_every_book_in_shadow():
     assert host.account.halted and eng.risk.st.halted and "AAPL" in eng.risk.st.halt_reason
 
 
+def test_unexpected_equity_halt_is_rechecked_at_restart_not_restored(tmp_path):    # 2026-10-01 sweep
+    from agentdesk.risk import RiskManager, RiskStore
+    cfg = copy.deepcopy(BASE)
+    eng = FakeEngine(FakeQuotes(), cfg)
+    eng.risk = RiskManager(cfg, RiskStore(tmp_path / "risk.json"))
+    eng.risk.restore(str(DAY))
+    rh = FakeRH(positions=[{"symbol": "AAPL", "quantity": "3"}])
+    host = build_f(eng, cfg, rh=rh, mode="shadow", provider="alpaca", feed=eng.feed, data=FakeData(DAY))
+    eng.feed.t = et(8, 0)
+    run(host.start())
+    assert eng.risk.st.halted
+    again = RiskManager(cfg, RiskStore(tmp_path / "risk.json"))      # Evan sold the shares and restarted
+    again.restore(str(DAY))
+    assert not again.st.halted
+
+
 def test_build_refuses_f_without_paper_only_and_skips_when_disabled():
     cfg = copy.deepcopy(BASE)
     eng = FakeEngine(FakeQuotes(), cfg)

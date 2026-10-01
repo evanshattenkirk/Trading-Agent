@@ -84,8 +84,8 @@ class RiskManager:
         self.clear_halt_on_restore = False      # run --clear-halt: lift a saved halt, keep the P&L and counts
 
     def reset_day(self, day: str | None = None) -> None:
-        keep = self.st.blackouts
-        self.st = RiskState(blackouts=[b for b in keep])
+        keep = [b for b in self.st.blackouts if day is None or str(session_date(b.end)) >= day]   # yesterday's are done
+        self.st = RiskState(blackouts=keep)
         if day is not None:
             self.day = day
         self._save()

@@ -325,3 +325,22 @@ def test_forced_exit_with_failing_quotes_is_throttled_then_closes_at_last_mark()
     assert h.book.open == [] and not h.book.halted
     t = eng.journal.trades()[0]
     assert "T-0" in t["exit_reason"] and "last mark" in t["exit_reason"]
+
+
+def test_failed_report_date_check_is_retried_the_same_day():                    # 2026-10-01 sweep
+    h, eng, ch = make()
+    tick(h, ch, at(MON, 14, 45))
+    real = h.calendar_fn
+    fail = [True]
+
+    async def cal(today):
+        return None if fail[0] else await real(today)
+    h.calendar_fn = cal
+    h.cal_rows[:] = [{**AMD_EV, "date": TUE}, XOM_EV]       # AMD's report moved to today (Tuesday) after the close
+    tick(h, ch, at(TUE, 8, 31))                              # the 08:31 check can't read the calendar
+    assert by_symbol(h)["AMD"].meta["exit_day"] != "2026-10-06"
+    fail[0] = False
+    tick(h, ch, at(TUE, 8, 31, 30))                          # inside the retry gap
+    assert by_symbol(h)["AMD"].meta["exit_day"] != "2026-10-06"
+    tick(h, ch, at(TUE, 8, 32))
+    assert by_symbol(h)["AMD"].meta["exit_day"] == "2026-10-06"

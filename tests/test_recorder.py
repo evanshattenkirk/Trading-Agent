@@ -162,3 +162,34 @@ def test_quote_and_iv_loops_share_one_robinhood_session(tmp_path, monkeypatch): 
         await asyncio.gather(d.connect(), d.connect(), recorder.IVClient(d).d.connect())
     asyncio.run(go())
     assert len(started) == 1 and d.rh is started[0]
+
+
+def test_empty_polls_alert_like_failed_ones(tmp_path, monkeypatch):           # 2026-10-01 sweep
+    """Polls that return 0 rows without raising (a schema change, no bids) must still raise the 5-minute alert."""
+    from agentdesk.config import load_config
+    monkeypatch.setattr(recorder, "RECORDER_DIR", tmp_path)
+    alerts = []
+    monkeypatch.setattr(recorder, "notify", alerts.append)
+    cfg = load_config()
+    cfg["journal_path"] = str(tmp_path / "j.db")
+    d = recorder.RecorderDaemon(cfg)
+    d.ivs = {}
+    d.awake = lambda on: None
+    clock = [at_ct(MON, dtime(10, 0))]
+    monkeypatch.setattr(recorder.time, "time", lambda: clock[0])
+
+    async def empty(now):
+        return 0
+    d.tick = empty
+
+    class Done(BaseException):          # not caught by the poll loop
+        pass
+
+    async def sleep(s):
+        clock[0] += 10
+        if clock[0] > at_ct(MON, dtime(10, 7)):
+            raise Done
+    monkeypatch.setattr(recorder.asyncio, "sleep", sleep)
+    with pytest.raises(Done):
+        asyncio.run(d.run())
+    assert len(alerts) == 1 and "No quotes" in alerts[0]

@@ -7,17 +7,29 @@ Scopes
   new_strategy   a different strategy (written spec)   waits for your Approve -> queued for build + backtest; never runs by itself
 
 Tweaks may only touch the whitelisted keys below, inside the listed bounds. Anything else is rejected.
+
+Expiry (Evan, 2026-10-01: clear a suggestion once its reason has passed). Each item gets `expires_ts`:
+  trade / day    the end of the day it was made (the engine reverts the tweak at the next session anyway)
+  standing       the desk's `until` (a date or "YYYY-MM-DD HH:MM" CT); else, when it cites an event (FOMC, CPI,
+                 payrolls...), the end of that event's blackout, or the end of today if the event already passed;
+                 else crew.proposal_ttl_days.standing. Never later than that TTL.
+  new_strategy   the desk's `until` if it gave one; otherwise it waits for you
+Expired items keep their history in proposals.json with status "expired" and can no longer be approved.
 """
 from __future__ import annotations
 
 import copy
 import itertools
 import json
+import re
 import time
+from datetime import date, datetime
+from datetime import time as dtime
 from pathlib import Path
 
 import yaml
 
+from .clock import CT, at_ct, session_date
 from .config import ROOT, hhmm
 
 TWEAKS = {
@@ -35,6 +47,46 @@ TWEAKS = {
     "strikes.max_offset": ("int", -1, 2),
 }
 TRADE_SCOPE_KEYS = {k for k in TWEAKS if k.startswith("exits.")} | {"strikes.max_offset"}
+
+# Scheduled events a suggestion can be tied to. A standing change whose title or rationale names one of these
+# expires after the next known event of the same kind (today's blackouts, the weekly calendar, config events).
+EVENT_KINDS = {
+    "Fed": r"\b(fomc|fed|federal reserve|powell|rate decision)\b",
+    "CPI": r"\bcpi\b",
+    "PPI": r"\bppi\b",
+    "jobs": r"\b(nfp|non-?farm|payrolls?|jobs report)\b",
+    "claims": r"\b(jobless|initial) claims\b",
+    "PCE": r"\bpce\b",
+    "GDP": r"\bgdp\b",
+    "ISM": r"\bism\b",
+    "retail sales": r"\bretail sales\b",
+    "JOLTS": r"\bjolts\b",
+    "auction": r"\bauctions?\b",
+    "opex": r"\b(opex|quad witching)\b",
+}
+LIVE = ("pending", "applied")
+
+
+def event_kinds(text: str) -> set[str]:
+    t = (text or "").lower()
+    return {k for k, rx in EVENT_KINDS.items() if re.search(rx, t)}
+
+
+def end_of_day(ts: float) -> float:
+    return at_ct(session_date(ts), dtime(23, 59, 59))
+
+
+def parse_until(v) -> float | None:
+    """'YYYY-MM-DD' -> the end of that day CT; 'YYYY-MM-DD HH:MM' -> that time CT; anything else -> None."""
+    if not v:
+        return None
+    s = str(v).strip().replace("T", " ")
+    try:
+        if len(s) <= 10:
+            return at_ct(date.fromisoformat(s), dtime(23, 59, 59))
+        return datetime.strptime(s[:16], "%Y-%m-%d %H:%M").replace(tzinfo=CT).timestamp()
+    except ValueError:
+        return None
 
 
 def get_path(d, key: str):
@@ -100,11 +152,61 @@ class ProposalBook:
         if self.path:
             self.path.write_text(json.dumps(self.items, indent=1, default=str))
 
-    def submit(self, desk: str, p: dict, now: float) -> dict:
+    def _ttl(self, scope: str) -> float | None:
+        days = ((self.cfg.get("crew") or {}).get("proposal_ttl_days") or {}).get(scope)
+        return float(days) * 86400 if days else None
+
+    def expiry(self, scope: str, p: dict, now: float, events: list[dict] | None = None) -> tuple[float | None, str]:
+        """When a suggestion's reason has passed, and why (see the module docstring)."""
+        if scope in ("trade", "day"):
+            return end_of_day(now), "end of the day"
+        ttl = self._ttl(scope)
+        cap = (now + ttl, f"{ttl / 86400:g}-day limit") if ttl else (None, "")
+        until = parse_until(p.get("until"))
+        if until is not None:
+            return (until, "the desk's date") if cap[0] is None or until <= cap[0] else cap
+        if scope == "standing":
+            kinds = event_kinds(f"{p.get('title', '')} {p.get('rationale', '')}")
+            hits = [ev for ev in events or [] if kinds & event_kinds(ev.get("name", ""))]
+            ahead = sorted((ev for ev in hits if ev["end"] > now), key=lambda ev: ev["end"])
+            if ahead:
+                got = (ahead[0]["end"], f"after {ahead[0]['name']}")
+            elif hits:
+                got = (end_of_day(now), f"{hits[0]['name']} has passed")
+            else:
+                got = None
+            if got:
+                return got if cap[0] is None or got[0] <= cap[0] else cap
+        return cap
+
+    def _legacy_expiry(self, i: dict) -> tuple[float | None, str]:
+        """Items saved before expiry existed: the default for their scope, counted from when they were made."""
+        if i.get("scope") in ("trade", "day"):
+            return end_of_day(i["ts"]), "end of the day"
+        ttl = self._ttl(i.get("scope"))
+        return (i["ts"] + ttl, f"{ttl / 86400:g}-day limit") if ttl else (None, "")
+
+    def expire(self, now: float) -> list[dict]:
+        """Mark every live suggestion whose reason has passed as expired. Returns the ones that changed."""
+        gone = []
+        for i in self.items:
+            live = i["status"] in LIVE or (i["status"] == "approved" and i.get("scope") in ("trade", "day"))
+            if not live:
+                continue
+            exp, why = (i["expires_ts"], i.get("expires_why", "")) if "expires_ts" in i else self._legacy_expiry(i)
+            if exp is not None and now >= exp:
+                i.update(status="expired", expired_why=why or "its reason has passed", decided_ts=now)
+                gone.append(i)
+        if gone:
+            self.save()
+        return gone
+
+    def submit(self, desk: str, p: dict, now: float, events: list[dict] | None = None) -> dict:
         scope = p.get("scope", "day")
+        exp, why = self.expiry(scope, p, now, events)
         item = {"id": str(next(self._ids)), "ts": now, "desk": desk, "scope": scope, "title": p.get("title", "")[:120],
                 "rationale": p.get("rationale", "")[:600], "params": {}, "spec": p.get("spec", "")[:3000],
-                "evidence": p.get("evidence", "")[:600], "status": "pending"}
+                "evidence": p.get("evidence", "")[:600], "status": "pending", "expires_ts": exp, "expires_why": why}
         if scope in ("trade", "day") and any(i["title"] == item["title"] and i["status"] == "applied" and now - i["ts"] < 12 * 3600
                                              for i in self.items):
             return {}
@@ -127,6 +229,14 @@ class ProposalBook:
                 item["status"] = "rejected: " + ("; ".join(errors) if errors else "no parameters")
             elif scope in ("trade", "day") and self.cfg["crew"].get("auto_apply_tweaks", True):
                 item["status"] = "applied"
+            elif scope == "standing":
+                same = next((i for i in self.items if i["status"] == "pending" and i["scope"] == "standing"
+                             and i["params"] == params), None)
+                if same is not None:                            # pitched again: one card, refreshed
+                    same.update({k: item[k] for k in ("desk", "title", "rationale", "evidence", "expires_ts", "expires_why")},
+                                ts=now)
+                    self.save()
+                    return same
         self.items.append(item)
         self.items = self.items[-200:]
         self.save()

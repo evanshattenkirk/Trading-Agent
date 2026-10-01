@@ -293,6 +293,7 @@ class RecorderDaemon:
                 if n or not is_rth(now) or (self.rec and self.rec.chain_day and not self.rec.chain):
                     self.last_ok = time.time()          # recorded, pre-open, or no 0DTE expiry today (holiday)
                 self.fails, backoff = 0, 5.0
+                self.maybe_alert(now)                   # polls that keep coming back empty alert like failed ones
                 if once:
                     log.info("one poll: %d rows", n)
                     await self.disconnect()

@@ -183,6 +183,7 @@ backtest.py (replays history through the same Engine) | research/ (strategy stud
     - how far out of the money (−1 to +2)
 
     Today's changes revert at the next session.
+  - **Suggestions expire when their reason passes.** A standing change tied to an event (FOMC, CPI...) clears after that event; any other standing change after 5 days (`crew.proposal_ttl_days`); today's tweaks at the end of the day. An expired suggestion can't be approved.
   - **Size and loss limits can't be changed by the crew.**
   - **Permanent changes and new strategies wait for Evan's Approve button.** Permanent changes are written to `overrides.yaml`. An approved new strategy gets built and backtested first; nothing new trades on its own.
   - The whitelist and bounds live in `agentdesk/proposals.py`. Keep them in sync with this text.

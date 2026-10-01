@@ -115,6 +115,9 @@ crew:
   min_size_multiplier: 0.5          # lowest a desk vote can cut size to
   max_size_multiplier: 1.25         # size-up cap; only when every conviction check passes (see crew.py size_up)
   auto_apply_tweaks: true           # per-trade / per-day tweaks inside whitelisted bounds apply without asking
+  # Suggestions expire once their reason has passed (Evan, 2026-10-01): today's tweaks at the end of the day, a change
+  # pitched for an event (FOMC, CPI...) after that event, any other standing change after this many days.
+  proposal_ttl_days: {standing: 5}
   # Known events if you want them without the API (or to override):
   events: []
   #  - {date: 2026-10-15, time: "07:30", name: "CPI", impact: high}
