@@ -179,7 +179,12 @@ class Crew:
             self.day, self.ran = d, set()
             self._drop_prep()
             self._logged, self._cal_check, self.cache_usage = set(), None, self._new_usage()
+            self.briefs, self.conviction = {}, {"mult": 1.0, "checks": [], "ts": 0}     # yesterday's reads are done
             self._load_config_events(now)
+            st = self.e.risk.st
+            self.directive = {"size_mult": st.size_mult, "blackouts": [x.name for x in st.blackouts], "summary": "",
+                              "votes": {}}
+            self.e.bus.emit("directive", now, directive=self.directive, risk=self.e.risk.to_dict())
         t = ct_time(now)
         sch = self.cfg["schedule"]
         if "calendar" not in self.ran and t >= hhmm(sch.get("arrive") or sch["premarket"]) and ct(now).weekday() < 5:
@@ -307,7 +312,7 @@ class Crew:
                 bus.emit("crew", now, desk=k, phase="say", who=k, to="agent", text=note)
             pitched += [{**p, "desk": k} for p in b.get("proposals") or []]
         talk = await self._roundtable(slot, desks, now)
-        for ln in talk.get("lines", [])[:6]:
+        for ln in [x for x in talk.get("lines") or [] if isinstance(x, dict)][:6]:
             frm, to = ln.get("from"), ln.get("to", "agent")
             if frm in DESKS and ln.get("text"):
                 bus.emit("crew", now, desk=frm, phase="say", who=frm, to=to, text=str(ln["text"])[:140])
@@ -318,7 +323,7 @@ class Crew:
                     self.briefs[k]["size_multiplier"] = revised[k] = self._clamp(v, k)
                 except (TypeError, ValueError):
                     continue
-        for p in pitched + list(talk.get("proposals") or []):
+        for p in pitched + [x for x in talk.get("proposals") or [] if isinstance(x, dict)]:
             if p.get("desk", desks[0]) in RESTRICT_ONLY + INFO_ONLY:
                 continue
             await self._handle_proposal(p.get("desk", desks[0]), p, now)
@@ -356,7 +361,7 @@ class Crew:
         if key in INFO_ONLY:                        # Fed and Rates inform; they don't vote
             return 1.0
         hi = 1.0 if key in RESTRICT_ONLY else self.cfg.get("max_size_multiplier", 1.25)
-        return max(self.cfg["min_size_multiplier"], min(hi, float(v)))
+        return max(self.cfg["min_size_multiplier"], min(hi, _num(v, 1.0)))
 
     # ------------------------------------------------------------ votes by book
     def _routes(self, desk: str) -> list[str]:
@@ -542,9 +547,21 @@ class Crew:
         return self._finish(b, key)
 
     def _finish(self, b: dict, key: str | None = None) -> dict:
+        """Every brief leaves here with the shape the rest of the crew reads. An LLM reply can carry a null or text
+        confidence, a null vote, or events and pitches that aren't objects; any of those used to raise in _apply or
+        in size_up on every book A entry, which the engine counts toward its safety halt."""
         b["day"] = str(self.day)
+        b["headline"] = str(b.get("headline") or "")
+        if b.get("bias") not in ("bullish", "neutral", "bearish"):
+            b["bias"] = "neutral"
+        b["confidence"] = max(0.0, min(1.0, _num(b.get("confidence"), 0.0)))
+        notes = b.get("notes")
+        b["notes"] = [str(n) for n in notes] if isinstance(notes, list) else [str(notes)] if notes else []
+        b["events"] = [ev for ev in b.get("events") or [] if _good_event(ev)] if isinstance(b.get("events"), list) else []
+        props = b.get("proposals")
+        b["proposals"] = [x for x in props if isinstance(x, dict)] if isinstance(props, list) else []
         b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0), key)
-        b["cooldown_minutes"] = max(0, min(30, int(b.get("cooldown_minutes") or 0)))
+        b["cooldown_minutes"] = max(0, min(30, int(_num(b.get("cooldown_minutes"), 0))))
         if key in RESTRICT_ONLY + INFO_ONLY:    # inform (or cut) only: no pitches, no blackouts
             b["proposals"], b["events"] = [], []
         return b
@@ -1035,6 +1052,27 @@ class Crew:
         return {"briefs": self.briefs, "directive": self.directive, "offline": self.offline, "cache_usage": self.cache_usage,
                 "desks": {k: {"name": d.name} for k, d in DESKS.items()}, "conviction": self.conviction,
                 "proposals": [i for i in self.book.items if i["status"] != "expired"][-30:]}
+
+
+def _num(v, default: float) -> float:
+    """A number from an LLM field; null, text or NaN -> default."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return default
+    return x if math.isfinite(x) else default
+
+
+def _good_event(ev) -> bool:
+    """An event object with a name, and a time_ct that parses when it has one."""
+    if not isinstance(ev, dict) or not ev.get("name"):
+        return False
+    try:
+        if ev.get("time_ct") is not None:
+            hhmm(str(ev["time_ct"]))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _extract_json(text: str, key: str = "headline") -> dict | None:

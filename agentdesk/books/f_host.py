@@ -154,7 +154,7 @@ class FHost:
         names = ", ".join(str(p.get("symbol") or "?") for p in extra)
         msg = f"unexpected equity position(s) in the agentic account: {names}. Close or move them, then restart"
         self.account.halt(msg)
-        self.e.risk.halt(msg)
+        self.e.risk.halt(msg, sticky=False)         # a startup check: it re-runs on the next start, like the engine's own
         self._log(now, "error", msg)
 
     async def on_bar(self, bar) -> None:

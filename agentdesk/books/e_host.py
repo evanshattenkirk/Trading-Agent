@@ -79,7 +79,7 @@ class EHost:
         self._last_poll, self._last_emit = -1e18, -1e18
         self._last_rate_log = -1e18
         self.vix_prev, self._vix_day, self._vix_try = None, None, -1e18
-        self._entry_try, self._exit_tries = -1e18, {}
+        self._entry_try, self._exit_tries, self._refresh_try = -1e18, {}, -1e18
 
     async def _crew_calendar(self, today):
         from ..desks import load_calendar
@@ -166,9 +166,10 @@ class EHost:
 
     async def _tick(self, now: float) -> None:
         await self._ensure_vix(now)
-        if self.book.open and self.refreshed != self.day and is_rth(now):
-            self.refreshed = self.day
-            await self._refresh_events(now)
+        if self.book.open and self.refreshed != self.day and is_rth(now) and now - self._refresh_try >= ENTRY_RETRY_SEC:
+            self._refresh_try = now                 # a failed calendar read is retried, never skipped for the day
+            if await self._refresh_events(now):
+                self.refreshed = self.day
         if self.book.open:
             await self._manage(now)
         half = self.e.risk.early_close(now)
@@ -306,11 +307,12 @@ class EHost:
         self.e.bus.emit("book_position", now, pos=pos.to_dict(), event="open", size_note=size_why)
         self.books_changed(now)
 
-    async def _refresh_events(self, now: float) -> None:
-        """Move an open position's exit when the report date moved (spec E-Q7): the nearest calendar row wins."""
+    async def _refresh_events(self, now: float) -> bool:
+        """Move an open position's exit when the report date moved (spec E-Q7): the nearest calendar row wins.
+        False when the calendar couldn't be read (the caller retries)."""
         cal = await self._calendar(now)
-        if not cal:
-            return
+        if cal is None:
+            return False
         for p in self.book.open:
             m = p.meta
             rows = [r for r in cal if r["symbol"] == m.get("symbol")]
@@ -326,6 +328,7 @@ class EHost:
                 self.ej.save(p, now)
                 self._log(now, "warn", f"book E: {m['symbol']} report moved {old} -> {r['date']} {r['timing'] or 'n/a'}; "
                                        f"exit now {m['exit_day']}")
+        return True
 
     # ------------------------------------------------------------ management
     def _forced(self, p: ComboPosition, now: float, half: bool) -> str | None:
