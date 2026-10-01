@@ -76,7 +76,8 @@ def _num(v) -> float | None:
 class RobinhoodChains:
     """Read-only chain data for single stocks (get_option_chains, get_option_instruments, get_option_quotes,
     get_equity_quotes). Expirations are read once per symbol per day; strike lists are cached on disk per
-    (symbol, expiry) for LIST_MAX_AGE_DAYS; each quote pass is one batched get_option_quotes call."""
+    (symbol, expiry) for LIST_MAX_AGE_DAYS, and in memory for the session day (then re-read from the file, or listed
+    again once the file is stale); each quote pass is one batched get_option_quotes call."""
 
     LIST_MAX_AGE_DAYS = 3
     QUOTE_MAX_AGE_SEC = 120     # a cached quote older than this is not returned by quotes()
@@ -86,6 +87,7 @@ class RobinhoodChains:
         self.dir = Path(os.path.expanduser(str(cache_dir))) if cache_dir else None
         self._exps: dict[str, tuple[date, list[date]]] = {}
         self._chains: dict[tuple[str, date], dict[tuple[float, str], str]] = {}
+        self._chain_day: dict[tuple[str, date], date] = {}
         self.cache: dict[str, IVQuote] = {}
 
     async def _call(self, tool: str, args: dict):
@@ -162,13 +164,14 @@ class RobinhoodChains:
 
     # ------------------------------------------------------------ strike lists
     async def _chain(self, symbol: str, expiry: date) -> dict:
-        key = (symbol, expiry)
-        if key not in self._chains:
+        from .clock import session_date
+        key, today = (symbol, expiry), session_date(self.clock())
+        if self._chain_day.get(key) != today:             # a long-running process re-checks its strike lists daily
             ch = self._load(symbol, expiry)
             if ch is None:
                 ch = await self._list(symbol, expiry)
                 self._save(symbol, expiry, ch)
-            self._chains[key] = ch
+            self._chains[key], self._chain_day[key] = ch, today
         return self._chains[key]
 
     async def _list(self, symbol: str, expiry: date) -> dict:
