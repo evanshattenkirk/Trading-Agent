@@ -23,7 +23,7 @@ from ..iv import atm_strike
 from . import earnings_iv as R
 from .account import AccountRisk
 from .base import ExitIntent
-from .book import Book
+from .book import Book, todays_trades
 from .combo import ComboQuote, ComboPosition, leg_problem, paper_fair
 from .e_journal import EJournal
 from .fills import ComboExecutor
@@ -119,6 +119,8 @@ class EHost:
         if bad:
             self.book.halt(f"unreadable e_positions rows: {', '.join(bad)}")
             self._log(now, "error", f"book E halted: {self.book.halt_reason}")
+        today = str(self.day)                                          # a restart mid-day keeps today's counts
+        self.account.on_closed(self.book.restore_day(todays_trades(self.e.journal, today, "E"), today))
 
     async def on_bar(self, bar) -> None:
         return None
