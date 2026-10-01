@@ -616,12 +616,13 @@ class Engine:
     def decide_proposal(self, pid: str, approve: bool) -> dict | None:
         now = self.feed.now()
         book = self.crew.book
+        self.crew.expire_proposals(now)          # a suggestion whose reason has passed can't be approved
         item = next((i for i in book.items if i["id"] == pid), None)
         if item is None or item["status"] != "pending":
             return None
         if not approve:
             item = book.set_status(pid, "rejected by you")
-        elif item["scope"] == "standing":
+        elif item["scope"] in ("standing", "trade", "day"):
             item = book.set_status(pid, "approved")
             self.apply_tweak(item, now)
         else:

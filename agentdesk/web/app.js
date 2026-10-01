@@ -545,8 +545,14 @@
       <ul class="gate">${c.checks.map((x) => `<li class="${x.ok ? 'ok' : 'no'}"><b>${esc(x.name)}</b><span>${esc(x.detail || '')}</span></li>`).join('')}</ul>`;
   }
 
+  function untilLbl(ts) {
+    const d = new Date(ts * 1000);
+    const day = d.toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short', month: 'short', day: 'numeric' });
+    return `${day} ${d.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: false })} CT`;
+  }
+
   function renderProps() {
-    const items = [...S.proposals.values()].sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0) || b.ts - a.ts);
+    const items = [...S.proposals.values()].filter((p) => p.status !== 'expired').sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0) || b.ts - a.ts);
     const pend = items.filter((p) => p.status === 'pending').length;
     $('props-state').textContent = pend ? `${pend} awaiting you` : items.length ? 'Up to date' : 'None';
     $('props-state').className = 'pill ' + (pend ? 'acc' : '');
@@ -554,7 +560,7 @@
     const scopeLbl = { trade: 'Next trade', day: 'Today', standing: 'Standing change', new_strategy: 'New strategy' };
     $('props').innerHTML = items.slice(0, 8).map((p) => `<li class="${p.status === 'pending' ? 'pending' : ''}">
       <div class="ph"><span class="pt">${esc(p.title)}</span><span class="pill ${p.status === 'applied' ? 'good' : p.status === 'pending' ? 'acc' : ''}">${scopeLbl[p.scope] || p.scope}</span></div>
-      <span class="pm">${esc(DESK_META[p.desk] ? DESK_META[p.desk][0] : p.desk)} · ${hm(p.ts)} · ${esc(p.status)}</span>
+      <span class="pm">${esc(DESK_META[p.desk] ? DESK_META[p.desk][0] : p.desk)} · ${hm(p.ts)} · ${esc(p.status)}${p.status === 'pending' && p.expires_ts ? ` · clears ${untilLbl(p.expires_ts)}${p.expires_why ? ` (${esc(p.expires_why)})` : ''}` : ''}</span>
       ${p.rationale ? `<span class="pm">${esc(p.rationale)}</span>` : ''}
       ${Object.keys(p.params || {}).length ? `<span class="pm">${Object.entries(p.params).map(([k, v]) => `<code>${esc(k)} = ${esc(JSON.stringify(v))}</code>`).join(' ')}</span>` : ''}
       ${p.spec ? `<span class="pm"><b>Rules:</b> ${esc(p.spec)}</span>` : ''}
