@@ -165,8 +165,7 @@ class RiskManager:
         (1.0 gives the quantity the crew's vote would have left alone, for the crew log)."""
         if ask <= 0:
             return 0, "no ask"
-        cut = self.st.size_mult if cut is None else cut
-        m = cut if cut < 1.0 else min(max(1.0, up_mult), self.cfg["crew"].get("max_size_multiplier", 1.25))
+        m = self._mult(up_mult, cut)
         budget = self.s["max_trade_dollars"] * m
         cap = round(self.s["max_contracts"] * m) if m > 1.0 else self.s["max_contracts"]
         qty = min(cap, int(budget // (ask * 100)))
@@ -174,6 +173,15 @@ class RiskManager:
             return 0, f"1 contract costs ${ask * 100:.0f} > budget ${budget:.0f}"
         tag = f" SIZE-UP {m:.2f}x" if m > 1.0 else ""
         return qty, f"{qty} x ${ask:.2f} = ${qty * ask * 100:.0f} (budget ${budget:.0f}{tag})"
+
+    def _mult(self, up_mult: float = 1.0, cut: float | None = None) -> float:
+        cut = self.st.size_mult if cut is None else cut
+        return cut if cut < 1.0 else min(max(1.0, up_mult), self.cfg["crew"].get("max_size_multiplier", 1.25))
+
+    def trade_budget(self, up_mult: float = 1.0) -> float:
+        """The dollars one book A entry may spend: $max_trade x the same multiplier size() uses. A repriced buy
+        re-sizes against this, so chasing the ask never spends more than the sizing allowed."""
+        return self.s["max_trade_dollars"] * self._mult(up_mult)
 
     def early_close(self, now: float) -> bool:
         return str(session_date(now)) in {str(d) for d in (self.cfg.get("calendar") or {}).get("early_close", [])}

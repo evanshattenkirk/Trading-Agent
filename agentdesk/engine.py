@@ -445,7 +445,10 @@ class Engine:
                 size_why += f"; trimmed to {qty} by buying power"
             limit = min(q.ask, round(q.mark + self.ocfg["entry_spread_frac"] * (q.ask - q.bid), 2))
             self.set_agent(now, "typing", f"BUY {qty}x {contract.strike:g}{'C' if es.side == 'call' else 'P'} @ {limit:.2f}")
-            res = await self._work_order(contract, "buy", qty, limit, now)
+            budget = self.risk.trade_budget(up_mult)
+            if bp is not None:
+                budget = min(budget, bp)
+            res = await self._work_order(contract, "buy", qty, limit, now, budget=budget)
             self.bus.emit("order", now, side="buy", contract=contract.label, qty=qty, limit=limit,
                           status=res.status, filled=res.filled_qty, price=res.avg_price, msg=res.message,
                           review=res.review)
@@ -484,7 +487,9 @@ class Engine:
             return OrderResult("partial" if ex.filled_qty else "unfilled", ex.filled_qty, ex.avg_price or limit,
                                ex.order_id, f"ambiguous: {ex}")
 
-    async def _work_order(self, contract, side, qty, limit, now):
+    async def _work_order(self, contract, side, qty, limit, now, budget: float | None = None):
+        """Submit, then reprice what is left to the ask (buy) or bid (sell) up to max_reprices times. A buy with a
+        `budget` re-sizes each reprice so what it fills never costs more than the budget in total."""
         res = await self._submit(contract, side, qty, limit, now)
         tries = 0
         while res.status in ("unfilled", "partial") and tries < self.ocfg["max_reprices"] \
@@ -495,6 +500,11 @@ class Engine:
                 break
             left = qty - res.filled_qty
             px = q.ask if side == "buy" else q.bid
+            if side == "buy" and budget is not None and px > 0:
+                spent = res.filled_qty * res.avg_price * 100
+                left = min(left, int((budget - spent + 1e-6) // (px * 100)))
+                if left <= 0:
+                    break
             nxt = await self._submit(contract, side, left, px, now)
             if nxt.filled_qty:
                 tot = res.filled_qty + nxt.filled_qty
