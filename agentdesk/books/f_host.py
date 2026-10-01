@@ -340,7 +340,7 @@ class FHost:
         st = self.e.risk.st
         if self.account.halted and self.account.flatten:
             return self.account.halt_reason
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return st.halt_reason or "kill switch"
         if self.book.halted:
             return f"book halted: {self.book.halt_reason}"
@@ -367,7 +367,7 @@ class FHost:
         st = self.e.risk.st
         if self.account.halted:
             return False, f"halted: {self.account.halt_reason}"
-        if st.halted and st.flatten_all:
+        if self.e.risk.account_flatten():
             return False, f"halted: {st.halt_reason}"
         if st.paused:
             return False, "paused"

@@ -92,7 +92,7 @@ class Engine:
                            sticky=False)
             self.bus.emit("log", self.feed.now(), level="warn", msg=self.risk.st.halt_reason)
         if self.books:
-            if self.risk.st.halted:
+            if self.risk.account_halted():          # book A's own halts (loss limit, profit lock) stay on A
                 self.books.halt_all(self.risk.st.halt_reason)
             await self.books.start()
         self.set_agent(self.feed.now(), "arriving", "Booting up. Loading history...")
@@ -277,7 +277,7 @@ class Engine:
     # ------------------------------------------------------------------ safety watchdog
     def _trip(self, reason: str, now: float) -> None:
         """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions."""
-        first = not (self.risk.st.halted and self.risk.st.flatten_all)
+        first = not self.risk.account_flatten()
         self.risk.halt(f"SAFETY: {reason}", flatten=True)
         if self.books:
             self.books.halt_all(f"SAFETY: {reason}", flatten=True)
