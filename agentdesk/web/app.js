@@ -286,13 +286,20 @@
     }
   }
 
+  let forming = null;             // the bar still building: its high and low accumulate over every tick
   function liveCandle(e) {
     const sec = TF_SEC[S.tf];
     if (!sec || S.bulk || !e.price) return;
     const arr = S.bars[S.tf], start = Math.floor(e.ts / sec) * sec;
     const last = arr[arr.length - 1];
     if (last && start <= last.t) return;
-    cS.update({ time: start, open: last ? last.c : e.price, high: Math.max(e.price, last ? last.c : e.price), low: Math.min(e.price, last ? last.c : e.price), close: e.price });
+    if (!forming || forming.time !== start || forming.tf !== S.tf) {
+      const open = last ? last.c : e.price;
+      forming = { tf: S.tf, time: start, open, high: open, low: open };
+    }
+    forming.high = Math.max(forming.high, e.price);
+    forming.low = Math.min(forming.low, e.price);
+    cS.update({ time: start, open: forming.open, high: forming.high, low: forming.low, close: e.price });
   }
 
   /* ------------------------------------------------------------------ books */
