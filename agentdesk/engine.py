@@ -300,6 +300,8 @@ class Engine:
         held = [p for p, _ in self.open] + [p for p in (self.books.positions() if self.books else [])
                                             if not getattr(p, "watchdog_exempt", False)]   # book E checks its own multi-day positions
         for pos in held:
+            if getattr(pos, "_exiting", False) or getattr(pos, "exiting", False):
+                continue                        # a sell is in flight; its own order checks and timeouts guard it
             age = now - pos.last_quote_ts
             if age > stale:
                 label = getattr(pos, "label", None) or pos.contract.label

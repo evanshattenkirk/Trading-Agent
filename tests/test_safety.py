@@ -307,3 +307,22 @@ def test_a_clean_call_of_another_kind_does_not_hide_failing_exit_checks():
             await e._run(fine(), "position check")
     run(go())
     assert e.risk.st.halted and "3 broker/API errors" in e.risk.st.halt_reason
+
+
+def test_watchdog_skips_a_position_that_is_mid_exit():                              # 2026-10-01 sweep item 7
+    e = engine()
+    pos = open_pos(e)
+    pos._exiting = True                         # a slow live sell is in flight; its own order checks guard it
+    e._watchdog(e.feed.t + 30)
+    assert not e.risk.st.halted
+    pos._exiting = False
+    e._watchdog(e.feed.t + 30)
+    assert e.risk.st.halted and "no fresh quote" in e.risk.st.halt_reason
+
+
+def test_watchdog_skips_a_paper_book_position_that_is_mid_exit():
+    e = engine()
+    p = type("P", (), {"label": "B fly", "last_quote_ts": e.feed.t, "exiting": True, "watchdog_exempt": False})()
+    e.books = type("H", (), {"positions": lambda s: [p]})()
+    e._watchdog(e.feed.t + 30)
+    assert not e.risk.st.halted
