@@ -176,6 +176,7 @@ class Crew:
             self.expire_proposals(now)
         d = session_date(now)
         if d != self.day:
+            rolled = self.day is not None           # a day change in a running process, not the first tick
             self.day, self.ran = d, set()
             self._drop_prep()
             self._logged, self._cal_check, self.cache_usage = set(), None, self._new_usage()
@@ -184,7 +185,8 @@ class Crew:
             st = self.e.risk.st
             self.directive = {"size_mult": st.size_mult, "blackouts": [x.name for x in st.blackouts], "summary": "",
                               "votes": {}}
-            self.e.bus.emit("directive", now, directive=self.directive, risk=self.e.risk.to_dict())
+            if rolled:
+                self.e.bus.emit("directive", now, directive=self.directive, risk=self.e.risk.to_dict())
         t = ct_time(now)
         sch = self.cfg["schedule"]
         if "calendar" not in self.ran and t >= hhmm(sch.get("arrive") or sch["premarket"]) and ct(now).weekday() < 5:
