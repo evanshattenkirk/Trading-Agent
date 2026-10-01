@@ -102,4 +102,17 @@ class MassiveQuotes(QuoteSource):
         lq = (r.json().get("results") or {}).get("last_quote") or {}
         if "bid" not in lq:
             return None
-        return Quote(float(lq["bid"]), float(lq["ask"]), time.time())
+        return Quote(float(lq["bid"]), float(lq["ask"]), _epoch(lq.get("last_updated") or lq.get("sip_timestamp")))
+
+
+def _epoch(v) -> float:
+    """A Massive/Polygon timestamp (nanoseconds; micro- or milliseconds tolerated) in epoch seconds; now if absent,
+    so the stale-quote watchdog judges the quote by when it was quoted, not when it was fetched."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return time.time()
+    for scale in (1e9, 1e6, 1e3):
+        if v > 1e9 * scale / 10:
+            return v / scale
+    return v if v > 0 else time.time()
