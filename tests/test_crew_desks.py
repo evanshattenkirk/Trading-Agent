@@ -280,6 +280,17 @@ def test_postmortem_flags_rule_breaks_and_round_trips():
     assert len(b["reviews"]) == 1 and "round trip" in b["reviews"][0]["why"]
 
 
+def test_postmortem_ignores_a_blackout_added_after_the_trade_opened():           # 2026-10-01 sweep item 11
+    e, c = make()
+    e.risk.add_blackout(at_ct(D, time(10, 30)), "Fed speaker", added_ts=at_ct(D, time(11, 30)))   # 10:20-10:40
+    e.closed = [trade(time(10, 25), time(10, 50))]
+    b = c._postmortem_brief(at_ct(D, time(15, 5)))
+    assert b["breaks"] == []
+    e.risk.add_blackout(at_ct(D, time(10, 30)), "CPI", added_ts=at_ct(D, time(8, 25)))           # known in time
+    b = c._postmortem_brief(at_ct(D, time(15, 5)))
+    assert [x["rule"] for x in b["breaks"]] == ["blackout"] and "CPI" in b["breaks"][0]["why"]
+
+
 def test_postmortem_writes_the_daily_file_outside_the_sim(tmp_path):
     e, c = make(sim=False, tmp=tmp_path)
     e.closed = [trade(time(9, 5), time(9, 40))]

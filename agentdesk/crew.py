@@ -215,7 +215,7 @@ class Crew:
             evs.append({"time": self.e.feed.event["time"], "name": self.e.feed.event["name"], "impact": "high"})
         for ev in evs:
             if ev.get("impact") == "high":
-                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time"])), ev["name"])
+                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time"])), ev["name"], added_ts=now)
                 self._event_src.setdefault(ev["name"], "config")
         self._config_events = evs
 
@@ -423,7 +423,7 @@ class Crew:
             for ev in b.get("events", []) or []:
                 if ev.get("impact") == "high" and ev.get("time_ct") and ev.get("name") not in have:
                     try:
-                        self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"])
+                        self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
                         have.add(ev["name"])
                         self._event_src.setdefault(ev["name"], k)
                     except Exception:
@@ -983,7 +983,7 @@ class Crew:
         have = {b.name for b in self.e.risk.st.blackouts}
         for ev in self._calendar_today(d):
             if ev["impact"] == "high" and ev["name"] not in have:
-                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"])
+                self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
                 have.add(ev["name"])
                 self._event_src.setdefault(ev["name"], "calendar")
 

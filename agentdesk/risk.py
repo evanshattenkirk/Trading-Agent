@@ -24,6 +24,7 @@ class Blackout:
     end: float
     name: str
     flatten_at: float | None = None
+    added_ts: float | None = None          # when the desk learned of it (the post-mortem judges trades by what was known)
 
 
 @dataclass
@@ -255,12 +256,12 @@ class RiskManager:
         self.st.paused = on
         self._save()
 
-    def add_blackout(self, event_ts: float, name: str) -> None:
+    def add_blackout(self, event_ts: float, name: str, added_ts: float | None = None) -> None:
         eb = self.r["event_blackout"]
         fl = self.r.get("flatten_before_high_impact_min")
         self.st.blackouts.append(Blackout(
             event_ts - eb["before_min"] * 60, event_ts + eb["after_min"] * 60, name,
-            event_ts - fl * 60 if fl is not None else None))
+            event_ts - fl * 60 if fl is not None else None, added_ts))
 
     def set_size_mult(self, m: float) -> None:
         lo = self.cfg["crew"]["min_size_multiplier"]

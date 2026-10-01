@@ -190,7 +190,8 @@ def _audit(crew, p) -> list[dict]:
     t_open = ct_time(p.opened_ts)
     if not (hhmm(win["start"]) <= t_open <= hhmm(min(win["end"], "11:20") if early else win["end"])):
         out.append({"rule": "entry window", "why": f"opened {t_open.strftime('%H:%M')} outside {win['start']}-{win['end']}"})
-    bo = next((b for b in risk.st.blackouts if b.start <= p.opened_ts < b.end), None)
+    bo = next((b for b in risk.st.blackouts if b.start <= p.opened_ts < b.end
+               and (b.added_ts is None or b.added_ts <= p.opened_ts)), None)     # not one learned of after the entry
     if bo:
         out.append({"rule": "blackout", "why": f"opened inside the {bo.name} blackout"})
     cap = int(cfg["sizing"]["max_contracts"] * crew.cfg.get("max_size_multiplier", 1.25))
