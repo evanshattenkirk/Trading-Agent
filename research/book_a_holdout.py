@@ -19,6 +19,7 @@ Fills (same as book_a_variants.py): mid1 = mid -/+ 1c inside the touch; taker = 
     python research/book_a_holdout.py quotes --variants baseline,v4_slow_exits
     python research/book_a_holdout.py ticks --variants baseline,v5_swing_only,v4_slow_exits
     python research/book_a_holdout.py quotes --combo v1_rsi_no_cap,v4_slow_exits     # adds v6_combo
+Round 2 variants (r2a_stop35, r2b_spy_stop, r2c_itm1) are frozen in research/book_a_round2_prereg.md.
 Writes research/book_a_holdout_out/<mode>/{trades.csv, daily.csv, summary.json} (small; commit them).
 """
 from __future__ import annotations
@@ -41,7 +42,9 @@ import book_a_variants as bav  # noqa: E402  (also installs the put-mirroring ex
 from agentdesk.backtest import ReplayFeed, _row  # noqa: E402
 from agentdesk.bars import Bar, Trade  # noqa: E402
 from agentdesk.bus import Bus  # noqa: E402
+from agentdesk import engine as engine_mod  # noqa: E402
 from agentdesk.config import load_config  # noqa: E402
+from agentdesk.exits import ExitIntent  # noqa: E402
 from agentdesk.feeds.base import Quote, QuoteSource  # noqa: E402
 from agentdesk.journal import Journal  # noqa: E402
 
@@ -55,7 +58,46 @@ def _swing_only(c):         # 5. SWING only: a fresh 1m cross is required, 144t-
     c["strategy"]["enabled_setups"] = ["SWING"]
 
 
-VARIANTS = dict(bav.VARIANTS, v5_swing_only=[_swing_only])
+# Round 2 (book_a_round2_prereg.md): ideas that came from the 2005-2020 results, so they are tested here only.
+def _stop35(c):             # r2a: premium stop -35% instead of -20%
+    c["exits"]["stop_loss_pct"] = 0.35
+
+
+def _spy_stop(c):           # r2b: no premium stop; sell everything when SPY trades 0.10% against the entry price
+    c["exits"]["stop_loss_pct"] = 0.99
+    c["exits"]["spy_stop_pct"] = 0.001
+
+
+def _itm1(c):               # r2c: 1 ITM strike all day (no OTM, no level step-out)
+    c["strikes"]["schedule"] = [{"from": "08:30", "base": -1, "max": -1}]
+
+
+VARIANTS = dict(bav.VARIANTS, v5_swing_only=[_swing_only], r2a_stop35=[_stop35], r2b_spy_stop=[_spy_stop],
+                r2c_itm1=[_itm1])
+_FEED: list = [None]        # the session's feed, for r2b's SPY stop (one session at a time per process)
+
+
+class SpyStopPlan(bav.MirrorExitPlan):
+    """r2b: exit when SPY is spy_stop_pct below the entry price (above it for a put). Off unless the key is set."""
+
+    def __init__(self, ecfg, pos):
+        super().__init__(ecfg, pos)
+        self.spy_stop = ecfg.get("spy_stop_pct")
+        self.spot0 = _FEED[0].px if (_FEED[0] is not None and self.spy_stop) else None
+
+    def on_quote(self, bid, ask, now):
+        if self.spot0 and self.pos.qty > 0:
+            px = _FEED[0].px
+            hit = px <= self.spot0 * (1 - self.spy_stop) if self.pos.contract.right == "call" \
+                else px >= self.spot0 * (1 + self.spy_stop)
+            if hit:
+                self.pos.bid, self.pos.ask = bid, ask
+                self.pos.mark = round((bid + ask) / 2, 3) if ask > 0 else bid
+                return ExitIntent(self.pos.qty, f"SPY stop {self.spy_stop:.2%}", urgent=True)
+        return super().on_quote(bid, ask, now)
+
+
+engine_mod.ExitPlan = SpyStopPlan
 
 
 def variant_cfg(base, name: str, combo: list[str] | None, ticks: bool):
@@ -115,6 +157,7 @@ async def _aiter(ts, px, sz):
 
 async def run_session(cfg, day, hist, bars, trades, panel, fill) -> list:
     feed = ReplayFeed(day, hist, bars, _aiter(*trades) if trades is not None else None)
+    _FEED[0] = feed
     quotes = ThetaQuotes(feed, panel)
     eng = bav.MirrorEngine(cfg, feed, quotes, bav.FillBroker(quotes, fill), Bus(), Journal(None), "backtest")
     await eng.run()
