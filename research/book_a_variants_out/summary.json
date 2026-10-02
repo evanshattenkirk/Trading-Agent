@@ -1,0 +1,1161 @@
+{
+ "baseline": {
+  "stats": {
+   "mid1": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 5236,
+     "trades_per_day": 2.56,
+     "net": -15086.56,
+     "mean_day": -7.37,
+     "t_day": -1.69,
+     "per_trade": -2.88,
+     "win_rate": 0.444,
+     "profit_factor": 0.95,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 707,
+       "net": -12992.14
+      },
+      "breakeven stop": {
+       "n": 553,
+       "net": 17146.9
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 75,
+       "net": -10705.6
+      },
+      "runner out": {
+       "n": 106,
+       "net": 20045.02
+      },
+      "stop -20%": {
+       "n": 2190,
+       "net": -241237.36
+      },
+      "time stop 20m": {
+       "n": 1,
+       "net": 11.76
+      },
+      "trailing stop": {
+       "n": 1604,
+       "net": 212644.86
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 1785,
+     "trades_per_day": 2.18,
+     "net": -11706.44,
+     "mean_day": -14.31,
+     "t_day": -1.95,
+     "per_trade": -6.56,
+     "win_rate": 0.391,
+     "profit_factor": 0.88,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 274,
+       "net": -9649.02
+      },
+      "breakeven stop": {
+       "n": 167,
+       "net": 4434.38
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 33,
+       "net": -4360.0
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 85,
+       "net": 16688.02
+      },
+      "stop -20%": {
+       "n": 773,
+       "net": -82747.38
+      },
+      "trailing stop": {
+       "n": 451,
+       "net": 62897.1
+      }
+     }
+    }
+   },
+   "taker": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 5236,
+     "trades_per_day": 2.56,
+     "net": -15249.56,
+     "mean_day": -7.45,
+     "t_day": -1.71,
+     "per_trade": -2.91,
+     "win_rate": 0.444,
+     "profit_factor": 0.94,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 707,
+       "net": -13002.14
+      },
+      "breakeven stop": {
+       "n": 553,
+       "net": 17135.9
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 75,
+       "net": -10705.6
+      },
+      "runner out": {
+       "n": 106,
+       "net": 20034.02
+      },
+      "stop -20%": {
+       "n": 2190,
+       "net": -241270.36
+      },
+      "time stop 20m": {
+       "n": 1,
+       "net": 11.76
+      },
+      "trailing stop": {
+       "n": 1604,
+       "net": 212546.86
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 1785,
+     "trades_per_day": 2.18,
+     "net": -11737.44,
+     "mean_day": -14.35,
+     "t_day": -1.96,
+     "per_trade": -6.58,
+     "win_rate": 0.391,
+     "profit_factor": 0.88,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 274,
+       "net": -9652.02
+      },
+      "breakeven stop": {
+       "n": 167,
+       "net": 4427.38
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 33,
+       "net": -4360.0
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 85,
+       "net": 16685.02
+      },
+      "stop -20%": {
+       "n": 773,
+       "net": -82758.38
+      },
+      "trailing stop": {
+       "n": 451,
+       "net": 62890.1
+      }
+     }
+    }
+   }
+  },
+  "pass": {
+   "is_mid1_positive": false,
+   "oos_mid1_t": false,
+   "oos_taker_positive": false,
+   "pass": false
+  }
+ },
+ "v1_rsi_no_cap": {
+  "stats": {
+   "mid1": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 6019,
+     "trades_per_day": 2.94,
+     "net": -14594.32,
+     "mean_day": -7.13,
+     "t_day": -1.53,
+     "per_trade": -2.42,
+     "win_rate": 0.443,
+     "profit_factor": 0.95,
+     "vs_baseline_mean_day": 0.24,
+     "vs_baseline_t": 0.13,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 852,
+       "net": -16428.24
+      },
+      "breakeven stop": {
+       "n": 635,
+       "net": 20251.08
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 84,
+       "net": -11880.0
+      },
+      "runner out": {
+       "n": 138,
+       "net": 24784.9
+      },
+      "stop -20%": {
+       "n": 2494,
+       "net": -272591.98
+      },
+      "time stop 20m": {
+       "n": 1,
+       "net": 11.76
+      },
+      "trailing stop": {
+       "n": 1815,
+       "net": 241258.16
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 2082,
+     "trades_per_day": 2.55,
+     "net": -12411.94,
+     "mean_day": -15.17,
+     "t_day": -1.96,
+     "per_trade": -5.96,
+     "win_rate": 0.391,
+     "profit_factor": 0.89,
+     "vs_baseline_mean_day": -0.86,
+     "vs_baseline_t": -0.33,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 353,
+       "net": -11884.78
+      },
+      "breakeven stop": {
+       "n": 197,
+       "net": 5447.7
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 36,
+       "net": -4619.9
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 114,
+       "net": 22014.98
+      },
+      "stop -20%": {
+       "n": 877,
+       "net": -94046.82
+      },
+      "trailing stop": {
+       "n": 503,
+       "net": 69646.42
+      }
+     }
+    }
+   },
+   "taker": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 6019,
+     "trades_per_day": 2.94,
+     "net": -14777.32,
+     "mean_day": -7.22,
+     "t_day": -1.55,
+     "per_trade": -2.46,
+     "win_rate": 0.443,
+     "profit_factor": 0.95,
+     "vs_baseline_mean_day": 0.23,
+     "vs_baseline_t": 0.13,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 852,
+       "net": -16438.24
+      },
+      "breakeven stop": {
+       "n": 635,
+       "net": 20239.08
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 84,
+       "net": -11880.0
+      },
+      "runner out": {
+       "n": 138,
+       "net": 24769.9
+      },
+      "stop -20%": {
+       "n": 2494,
+       "net": -272626.98
+      },
+      "time stop 20m": {
+       "n": 1,
+       "net": 11.76
+      },
+      "trailing stop": {
+       "n": 1815,
+       "net": 241147.16
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 2082,
+     "trades_per_day": 2.55,
+     "net": -12448.94,
+     "mean_day": -15.22,
+     "t_day": -1.96,
+     "per_trade": -5.98,
+     "win_rate": 0.391,
+     "profit_factor": 0.89,
+     "vs_baseline_mean_day": -0.87,
+     "vs_baseline_t": -0.33,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 353,
+       "net": -11887.78
+      },
+      "breakeven stop": {
+       "n": 197,
+       "net": 5439.7
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 36,
+       "net": -4619.9
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 114,
+       "net": 22009.98
+      },
+      "stop -20%": {
+       "n": 877,
+       "net": -94057.82
+      },
+      "trailing stop": {
+       "n": 503,
+       "net": 69636.42
+      }
+     }
+    }
+   }
+  },
+  "pass": {
+   "is_mid1_positive": false,
+   "oos_mid1_t": false,
+   "oos_taker_positive": false,
+   "pass": false
+  }
+ },
+ "v2_puts": {
+  "stats": {
+   "mid1": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 10707,
+     "trades_per_day": 5.23,
+     "net": -43161.64,
+     "mean_day": -21.09,
+     "t_day": -3.42,
+     "per_trade": -4.03,
+     "win_rate": 0.436,
+     "profit_factor": 0.92,
+     "vs_baseline_mean_day": -13.72,
+     "vs_baseline_t": -2.97,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 1438,
+       "net": -28463.16
+      },
+      "breakeven stop": {
+       "n": 1118,
+       "net": 33486.84
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 245,
+       "net": -29821.46
+      },
+      "flatten 14": {
+       "n": 1,
+       "net": 296.7
+      },
+      "runner out": {
+       "n": 153,
+       "net": 26449.68
+      },
+      "stop -20%": {
+       "n": 4468,
+       "net": -475200.32
+      },
+      "time stop 20m": {
+       "n": 5,
+       "net": -50.32
+      },
+      "trailing stop": {
+       "n": 3279,
+       "net": 430140.4
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 3761,
+     "trades_per_day": 4.6,
+     "net": -20511.14,
+     "mean_day": -25.07,
+     "t_day": -2.57,
+     "per_trade": -5.45,
+     "win_rate": 0.404,
+     "profit_factor": 0.9,
+     "vs_baseline_mean_day": -10.76,
+     "vs_baseline_t": -1.6,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 529,
+       "net": -19492.78
+      },
+      "breakeven stop": {
+       "n": 349,
+       "net": 8477.76
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 91,
+       "net": -10391.02
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 577.4
+      },
+      "runner out": {
+       "n": 137,
+       "net": 25590.56
+      },
+      "stop -20%": {
+       "n": 1605,
+       "net": -166110.04
+      },
+      "time stop 20m": {
+       "n": 2,
+       "net": 14.4
+      },
+      "trailing stop": {
+       "n": 1046,
+       "net": 140822.58
+      }
+     }
+    }
+   },
+   "taker": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 10707,
+     "trades_per_day": 5.23,
+     "net": -43452.64,
+     "mean_day": -21.23,
+     "t_day": -3.44,
+     "per_trade": -4.06,
+     "win_rate": 0.436,
+     "profit_factor": 0.92,
+     "vs_baseline_mean_day": -13.78,
+     "vs_baseline_t": -2.98,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 1438,
+       "net": -28478.16
+      },
+      "breakeven stop": {
+       "n": 1118,
+       "net": 33470.84
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 245,
+       "net": -29821.46
+      },
+      "flatten 14": {
+       "n": 1,
+       "net": 296.7
+      },
+      "runner out": {
+       "n": 153,
+       "net": 26435.68
+      },
+      "stop -20%": {
+       "n": 4468,
+       "net": -475246.32
+      },
+      "time stop 20m": {
+       "n": 5,
+       "net": -50.32
+      },
+      "trailing stop": {
+       "n": 3279,
+       "net": 429940.4
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 3761,
+     "trades_per_day": 4.6,
+     "net": -20576.14,
+     "mean_day": -25.15,
+     "t_day": -2.58,
+     "per_trade": -5.47,
+     "win_rate": 0.404,
+     "profit_factor": 0.9,
+     "vs_baseline_mean_day": -10.81,
+     "vs_baseline_t": -1.6,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 529,
+       "net": -19497.78
+      },
+      "breakeven stop": {
+       "n": 350,
+       "net": 8467.7
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 91,
+       "net": -10392.02
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 577.4
+      },
+      "runner out": {
+       "n": 137,
+       "net": 25585.56
+      },
+      "stop -20%": {
+       "n": 1605,
+       "net": -166124.04
+      },
+      "time stop 20m": {
+       "n": 2,
+       "net": 14.4
+      },
+      "trailing stop": {
+       "n": 1045,
+       "net": 140792.64
+      }
+     }
+    }
+   }
+  },
+  "pass": {
+   "is_mid1_positive": false,
+   "oos_mid1_t": false,
+   "oos_taker_positive": false,
+   "pass": false
+  }
+ },
+ "v3_filter_15m": {
+  "stats": {
+   "mid1": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 9888,
+     "trades_per_day": 4.83,
+     "net": -63055.7,
+     "mean_day": -30.8,
+     "t_day": -5.39,
+     "per_trade": -6.38,
+     "win_rate": 0.442,
+     "profit_factor": 0.88,
+     "vs_baseline_mean_day": -23.43,
+     "vs_baseline_t": -5.49,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 1169,
+       "net": -23393.26
+      },
+      "breakeven stop": {
+       "n": 1131,
+       "net": 36913.64
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 205,
+       "net": -25134.12
+      },
+      "flatten 14": {
+       "n": 3,
+       "net": 954.16
+      },
+      "runner out": {
+       "n": 199,
+       "net": 37954.84
+      },
+      "stop -20%": {
+       "n": 4221,
+       "net": -458306.44
+      },
+      "time stop 20m": {
+       "n": 13,
+       "net": -39.12
+      },
+      "trailing stop": {
+       "n": 2947,
+       "net": 367994.6
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 3416,
+     "trades_per_day": 4.18,
+     "net": -36707.5,
+     "mean_day": -44.87,
+     "t_day": -4.78,
+     "per_trade": -10.75,
+     "win_rate": 0.398,
+     "profit_factor": 0.81,
+     "vs_baseline_mean_day": -30.56,
+     "vs_baseline_t": -4.71,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 408,
+       "net": -15018.52
+      },
+      "breakeven stop": {
+       "n": 341,
+       "net": 9045.8
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 86,
+       "net": -10693.56
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1798.4
+      },
+      "runner out": {
+       "n": 160,
+       "net": 30769.82
+      },
+      "stop -20%": {
+       "n": 1542,
+       "net": -164243.88
+      },
+      "time stop 20m": {
+       "n": 4,
+       "net": 72.04
+      },
+      "trailing stop": {
+       "n": 873,
+       "net": 111562.4
+      }
+     }
+    }
+   },
+   "taker": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 9888,
+     "trades_per_day": 4.83,
+     "net": -63347.7,
+     "mean_day": -30.95,
+     "t_day": -5.42,
+     "per_trade": -6.41,
+     "win_rate": 0.442,
+     "profit_factor": 0.88,
+     "vs_baseline_mean_day": -23.5,
+     "vs_baseline_t": -5.51,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 1169,
+       "net": -23415.26
+      },
+      "breakeven stop": {
+       "n": 1131,
+       "net": 36899.64
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 205,
+       "net": -25135.12
+      },
+      "flatten 14": {
+       "n": 3,
+       "net": 954.16
+      },
+      "runner out": {
+       "n": 199,
+       "net": 37929.84
+      },
+      "stop -20%": {
+       "n": 4221,
+       "net": -458365.44
+      },
+      "time stop 20m": {
+       "n": 13,
+       "net": -39.12
+      },
+      "trailing stop": {
+       "n": 2947,
+       "net": 367823.6
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 3414,
+     "trades_per_day": 4.17,
+     "net": -36884.38,
+     "mean_day": -45.09,
+     "t_day": -4.81,
+     "per_trade": -10.8,
+     "win_rate": 0.398,
+     "profit_factor": 0.81,
+     "vs_baseline_mean_day": -30.74,
+     "vs_baseline_t": -4.75,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 408,
+       "net": -15022.52
+      },
+      "breakeven stop": {
+       "n": 340,
+       "net": 9124.86
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 86,
+       "net": -10694.56
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1798.4
+      },
+      "runner out": {
+       "n": 160,
+       "net": 30755.82
+      },
+      "stop -20%": {
+       "n": 1542,
+       "net": -164260.88
+      },
+      "time stop 20m": {
+       "n": 4,
+       "net": 72.04
+      },
+      "trailing stop": {
+       "n": 872,
+       "net": 111342.46
+      }
+     }
+    }
+   }
+  },
+  "pass": {
+   "is_mid1_positive": false,
+   "oos_mid1_t": false,
+   "oos_taker_positive": false,
+   "pass": false
+  }
+ },
+ "v4_slow_exits": {
+  "stats": {
+   "mid1": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 5035,
+     "trades_per_day": 2.46,
+     "net": -32248.02,
+     "mean_day": -15.75,
+     "t_day": -3.51,
+     "per_trade": -6.4,
+     "win_rate": 0.451,
+     "profit_factor": 0.89,
+     "vs_baseline_mean_day": -8.38,
+     "vs_baseline_t": -6.11,
+     "by_exit": {
+      "5m MACD cross back": {
+       "n": 55,
+       "net": -1275.76
+      },
+      "breakeven stop": {
+       "n": 591,
+       "net": 18458.58
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 94,
+       "net": -12829.94
+      },
+      "flatten 14": {
+       "n": 3,
+       "net": 1513.16
+      },
+      "runner out": {
+       "n": 3,
+       "net": 1263.4
+      },
+      "stop -20%": {
+       "n": 2515,
+       "net": -275889.08
+      },
+      "time stop 20m": {
+       "n": 18,
+       "net": -168.86
+      },
+      "trailing stop": {
+       "n": 1756,
+       "net": 236680.48
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 1727,
+     "trades_per_day": 2.11,
+     "net": -15148.96,
+     "mean_day": -18.52,
+     "t_day": -2.47,
+     "per_trade": -8.77,
+     "win_rate": 0.412,
+     "profit_factor": 0.85,
+     "vs_baseline_mean_day": -4.21,
+     "vs_baseline_t": -2.12,
+     "by_exit": {
+      "5m MACD cross back": {
+       "n": 25,
+       "net": -662.78
+      },
+      "breakeven stop": {
+       "n": 175,
+       "net": 4847.04
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 39,
+       "net": -4987.74
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 4,
+       "net": 1109.04
+      },
+      "stop -20%": {
+       "n": 918,
+       "net": -97645.14
+      },
+      "time stop 20m": {
+       "n": 8,
+       "net": -78.34
+      },
+      "trailing stop": {
+       "n": 556,
+       "net": 81238.5
+      }
+     }
+    }
+   },
+   "taker": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 5035,
+     "trades_per_day": 2.46,
+     "net": -32410.02,
+     "mean_day": -15.83,
+     "t_day": -3.52,
+     "per_trade": -6.44,
+     "win_rate": 0.451,
+     "profit_factor": 0.89,
+     "vs_baseline_mean_day": -8.38,
+     "vs_baseline_t": -6.11,
+     "by_exit": {
+      "5m MACD cross back": {
+       "n": 55,
+       "net": -1275.76
+      },
+      "breakeven stop": {
+       "n": 591,
+       "net": 18447.58
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 94,
+       "net": -12829.94
+      },
+      "flatten 14": {
+       "n": 3,
+       "net": 1511.16
+      },
+      "runner out": {
+       "n": 3,
+       "net": 1261.4
+      },
+      "stop -20%": {
+       "n": 2515,
+       "net": -275925.08
+      },
+      "time stop 20m": {
+       "n": 18,
+       "net": -168.86
+      },
+      "trailing stop": {
+       "n": 1756,
+       "net": 236569.48
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 1727,
+     "trades_per_day": 2.11,
+     "net": -15177.96,
+     "mean_day": -18.55,
+     "t_day": -2.47,
+     "per_trade": -8.79,
+     "win_rate": 0.412,
+     "profit_factor": 0.85,
+     "vs_baseline_mean_day": -4.21,
+     "vs_baseline_t": -2.12,
+     "by_exit": {
+      "5m MACD cross back": {
+       "n": 25,
+       "net": -662.78
+      },
+      "breakeven stop": {
+       "n": 175,
+       "net": 4840.04
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 39,
+       "net": -4987.74
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 4,
+       "net": 1108.04
+      },
+      "stop -20%": {
+       "n": 918,
+       "net": -97657.14
+      },
+      "time stop 20m": {
+       "n": 8,
+       "net": -78.34
+      },
+      "trailing stop": {
+       "n": 556,
+       "net": 81229.5
+      }
+     }
+    }
+   }
+  },
+  "pass": {
+   "is_mid1_positive": false,
+   "oos_mid1_t": false,
+   "oos_taker_positive": false,
+   "pass": false
+  }
+ },
+ "v6_combo": {
+  "members": [
+   "v1_rsi_no_cap"
+  ],
+  "stats": {
+   "mid1": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 6019,
+     "trades_per_day": 2.94,
+     "net": -14594.32,
+     "mean_day": -7.13,
+     "t_day": -1.53,
+     "per_trade": -2.42,
+     "win_rate": 0.443,
+     "profit_factor": 0.95,
+     "vs_baseline_mean_day": 0.24,
+     "vs_baseline_t": 0.13,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 852,
+       "net": -16428.24
+      },
+      "breakeven stop": {
+       "n": 635,
+       "net": 20251.08
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 84,
+       "net": -11880.0
+      },
+      "runner out": {
+       "n": 138,
+       "net": 24784.9
+      },
+      "stop -20%": {
+       "n": 2494,
+       "net": -272591.98
+      },
+      "time stop 20m": {
+       "n": 1,
+       "net": 11.76
+      },
+      "trailing stop": {
+       "n": 1815,
+       "net": 241258.16
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 2082,
+     "trades_per_day": 2.55,
+     "net": -12411.94,
+     "mean_day": -15.17,
+     "t_day": -1.96,
+     "per_trade": -5.96,
+     "win_rate": 0.391,
+     "profit_factor": 0.89,
+     "vs_baseline_mean_day": -0.86,
+     "vs_baseline_t": -0.33,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 353,
+       "net": -11884.78
+      },
+      "breakeven stop": {
+       "n": 197,
+       "net": 5447.7
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 36,
+       "net": -4619.9
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 114,
+       "net": 22014.98
+      },
+      "stop -20%": {
+       "n": 877,
+       "net": -94046.82
+      },
+      "trailing stop": {
+       "n": 503,
+       "net": 69646.42
+      }
+     }
+    }
+   },
+   "taker": {
+    "in_sample": {
+     "sessions": 2047,
+     "trades": 6019,
+     "trades_per_day": 2.94,
+     "net": -14777.32,
+     "mean_day": -7.22,
+     "t_day": -1.55,
+     "per_trade": -2.46,
+     "win_rate": 0.443,
+     "profit_factor": 0.95,
+     "vs_baseline_mean_day": 0.23,
+     "vs_baseline_t": 0.13,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 852,
+       "net": -16438.24
+      },
+      "breakeven stop": {
+       "n": 635,
+       "net": 20239.08
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 84,
+       "net": -11880.0
+      },
+      "runner out": {
+       "n": 138,
+       "net": 24769.9
+      },
+      "stop -20%": {
+       "n": 2494,
+       "net": -272626.98
+      },
+      "time stop 20m": {
+       "n": 1,
+       "net": 11.76
+      },
+      "trailing stop": {
+       "n": 1815,
+       "net": 241147.16
+      }
+     }
+    },
+    "out_of_sample": {
+     "sessions": 818,
+     "trades": 2082,
+     "trades_per_day": 2.55,
+     "net": -12448.94,
+     "mean_day": -15.22,
+     "t_day": -1.96,
+     "per_trade": -5.98,
+     "win_rate": 0.391,
+     "profit_factor": 0.89,
+     "vs_baseline_mean_day": -0.87,
+     "vs_baseline_t": -0.33,
+     "by_exit": {
+      "1m MACD cross back": {
+       "n": 353,
+       "net": -11887.78
+      },
+      "breakeven stop": {
+       "n": 197,
+       "net": 5439.7
+      },
+      "daily loss limit -$400 hit including open positions": {
+       "n": 36,
+       "net": -4619.9
+      },
+      "flatten 14": {
+       "n": 2,
+       "net": 1030.46
+      },
+      "runner out": {
+       "n": 114,
+       "net": 22009.98
+      },
+      "stop -20%": {
+       "n": 877,
+       "net": -94057.82
+      },
+      "trailing stop": {
+       "n": 503,
+       "net": 69636.42
+      }
+     }
+    }
+   }
+  },
+  "pass": {
+   "is_mid1_positive": false,
+   "oos_mid1_t": false,
+   "oos_taker_positive": false,
+   "pass": false
+  }
+ }
+}
