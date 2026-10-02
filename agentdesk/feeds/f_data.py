@@ -308,6 +308,8 @@ class RobinhoodEquityData:
         return self.c.get("bars_source") == "alpaca_sip"
 
     async def minute_bars(self, symbols: list[str], day: date, start: int, end: int) -> dict[str, list[dict]]:
+        if end <= start:            # no whole minute in the window yet: Robinhood refuses it ("end must be after start")
+            return {}
         if self.sip:
             return await self._sip_minute_bars(symbols, day, start, end)
         out = {}

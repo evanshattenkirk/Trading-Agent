@@ -93,6 +93,7 @@ BOOKS_TEXT = ("The desk runs paper books: A long SPY 0DTE calls on MACD/RSI trig
 PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0),
           "claude-opus-5-5": (4.0, 20.0)}
 WEB_SEARCH_USD = 0.01           # $10 per 1,000 searches
+CITE_TAG = re.compile(r"</?cite\b[^>]*>")     # web-search citation markup the model leaves around quoted facts
 
 
 def price_of(model: str | None) -> tuple[float, float]:
@@ -553,12 +554,12 @@ class Crew:
         confidence, a null vote, or events and pitches that aren't objects; any of those used to raise in _apply or
         in size_up on every book A entry, which the engine counts toward its safety halt."""
         b["day"] = str(self.day)
-        b["headline"] = str(b.get("headline") or "")
+        b["headline"] = CITE_TAG.sub("", str(b.get("headline") or ""))
         if b.get("bias") not in ("bullish", "neutral", "bearish"):
             b["bias"] = "neutral"
         b["confidence"] = max(0.0, min(1.0, _num(b.get("confidence"), 0.0)))
         notes = b.get("notes")
-        b["notes"] = [str(n) for n in notes] if isinstance(notes, list) else [str(notes)] if notes else []
+        b["notes"] = [CITE_TAG.sub("", str(n)) for n in (notes if isinstance(notes, list) else [notes] if notes else [])]
         b["events"] = [ev for ev in b.get("events") or [] if _good_event(ev)] if isinstance(b.get("events"), list) else []
         props = b.get("proposals")
         b["proposals"] = [x for x in props if isinstance(x, dict)] if isinstance(props, list) else []

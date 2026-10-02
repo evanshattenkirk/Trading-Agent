@@ -16,7 +16,7 @@ from test_crew_review import online
 
 BAD = {"headline": None, "bias": "very bullish", "confidence": "high", "size_multiplier": None,
        "cooldown_minutes": "ten", "notes": "one note", "events": ["CPI 07:30", {"name": "FOMC", "time_ct": "25:99"},
-                                                                    {"name": "PPI", "time_ct": "07:30", "impact": "high"}],
+                                                                    {"name": "PPI", "time_ct": "13:00", "impact": "high"}],
        "proposals": ["tighten stops", {"scope": "day", "title": "ok", "params": {"exits.stop_loss_pct": 0.15}}]}
 
 
@@ -25,7 +25,7 @@ def test_finish_coerces_a_malformed_brief():
     b = c._finish(json.loads(json.dumps(BAD)), "macro")
     assert b["headline"] == "" and b["bias"] == "neutral" and b["confidence"] == 0.0
     assert b["size_multiplier"] == 1.0 and b["cooldown_minutes"] == 0 and b["notes"] == ["one note"]
-    assert b["events"] == [{"name": "PPI", "time_ct": "07:30", "impact": "high"}]
+    assert b["events"] == [{"name": "PPI", "time_ct": "13:00", "impact": "high"}]
     assert [p["title"] for p in b["proposals"]] == ["ok"]
 
 
@@ -34,7 +34,7 @@ def test_malformed_midday_reply_still_applies_and_size_up_runs(monkeypatch):
     e.apply_tweak = lambda item, now: None
     e.vwap = SimpleNamespace(value=764.0)
     asyncio.run(c._consult("midday", ["macro"], at_ct(D, time(11, 30))))
-    assert "PPI" in c.directive["blackouts"]
+    assert "PPI" in c.directive["blackouts"]           # 13:00: still ahead at the 11:30 brief
     mult, checks = c.size_up(at_ct(D, time(11, 31)), "SWING", 765.0)       # formats every desk's confidence
     assert mult == 1.0 and checks
 

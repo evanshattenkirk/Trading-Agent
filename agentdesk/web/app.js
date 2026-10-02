@@ -3,6 +3,7 @@
 (function () {
   const CFG = window.AGENTDESK || { source: 'ws' };
   const READ_ONLY = CFG.source === 'replay' || CFG.source === 'review';
+  const P = window.AgentPanel;
   const $ = (id) => document.getElementById(id);
   const TF_SEC = { '1m': 60, '5m': 300, '15m': 900 };
   const DESK_ORDER = ['macro', 'rates', 'fed', 'vol', 'quant', 'risk', 'tape', 'ops', 'earnings', 'postmortem'];
@@ -151,7 +152,7 @@
   const mark = (...k) => k.forEach((x) => dirty.add(x));
 
   function loadSnapshot(sn) {
-    S.mode = sn.mode; S.symbol = sn.symbol; S.ts = sn.ts; S.price = sn.price; S.vwap = sn.vwap;
+    S.mode = sn.mode; S.symbol = sn.symbol; S.day = sn.day; S.ts = sn.ts; S.price = sn.price; S.vwap = sn.vwap;
     for (const tf of Object.keys(S.bars)) S.bars[tf] = (sn.bars?.[tf] || []).map((b) => ({ ...b }));
     S.signal = sn.signal; S.levels = sn.levels || []; setPrev();
     S.positions = new Map((sn.positions || []).map((p) => [p.pos.id, p.pos]));
@@ -168,7 +169,7 @@
     S.bookClosed = (bk?.books || []).flatMap((b) => (b.closed || []).map((p) => ({ ...p, net: p.total_pnl ?? p.pnl })));
     S.marks = [];
     for (const p of [...S.closed, ...S.positions.values()]) for (const f of p.fills || []) addMark(f.side === 'buy', f.ts, f.qty, p, f.px);
-    for (const p of [...S.bookClosed, ...S.combos.values()]) for (const f of p.fills || []) addComboMark(p, f.ts, f.side === 'open');
+    for (const p of [...S.bookClosed, ...S.combos.values()]) for (const f of p.fills || []) addComboMark(p, f.ts, f.side === 'open');   // SPY ones only
     if (office) office.onAgent(S.agent.activity, S.agent.text);
     mark('all', 'chart');
   }
@@ -179,6 +180,7 @@
     S.marks.push({ ts, buy, text, pnl: fillPx != null ? fillPx - pos.entry : 0 });
   }
   function addComboMark(p, ts, open) {
+    if (!P.onChart(p, S.symbol || 'SPY')) return;       // E's BAC calendar, F2's stock spreads: not on the SPY chart
     // a credit structure opens with a sale (arrow down) and closes with a purchase (arrow up)
     S.marks.push({ ts, buy: p.credit === false ? open : !open, text: `${p.book} ${open ? 'open' : 'close'}`, pnl: open ? 0 : (p.total_pnl || 0) });
   }
@@ -281,7 +283,7 @@
         break;
       case 'f_positions': for (const p of e.positions || []) S.combos.set(p.id, p); mark('pos', 'header'); break;
       case 'book_skip': feedPush(e.ts, 'skip', `Book ${e.book} passed: ${e.why}`); mark('pos'); break;
-      case 'session': for (const tf of Object.keys(S.bars)) S.bars[tf] = []; S.closed = []; S.bookClosed = []; S.combos = new Map(); S.marks = []; mark('all', 'chart'); break;
+      case 'session': S.day = e.day; for (const tf of Object.keys(S.bars)) S.bars[tf] = []; S.closed = []; S.bookClosed = []; S.combos = new Map(); S.marks = []; mark('all', 'chart'); break;
       case 'final': break;
     }
   }
@@ -502,18 +504,24 @@
     else if (cooling) { pill.textContent = 'Cooldown'; pill.className = 'pill warn'; }
     else if (inBlack) { pill.textContent = 'Blackout'; pill.className = 'pill warn'; }
     else { pill.textContent = 'Normal'; pill.className = 'pill good'; }
-    const used = Math.max(0, -r.day_pnl) / r.max_daily_loss;
+    const t = P.riskTotals(r, S.books);          // every book combined; each loss limit is its own book's
+    const cuts = Object.entries(r.book_mults || {}).filter(([, m]) => m < 1).map(([k, m]) => `${k} ${Math.round(m * 100)}%`);
+    const meter = (l) => {
+      const used = l.used / l.max;
+      return `<p class="note" style="margin:6px 0 2px">Book ${l.book} loss limit used: <b>$${l.used.toFixed(0)}</b> of $${l.max}${l.book === 'A' && r.peak_day_pnl > 0 ? ` · peak day +$${r.peak_day_pnl.toFixed(0)}` : ''}</p>
+      <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="${l.max}" aria-valuenow="${l.used.toFixed(0)}" aria-label="Book ${l.book} daily loss used"><i style="width:${Math.min(100, used * 100).toFixed(1)}%;background:${used > 0.75 ? 'var(--dn)' : used > 0.4 ? 'var(--warn)' : 'var(--ink-3)'}"></i></div>`;
+    };
     body.innerHTML = `
       <div class="kv">
-        <div><span class="k">Realized</span><span class="v ${cls(r.day_pnl)}">${money(r.day_pnl)}</span></div>
-        <div><span class="k">Trades</span><span class="v">${r.trades}/${r.max_trades}</span></div>
-        <div><span class="k">Size</span><span class="v">${Math.round(r.size_mult * 100)}%</span></div>
+        <div><span class="k">Realized</span><span class="v ${cls(t.realized)}">${money(t.realized)}</span></div>
+        <div><span class="k">Closed</span><span class="v">${t.closed}</span></div>
+        <div><span class="k">W / L</span><span class="v">${t.wins} / ${t.losses}</span></div>
       </div>
-      <div><div class="meter" role="meter" aria-valuemin="0" aria-valuemax="${r.max_daily_loss}" aria-valuenow="${Math.max(0, -r.day_pnl).toFixed(0)}" aria-label="Daily loss used"><i style="width:${Math.min(100, used * 100).toFixed(1)}%;background:${used > 0.75 ? 'var(--dn)' : used > 0.4 ? 'var(--warn)' : 'var(--ink-3)'}"></i></div>
-      <p class="note" style="margin-top:4px">Loss limit used: <b>$${Math.max(0, -r.day_pnl).toFixed(0)}</b> of $${r.max_daily_loss}${r.peak_day_pnl > 0 ? ` · peak day +$${r.peak_day_pnl.toFixed(0)}` : ''}</p></div>
+      <p class="note">All books today.${cuts.length ? ` Crew size: ${cuts.join(', ')}.` : ' Crew size: 100%.'}</p>
+      <div>${t.limits.map(meter).join('')}</div>
       ${r.halted ? `<p class="note"><b>${esc(r.halt_reason)}</b>. No new entries until restart.</p>` : ''}
       ${cooling ? `<p class="note">${r.loss_streak} losses in a row: cooling off until <b>${hm(r.cooldown_until)}</b>.</p>` : ''}
-      ${(r.blackouts || []).length ? `<ul class="bl">${r.blackouts.map((b) => `<li>Blackout <b>${hm(b.start)}–${hm(b.end)}</b> ${esc(b.name)}</li>`).join('')}</ul>` : ''}
+      ${P.liveBlackouts(r.blackouts, now).length ? `<ul class="bl">${P.liveBlackouts(r.blackouts, now).map((b) => `<li>Blackout <b>${hm(b.start)}–${hm(b.end)}</b> ${esc(b.name)}</li>`).join('')}</ul>` : ''}
       ${gateHtml()}`;
   }
 
@@ -600,7 +608,7 @@
       .sort((a, b) => (b.closed_ts || 0) - (a.closed_ts || 0));
     $('trades-empty').hidden = rows.length > 0;
     $('trades').innerHTML = rows.map((p) => `<tr>
-      <td><b>${esc(p.book)}</b></td><td class="num">${hm(p.opened_ts)}</td><td class="num">${esc(p.contract ?? p.symbol ?? '')}</td><td>${esc(p.setup ?? (p.symbol ? 'SHARES' : ''))}</td>
+      <td><b>${esc(p.book)}</b></td><td class="num">${P.openLabel(p.opened_ts, S.day)}</td><td class="num">${esc(p.contract ?? p.symbol ?? '')}</td><td>${esc(p.setup ?? (p.symbol ? 'SHARES' : ''))}</td>
       <td class="r">${p.qty_initial ?? p.qty ?? ''}</td><td class="r">${px(p.entry)}</td><td class="r">${px(p.peak)}</td>
       <td class="r ${cls(p.net ?? p.total_pnl ?? p.pnl)}">${money(p.net ?? p.total_pnl ?? p.pnl)}</td><td>${esc(p.exit_reason)}</td><td class="wrap">${esc(p.strike_reason ?? '')}</td></tr>`).join('');
   }

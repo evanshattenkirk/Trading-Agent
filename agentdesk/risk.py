@@ -257,11 +257,14 @@ class RiskManager:
         self._save()
 
     def add_blackout(self, event_ts: float, name: str, added_ts: float | None = None) -> None:
+        """One blackout per event time: a desk's reworded line for an event already covered adds nothing, and an
+        event whose window ended before the desk heard of it (a midday brief recapping the 07:30 print) is history."""
         eb = self.r["event_blackout"]
         fl = self.r.get("flatten_before_high_impact_min")
-        self.st.blackouts.append(Blackout(
-            event_ts - eb["before_min"] * 60, event_ts + eb["after_min"] * 60, name,
-            event_ts - fl * 60 if fl is not None else None, added_ts))
+        start, end = event_ts - eb["before_min"] * 60, event_ts + eb["after_min"] * 60
+        if (added_ts is not None and end <= added_ts) or any(b.start == start and b.end == end for b in self.st.blackouts):
+            return
+        self.st.blackouts.append(Blackout(start, end, name, event_ts - fl * 60 if fl is not None else None, added_ts))
 
     def set_size_mult(self, m: float) -> None:
         lo = self.cfg["crew"]["min_size_multiplier"]
