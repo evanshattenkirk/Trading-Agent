@@ -6,6 +6,10 @@ script in about 15 minutes; they are not committed).
 
 ## Bottom line
 
+- **Holdout verdict (real quotes, 2026-10-02): nothing passes, and A loses on real option prices too.** On
+  1,348 sessions of real SPY 0DTE quotes (2020-06 to 2026-09) the baseline loses $24 a day (t −6.4, PF 0.74),
+  every year negative. The wider −35% stop is the best variant, +$10 a day better than the baseline (paired
+  t +7.0), but still loses $14 a day. See section 4b.
 - **No variant passes, and the baseline loses.** In-sample (2005-14) every variant has a negative mean daily
   P&L, so none clears the bar. Book A as built loses about $7 a day in 2005-14 and $14 a day in 2015-20 (t −1.7 and
   −2.0) on 1-minute data with modeled option prices.
@@ -93,6 +97,46 @@ gamma × ΔSPY² / 2 since that row, reading delta and gamma off the neighbourin
 synthetic data the fixed script gives −$44 and −$37 a day (start- and end-of-minute stamps) against the −$41
 reference. `research/tests/test_book_a_holdout.py` pins it. The invalid results were removed from the branch; the
 rerun uses the same variants and pass bar. The variants' relative ranks in the invalid run are not used.
+
+### 4b. Holdout results (re-centred quotes, Mac run 2026-10-02, commits 86f6928 and 2c9eba3)
+
+Real quotes, SPY SIP 1-minute bars, 1m trigger, 1,348 sessions 2020-06-01 to 2026-09-25 (`book_a_holdout_out/quotes/`):
+
+| Variant | Trades/day | $/day mid ±1c (t) | PF | vs baseline $/day (t) | $/day taker | Pass |
+|---|---|---|---|---|---|---|
+| baseline | 2.24 | −24.15 (−6.38) | 0.74 | | −24.76 | no |
+| v1 no RSI cap | 2.71 | −28.29 (−7.04) | 0.74 | −4.13 (−2.59) | −29.34 | no |
+| r2a −35% stop | 2.24 | −13.71 (−3.66) | 0.84 | +10.44 (+7.00) | −14.30 | no |
+| r2b SPY 0.10% stop | 2.24 | −20.21 (−5.45) | 0.78 | +3.94 (+2.94) | −20.81 | no |
+| r2c 1 ITM | 2.22 | −18.69 (−4.96) | 0.79 | +5.47 (+4.04) | −19.78 | no |
+
+By year ($/day, mid ±1c): the baseline is negative every year (2022 the least, −$3); r2a and r2c are positive
+only in 2022 (+$14, +$6). Green trading days: 38-40% for every variant.
+
+SIP ticks with real 144-print bars, SWING and SCALP, 60 sessions 2026-07-02 to 2026-09-25 (`book_a_holdout_out/ticks/`):
+
+| Variant | Trades/day | $/day mid ±1c (t) | PF | vs baseline $/day (t) | Pass |
+|---|---|---|---|---|---|
+| baseline | 4.67 | −30.32 (−1.65) | 0.75 | | no |
+| v1 no RSI cap | 5.22 | −36.65 (−1.79) | 0.73 | −6.33 (−0.91) | no |
+| v5 SWING only | 2.12 | −11.67 (−0.80) | 0.85 | +18.65 (+1.24) | no |
+| r2a −35% stop | 4.60 | −31.49 (−1.64) | 0.74 | −1.17 (−0.19) | no |
+| r2b SPY 0.10% stop | 4.60 | −30.12 (−1.58) | 0.75 | +0.20 (+0.03) | no |
+| r2c 1 ITM | 4.63 | −35.64 (−2.30) | 0.69 | −5.32 (−0.60) | no |
+
+Taker fills are within $0.50 a day of mid ±1c everywhere.
+
+What this says:
+- Book A as built loses on every data set tried: modeled options 2005-2020, real quotes 2020-2026, and real
+  ticks Jul-Sep 2026 (agrees with the earlier 60-day SIP replay, −$2,303).
+- Removing the RSI cap (v1) adds trades and adds losses on real quotes (−$4 a day vs the baseline, t −2.6).
+- The stop is the right place to look: the −35% stop cuts the loss by about 40% on six years of real quotes.
+  It does not show up on the 60 tick sessions, which are too few to tell (t −0.2). It still loses money, so
+  under the pre-registration it fails.
+- Dropping SCALP (v5) cuts the tick loss by about 60%, in line with the SIP replay that found SCALP the bigger
+  loser, but 60 days can't confirm it (t +1.2) and SWING alone still loses.
+- The holdout has now been used. Any further change to A's signal would need data none of these runs has seen
+  (paper days from here on).
 
 ## 5. Caveats
 
