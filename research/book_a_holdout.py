@@ -116,18 +116,54 @@ def variant_cfg(base, name: str, combo: list[str] | None, ticks: bool):
 
 # ---------------------------------------------------------------- real quotes
 class ThetaQuotes(QuoteSource):
+    """Real bid/ask from the previous minute's ThetaData row, re-centred on the current SPY price.
+
+    A 1-minute row is up to two minutes older than the SPY price the engine is reacting to. Used as is, every entry
+    on an up-move buys the option at its pre-move price and every exit after a drop sells at its pre-drop price,
+    which turned a losing rule set into a fake PF 5.9 (holdout run 2026-10-02; reproduced on synthetic data). So the
+    row's mid is moved by delta x dS + gamma x dS^2 / 2, with dS = SPY now minus the row's own put-call-parity spot,
+    and delta and gamma read off the neighbouring strikes in the same row. The row's spread is kept."""
     name = "thetadata"
 
-    def __init__(self, feed: ReplayFeed, panel):
-        self.feed, self.panel = feed, panel
+    def __init__(self, feed: ReplayFeed, panel, recenter: bool = True):
+        self.feed, self.panel, self.recenter = feed, panel, recenter
+        self._spot: dict[int, float | None] = {}
+
+    def _row_spot(self, m: int) -> float | None:
+        if m not in self._spot:
+            from bd_real_quotes import spot
+            self._spot[m] = spot(self.panel, m)
+        return self._spot[m]
+
+    def _mid(self, r: str, k: float, m: int) -> float | None:
+        ba = self.panel.ba(r, k, m)
+        return None if ba is None or ba[1] <= 0 else (ba[0] + ba[1]) / 2
 
     async def quote(self, c) -> Quote | None:
         t = datetime.fromtimestamp(self.feed.t, ET)
-        m = min(max(t.hour * 60 + t.minute - 1, 570), 960)       # the previous minute's row
-        ba = self.panel.ba("C" if c.right == "call" else "P", float(c.strike), m)
+        m = min(max(t.hour * 60 + t.minute - 1, 570), 960)       # the previous minute's row: never from the future
+        r, k = ("C" if c.right == "call" else "P"), float(c.strike)
+        ba = self.panel.ba(r, k, m)
         if ba is None or ba[1] <= 0:
             return None
-        return Quote(ba[0], ba[1], self.feed.t)
+        if not self.recenter:
+            return Quote(ba[0], ba[1], self.feed.t)
+        s_row = self._row_spot(m)
+        if s_row is None or not self.feed.px:
+            return None
+        mid, half = (ba[0] + ba[1]) / 2, (ba[1] - ba[0]) / 2
+        up, dn = self._mid(r, k + 1, m), self._mid(r, k - 1, m)
+        if up is not None and dn is not None:
+            delta, gamma = -(up - dn) / 2, max(0.0, up - 2 * mid + dn)
+        elif up is not None:
+            delta, gamma = -(up - mid), 0.0
+        elif dn is not None:
+            delta, gamma = -(mid - dn), 0.0
+        else:
+            return None
+        ds = self.feed.px - s_row
+        adj = max(0.01, mid + delta * ds + 0.5 * gamma * ds * ds)
+        return Quote(round(max(0.0, adj - half), 2), round(max(adj + half, 0.01), 2), self.feed.t)
 
 
 def load_panel(qdir: Path, d: date):

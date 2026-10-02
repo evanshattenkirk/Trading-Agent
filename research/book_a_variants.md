@@ -80,6 +80,20 @@ only (it failed the bar, but it is the change that fixes days like 2026-10-02). 
 - `quotes`: SPY SIP 1-minute bars 2020-06 onward with ThetaData's real 0DTE quotes, 1m trigger.
 - `ticks`: the 60 cached SIP sessions (Jul-Sep 2026) with real 144-tick bars and ThetaData quotes, SWING and SCALP.
 
+### 4a. First holdout run was invalid (stale quotes), fixed 2026-10-02
+
+The first real-quote run (Mac, 2020-06-01 to 2026-09-25, 1,348 sessions, commit ca1b901) showed the baseline at
++$112 a day, PF 5.9, t 22.5, with 80% of trading days green in every year. That is a timing bug, not an edge. The
+script priced each option at the previous minute's ThetaData row, which is up to two minutes older than the SPY
+price that triggered the trade, so every entry on an up-move bought at the pre-move price and every exit after a
+drop sold at the pre-drop price. Reproduced on synthetic data (S&P 1-minute bars with model quotes stamped like
+ThetaData's 1-minute rows): the same rules made +$221 a day with the stale rows and −$41 a day with continuous
+model quotes. The fix keeps the previous minute's row (never a future quote) but moves its mid by delta × ΔSPY +
+gamma × ΔSPY² / 2 since that row, reading delta and gamma off the neighbouring strikes in the same row. On the
+synthetic data the fixed script gives −$44 and −$37 a day (start- and end-of-minute stamps) against the −$41
+reference. `research/tests/test_book_a_holdout.py` pins it. The invalid results were removed from the branch; the
+rerun uses the same variants and pass bar. The variants' relative ranks in the invalid run are not used.
+
 ## 5. Caveats
 
 - Option prices come from Black-Scholes with IV = prior VIX × 0.80 and a fixed intraday IV; real 0DTE IV moves
