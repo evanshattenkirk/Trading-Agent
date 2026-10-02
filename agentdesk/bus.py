@@ -15,6 +15,7 @@ class Bus:
         self.recorder: IO | None = None
         self.record_filter: set[str] | None = None
         self.taps: list[Callable[[dict], None]] = []     # called with every event; an error in one never reaches the emitter
+        self.overflowed: set[asyncio.Queue] = set()      # subscribers that lost events; their socket resyncs from a snapshot
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=5000)
@@ -23,6 +24,14 @@ class Bus:
 
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self.subs.discard(q)
+        self.overflowed.discard(q)
+
+    def take_overflow(self, q: asyncio.Queue) -> bool:
+        """True once after `q` filled up and dropped events (a tab that fell behind)."""
+        if q in self.overflowed:
+            self.overflowed.discard(q)
+            return True
+        return False
 
     def emit(self, type_: str, ts: float, **data) -> None:
         msg = {"type": type_, "ts": round(ts, 3), **data}
@@ -30,7 +39,7 @@ class Bus:
             try:
                 q.put_nowait(msg)
             except asyncio.QueueFull:
-                pass
+                self.overflowed.add(q)
         if self.recorder and (self.record_filter is None or type_ in self.record_filter):
             self.recorder.write(json.dumps(msg, separators=(",", ":"), default=_round) + "\n")
         for tap in self.taps:

@@ -92,7 +92,7 @@ class Book:
     def to_dict(self) -> dict:
         unreal = sum(p.unrealized - p.fees for p in self.open)
         return {"book": self.letter, "key": self.key, "name": self.strategy.name, "day_pnl": round(self.day_pnl, 2),
-                "open_pnl": round(unreal, 2), "trades": self.trades, "max_trades": self.max_trades, "wins": self.wins,
+                "open_pnl": round(unreal, 2), "daily_loss": self.c.get("daily_loss"), "trades": self.trades, "max_trades": self.max_trades, "wins": self.wins,
                 "losses": self.losses, "halted": self.halted, "halt_reason": self.halt_reason, "blocked": self.blocked,
                 "open": [p.to_dict() for p in self.open], "closed": [p.to_dict() for p in self.closed],
                 "last_skip": self.skips[-1] if self.skips else None}

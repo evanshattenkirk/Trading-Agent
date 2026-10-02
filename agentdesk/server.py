@@ -131,6 +131,11 @@ def create_app(engine, bus, token: str | None = None, allowed_hosts=()) -> FastA
                 batch = [nxt.result()]
                 while not q.empty() and len(batch) < 200:
                     batch.append(q.get_nowait())
+                if bus.take_overflow(q):        # this tab fell behind and lost events: resync it from a fresh snapshot
+                    while not q.empty():
+                        q.get_nowait()
+                    await sock.send_text(json.dumps(engine.snapshot(), default=str))
+                    continue
                 await sock.send_text(json.dumps({"type": "batch", "events": batch}, default=str))
         except (WebSocketDisconnect, RuntimeError):
             pass
