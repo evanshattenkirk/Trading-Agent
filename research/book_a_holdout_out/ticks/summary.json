@@ -1,0 +1,215 @@
+{
+ "mode": "ticks",
+ "sessions": 60,
+ "first": "2026-07-02",
+ "last": "2026-09-25",
+ "combo": [],
+ "variants": {
+  "baseline": {
+   "stats": {
+    "mid1": {
+     "sessions": 60,
+     "trades": 280,
+     "trades_per_day": 4.67,
+     "net": -1819.16,
+     "mean_day": -30.32,
+     "t_day": -1.65,
+     "per_trade": -6.5,
+     "win_rate": 0.321,
+     "profit_factor": 0.75
+    },
+    "taker": {
+     "sessions": 60,
+     "trades": 280,
+     "trades_per_day": 4.67,
+     "net": -1835.16,
+     "mean_day": -30.59,
+     "t_day": -1.67,
+     "per_trade": -6.55,
+     "win_rate": 0.321,
+     "profit_factor": 0.75
+    }
+   },
+   "pass": {
+    "mid1_t": false,
+    "taker_positive": false,
+    "pass": false
+   }
+  },
+  "v1_rsi_no_cap": {
+   "stats": {
+    "mid1": {
+     "sessions": 60,
+     "trades": 313,
+     "trades_per_day": 5.22,
+     "net": -2198.84,
+     "mean_day": -36.65,
+     "t_day": -1.79,
+     "per_trade": -7.03,
+     "win_rate": 0.313,
+     "profit_factor": 0.73,
+     "vs_baseline_mean_day": -6.33,
+     "vs_baseline_t": -0.91
+    },
+    "taker": {
+     "sessions": 60,
+     "trades": 313,
+     "trades_per_day": 5.22,
+     "net": -2216.84,
+     "mean_day": -36.95,
+     "t_day": -1.81,
+     "per_trade": -7.08,
+     "win_rate": 0.313,
+     "profit_factor": 0.73,
+     "vs_baseline_mean_day": -6.36,
+     "vs_baseline_t": -0.91
+    }
+   },
+   "pass": {
+    "mid1_t": false,
+    "taker_positive": false,
+    "pass": false
+   }
+  },
+  "v5_swing_only": {
+   "stats": {
+    "mid1": {
+     "sessions": 60,
+     "trades": 127,
+     "trades_per_day": 2.12,
+     "net": -699.92,
+     "mean_day": -11.67,
+     "t_day": -0.8,
+     "per_trade": -5.51,
+     "win_rate": 0.362,
+     "profit_factor": 0.85,
+     "vs_baseline_mean_day": 18.65,
+     "vs_baseline_t": 1.24
+    },
+    "taker": {
+     "sessions": 60,
+     "trades": 127,
+     "trades_per_day": 2.12,
+     "net": -707.92,
+     "mean_day": -11.8,
+     "t_day": -0.81,
+     "per_trade": -5.57,
+     "win_rate": 0.362,
+     "profit_factor": 0.85,
+     "vs_baseline_mean_day": 18.79,
+     "vs_baseline_t": 1.25
+    }
+   },
+   "pass": {
+    "mid1_t": false,
+    "taker_positive": false,
+    "pass": false
+   }
+  },
+  "r2a_stop35": {
+   "stats": {
+    "mid1": {
+     "sessions": 60,
+     "trades": 276,
+     "trades_per_day": 4.6,
+     "net": -1889.14,
+     "mean_day": -31.49,
+     "t_day": -1.64,
+     "per_trade": -6.84,
+     "win_rate": 0.33,
+     "profit_factor": 0.74,
+     "vs_baseline_mean_day": -1.17,
+     "vs_baseline_t": -0.19
+    },
+    "taker": {
+     "sessions": 60,
+     "trades": 276,
+     "trades_per_day": 4.6,
+     "net": -1905.14,
+     "mean_day": -31.75,
+     "t_day": -1.65,
+     "per_trade": -6.9,
+     "win_rate": 0.33,
+     "profit_factor": 0.74,
+     "vs_baseline_mean_day": -1.17,
+     "vs_baseline_t": -0.19
+    }
+   },
+   "pass": {
+    "mid1_t": false,
+    "taker_positive": false,
+    "pass": false
+   }
+  },
+  "r2b_spy_stop": {
+   "stats": {
+    "mid1": {
+     "sessions": 60,
+     "trades": 276,
+     "trades_per_day": 4.6,
+     "net": -1807.14,
+     "mean_day": -30.12,
+     "t_day": -1.58,
+     "per_trade": -6.55,
+     "win_rate": 0.33,
+     "profit_factor": 0.75,
+     "vs_baseline_mean_day": 0.2,
+     "vs_baseline_t": 0.03
+    },
+    "taker": {
+     "sessions": 60,
+     "trades": 276,
+     "trades_per_day": 4.6,
+     "net": -1823.14,
+     "mean_day": -30.39,
+     "t_day": -1.59,
+     "per_trade": -6.61,
+     "win_rate": 0.33,
+     "profit_factor": 0.75,
+     "vs_baseline_mean_day": 0.2,
+     "vs_baseline_t": 0.03
+    }
+   },
+   "pass": {
+    "mid1_t": false,
+    "taker_positive": false,
+    "pass": false
+   }
+  },
+  "r2c_itm1": {
+   "stats": {
+    "mid1": {
+     "sessions": 60,
+     "trades": 278,
+     "trades_per_day": 4.63,
+     "net": -2138.22,
+     "mean_day": -35.64,
+     "t_day": -2.3,
+     "per_trade": -7.69,
+     "win_rate": 0.306,
+     "profit_factor": 0.69,
+     "vs_baseline_mean_day": -5.32,
+     "vs_baseline_t": -0.6
+    },
+    "taker": {
+     "sessions": 60,
+     "trades": 278,
+     "trades_per_day": 4.63,
+     "net": -2163.22,
+     "mean_day": -36.05,
+     "t_day": -2.33,
+     "per_trade": -7.78,
+     "win_rate": 0.306,
+     "profit_factor": 0.69,
+     "vs_baseline_mean_day": -5.47,
+     "vs_baseline_t": -0.62
+    }
+   },
+   "pass": {
+    "mid1_t": false,
+    "taker_positive": false,
+    "pass": false
+   }
+  }
+ }
+}
