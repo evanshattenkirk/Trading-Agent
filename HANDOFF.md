@@ -234,7 +234,7 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
 **Size:** `min(5, floor($500/ask))`.
 
 **Exits** (on premium mid):
-- −20% hard stop.
+- −20% hard stop (paper runs −35% since 2026-10-03, Evan's choice after the real-quote holdout; `research/book_a_variants.md` 4b).
 - SWING: sell 50% at +25% and 25% at +50%; stop to breakeven; runner trails 25% off its peak; a 1m cross back sells everything before any scale. After a scale, the runner goes on the 1m cross back, unless "ripping" (5m histogram rising and price above VWAP), in which case it waits for the 5m cross back. 20-minute time stop at under +10%.
 - SCALP: sell 50% at +15%; trail 15%; exit on the 144t cross back; 6-minute time stop at under +5%.
 - Flatten at 14:40 CT, 5 minutes before sellout, before high-impact events, or on the kill switch.

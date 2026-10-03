@@ -2,7 +2,7 @@
 
 All thresholds are on option premium (mark = mid), measured from the average entry.
 
-  hard stop        mark <= entry * (1 - 20%)                 -> sell all
+  hard stop        mark <= entry * (1 - stop)                -> sell all
   scale-outs       mark >= entry * (1 + at)                  -> sell fraction of the initial size
   breakeven        after the first scale, stop moves to entry
   runner trail     after the first scale, stop = max(stop, peak * (1 - trail))
@@ -140,7 +140,7 @@ class ExitPlan:
         self._update_stop()
 
         if pos.mark <= pos.stop:
-            label = "stop -20%" if pos.stop < pos.entry else ("breakeven stop" if pos.stop == round(pos.entry, 2) else "trailing stop")
+            label = f"stop -{self.stop_pct * 100:.0f}%" if pos.stop < pos.entry else ("breakeven stop" if pos.stop == round(pos.entry, 2) else "trailing stop")
             return ExitIntent(pos.qty, label, urgent=True)
 
         scales = self.p["scale_outs"]

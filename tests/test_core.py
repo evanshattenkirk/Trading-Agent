@@ -129,11 +129,19 @@ def mkpos(setup="SWING", qty=4, entry=1.00):
 
 
 def test_hard_stop():
+    assert CFG["exits"]["stop_loss_pct"] == 0.35      # Evan, 2026-10-03: paper stop -35% after the real-quote holdout
     p, plan = mkpos()
     t = p.opened_ts + 30
-    assert plan.on_quote(0.85, 0.87, t) is None
-    x = plan.on_quote(0.78, 0.80, t)
-    assert x and x.qty == 4 and x.urgent and "stop" in x.reason
+    assert plan.on_quote(0.78, 0.80, t) is None        # -21%: the old -20% stop no longer fires
+    assert plan.on_quote(0.66, 0.68, t) is None        # -33%
+    x = plan.on_quote(0.63, 0.65, t)
+    assert x and x.qty == 4 and x.urgent and x.reason == "stop -35%"
+
+
+def test_stop_label_follows_the_stop_in_force():
+    p = Position(Contract("SPY", "2026-09-28", 573, "call"), "SWING", 4, 1.00, at_ct(D, time(9, 0)))
+    plan = ExitPlan({**CFG["exits"], "stop_loss_pct": 0.15}, p)     # a crew day tweak
+    assert plan.on_quote(0.83, 0.85, p.opened_ts + 30).reason == "stop -15%"
 
 
 def test_scale_breakeven_trail_and_runner():

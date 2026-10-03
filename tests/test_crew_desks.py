@@ -271,7 +271,7 @@ def test_postmortem_clean_day():
 def test_postmortem_flags_rule_breaks_and_round_trips():
     e, c = make()
     e.risk.add_blackout(at_ct(D, time(9, 0)), "CPI")          # blackout 08:50-09:20
-    e.closed = [trade(time(9, 5), time(14, 50), qty=7, pnl_pct=-0.40, reason="stop"),
+    e.closed = [trade(time(9, 5), time(14, 50), qty=7, pnl_pct=-0.50, reason="stop"),
                 trade(time(10, 0), time(10, 30), pnl_pct=-0.05, peak_pct=0.60, reason="trailing")]
     b = c._postmortem_brief(at_ct(D, time(15, 5)))
     kinds = {x["rule"] for x in b["breaks"]}

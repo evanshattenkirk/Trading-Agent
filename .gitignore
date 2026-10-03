@@ -25,3 +25,6 @@ rh_oauth*.json
 
 # standing changes approved in the dashboard (machine state, written by the engine)
 overrides.yaml
+research/book_a_variants_out/trades.csv
+research/book_a_variants_out/daily.csv
+research/book_a_holdout_out/*/trades.csv
