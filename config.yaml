@@ -55,7 +55,7 @@ orders:
   exit_urgent: bid        # stops/flatten go out at the bid
 
 exits:
-  stop_loss_pct: 0.20
+  stop_loss_pct: 0.35      # Evan, 2026-10-03 (paper): was 0.20; -35% lost $10/day less on 2020-26 real quotes (research/book_a_variants.md 4b)
   flatten_at: "14:40"      # Robinhood force-closes SPY 0DTE at 14:45 CT (sellout_datetime); the engine also flattens 5 min before each contract's own sellout
   swing:                  # entries triggered by a fresh 1m cross
     scale_outs:

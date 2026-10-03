@@ -761,7 +761,7 @@ class Crew:
             lines.append({"from": "risk", "to": "quant", "text": "What's actually breaking: entries or exits?"})
             losers = [p for p in self.e.closed[-3:] if p.realized - p.fees < 0]
             stops = sum(1 for p in losers if (p.exit_reason or "").startswith("stop"))
-            lines.append({"from": "quant", "to": "risk", "text": f"{stops} of the last {len(losers)} losers hit the -20% stop inside minutes. That's entry timing, not exits."
+            lines.append({"from": "quant", "to": "risk", "text": f"{stops} of the last {len(losers)} losers hit the -{self.e.cfg['exits']['stop_loss_pct'] * 100:.0f}% stop inside minutes. That's entry timing, not exits."
                           if losers else "Nothing broken. Variance."})
         if "tape" in b and "quant" in b:
             lines.append({"from": "tape", "to": "quant", "text": b["tape"].get("headline", "")[:110]})

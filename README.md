@@ -102,7 +102,7 @@ Each rung uses the same engine and only swaps the data feed and the broker.
 | RSI 14, 30 / 70 | RSI inside 30–70 on 15m, 5m, 1m. Oversold is blocked too, so it doesn't catch falling knives | `strategy.rsi` |
 | 1 OTM, 2 OTM early if levels allow, ITM late | 08:30 +1 (up to +2 if the next resistance clears the +2 strike), 10:30 +1, 12:30 ATM, 13:45 1 ITM. Steps in a strike if PDH / ORH / VWAP / a 5m pivot caps the strike | `strikes.schedule` |
 | 4–5 contracts, $300–500 | `floor($500 / ask)`, capped at 5 contracts | `sizing` |
-| Stop around 20% | Hard stop at −20% of premium (on mark; exits at the bid) | `exits.stop_loss_pct` |
+| Stop around 20% | Hard stop at −35% of premium in paper since 2026-10-03, was −20% (on mark; exits at the bid) | `exits.stop_loss_pct` |
 | Take profit, let some ride | SWING: sell 50% at +25% and 25% at +50%, stop to breakeven, runner trails 25% off peak. SCALP: 50% at +15%, runner trails 15% | `exits.swing`, `exits.scalp` |
 | Exit on MACD cross back | Before any scale-out, a cross back on the setup's timeframe (1m SWING / 144t SCALP) exits everything. After one, it exits the runner | `exit_on_cross_back` |
 | "When it's ripping" | If the 5m histogram is rising and price is above VWAP, the runner ignores the 1m cross back and waits for a 5m cross back (the trail still protects it) | `ripping_hold` |
