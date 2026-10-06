@@ -48,3 +48,10 @@ quotes only:
     .venv/bin/python research/fetch_thetadata_spy_next.py                    # Mac: next-expiry quotes (also feeds book G's check)
     .venv/bin/python research/h4_overnight_fly.py --quotes data/thetadata/spy_0dte \
         --next-quotes data/thetadata/spy_next --out data/thetadata/h4_results
+
+Round 2, V1 short VIX futures carry (rules in vix_carry_prereg.md, frozen before any data). Mac only, since CBOE's
+site isn't reachable from the cloud sessions; public CBOE data plus SVXY closes from Alpaca for the validation check:
+
+    .venv/bin/python research/fetch_cboe_vx.py --smoke                        # one contract + VIX3M, printed
+    .venv/bin/python research/fetch_cboe_vx.py --svxy                         # data/cboe
+    .venv/bin/python research/vix_carry.py --data data/cboe --out research    # vix_carry.md / _results.json
