@@ -73,13 +73,34 @@ def candidates(y: int, m: int) -> list[str]:
     return [URL_NEW.format(d=d.isoformat()) for d in days] + [archive_url(y, m)]
 
 
+def settles_complete(text: str) -> bool:
+    """False when a traded row (volume > 0) has a zero settlement: CBOE's current CDN files for the 2013 contracts
+    carry Settle 0 from 2013-01-02 to 2013-05-17 (and drop rows), while the CFE archive has them in full."""
+    rows = csv.reader(text.splitlines())
+    head = [c.strip().lower() for c in next(rows, [])]
+    if "settle" not in head or "total volume" not in head:
+        return True
+    i, j = head.index("settle"), head.index("total volume")
+    for r in rows:
+        try:
+            if float(r[j] or 0) > 0 and float(r[i] or 0) <= 0:
+                return False
+        except (IndexError, ValueError):
+            continue
+    return True
+
+
 def fetch_contract(y: int, m: int) -> tuple[str, str] | None:
+    """The first candidate with complete settlements; else the first that parses as VX at all."""
+    fallback = None
     for url in candidates(y, m):
         text = get(url)
         if looks_like_vx(text):
-            return url, text
+            if settles_complete(text):
+                return url, text
+            fallback = fallback or (url, text)
         time.sleep(0.2)
-    return None
+    return fallback
 
 
 def fetch_indexes(out: Path) -> None:
@@ -141,6 +162,7 @@ def main() -> int:
         url, text = got
         (vx / f"VX_{key}.csv").write_text(text)
         n = sum(1 for line in text.splitlines() if line[:1].isdigit())
+        rows = [r for r in rows if r["month"] != key]          # a refetched month replaces its old manifest row
         rows.append({"month": key, "rule_settle": vx_settlement(y, m, nyse_session).isoformat(), "url": url,
                      "rows": n})
         print(f"{key}: {n} rows from {url}")

@@ -45,6 +45,19 @@ def test_fetch_month_list_and_archive_url():
     assert fx.archive_url(2008, 3) == fx.URL_OLD.format(code="H", yy="08")
 
 
+def test_fetch_prefers_a_file_whose_traded_rows_all_settle(monkeypatch):
+    head = "Trade Date,Futures,Open,High,Low,Close,Settle,Change,Total Volume,EFP,Open Interest\n"
+    zero = head + "".join(f"2013-01-0{d},K (May 2013),20,20,19,19.5,0,0,9974,0,1\n" for d in range(2, 9))
+    full = head + "".join(f"01/0{d}/2013,K (May 13),20,20,19,19.5,19.55,0,9974,0,1\n" for d in range(2, 9))
+    assert not fx.settles_complete(zero) and fx.settles_complete(full)
+    archive = fx.archive_url(2013, 5)
+    monkeypatch.setattr(fx, "get", lambda url: full if url == archive else zero)
+    monkeypatch.setattr(fx.time, "sleep", lambda s: None)
+    assert fx.fetch_contract(2013, 5) == (archive, full)
+    monkeypatch.setattr(fx, "get", lambda url: zero)
+    assert fx.fetch_contract(2013, 5)[1] == zero          # nothing better: keep the first parseable file
+
+
 # ---------------------------------------------------------------- CSV readers
 
 def test_read_cboe_futures_csv_skips_a_disclaimer_and_zero_settles(tmp_path):
