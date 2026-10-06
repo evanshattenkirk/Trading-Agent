@@ -37,3 +37,14 @@ against 7F's 2013-2018 table in strategy_f_daily.md. Any folder of per-symbol da
 
     python research/strategy_f_daily.py <folder> <out.json>
     python research/strategy_f_daily.py research/data/f_intraday/daily research/strategy_f_daily_results_2016_2026.json
+
+Book H candidates (rules in book_h_candidates_prereg.md, frozen before any run). H1-H3 (shares) on the 2005-2020 data
+above, then the 2020-2026 SIP holdout on the Mac for any stage-1 survivor; H4 (overnight 1DTE iron fly) on ThetaData
+quotes only:
+
+    python research/book_h_candidates.py                                      # book_h_candidates.md / _results.json
+    python research/book_h_candidates.py --coverage-min-minutes 300           # coverage check, not judged
+    .venv/bin/python research/book_h_candidates.py --spy-1m data/spy_1m --holdout       # Mac: book_h_holdout.md
+    .venv/bin/python research/fetch_thetadata_spy_next.py                    # Mac: next-expiry quotes (also feeds book G's check)
+    .venv/bin/python research/h4_overnight_fly.py --quotes data/thetadata/spy_0dte \
+        --next-quotes data/thetadata/spy_next --out data/thetadata/h4_results
