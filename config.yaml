@@ -208,7 +208,7 @@ books:
                      max_debit: 750, max_open: 3, max_new_day: 3, daily_loss: 300, poll_sec: 5, require_calendar: true}
   # Book G = research candidate F3 (research/strategies_new_prereg.md, rules frozen; Evan approved paper 2026-09-28).
   # 0DTE/1DTE SPY ATM call calendar, Mon-Thu when the next session is tomorrow. Correlates 0.84 with D: one bet, compare side by side.
-  G_call_calendar: {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, max_debit: 3.00, take_profit_pct: 0.25, stop_pct: 0.35, close_ct: "14:25"}
+  G_call_calendar: {enabled: false, paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, max_debit: 3.00, take_profit_pct: 0.25, stop_pct: 0.35, close_ct: "14:25"}
 
 calendar:
   # 12:00 CT closes: entries stop 11:20, flatten 11:40. Full-day holidays need no entry (no prints = no trades).
