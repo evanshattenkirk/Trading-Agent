@@ -1,6 +1,8 @@
 # Book H (overnight 1DTE SPY iron fly): design
 
-Date: 2026-10-06. Status: **draft for Evan's approval in the "Find a profitable strategy for a new book" project
+Date: 2026-10-06. **Status: dropped.** H4 failed its pre-registered real-quote test on 2016-2026 ThetaData quotes (`research/h4_overnight_fly.md`: out-of-sample t −3.23 at mid −1¢, −$10.71 a lot at taker), so nothing below is built. Kept as the record of what was proposed.
+
+Original status: draft for Evan's approval in the "Find a profitable strategy for a new book" project
 thread. Nothing here is built until H4 passes its pre-registered real-quote test** (`research/book_h_candidates_prereg.md`
 section 4, run on the Mac with `research/h4_overnight_fly.py`). If H4 fails, this spec is dropped.
 Source of truth: HANDOFF v3 sections 2 (broker facts), 9 (multi-book spec), 10.8 (promotion), 11 (sizing), 12 (safety).
