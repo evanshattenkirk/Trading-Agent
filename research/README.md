@@ -55,3 +55,12 @@ site isn't reachable from the cloud sessions; public CBOE data plus SVXY closes 
     .venv/bin/python research/fetch_cboe_vx.py --smoke                        # one contract + VIX3M, printed
     .venv/bin/python research/fetch_cboe_vx.py --svxy                         # data/cboe
     .venv/bin/python research/vix_carry.py --data data/cboe --out research    # vix_carry.md / _results.json
+
+Round 3, X1 short iron fly through earnings (rules in x1_earnings_fly_prereg.md, frozen before any data). Mac only:
+SEC EDGAR for report times, ThetaData single-name option quotes, Alpaca daily bars for the date sanity check:
+
+    .venv/bin/python research/fetch_earnings_edgar.py                         # research/data/x1/earnings.csv
+    .venv/bin/python research/fetch_thetadata_x1.py --coverage                # does the plan reach 2018? printed
+    .venv/bin/python research/fetch_thetadata_x1.py --daily                   # research/data/x1/daily.csv
+    .venv/bin/python research/fetch_thetadata_x1.py                           # data/thetadata/x1
+    .venv/bin/python research/x1_earnings_fly.py                              # x1_earnings_fly.md / _results.json

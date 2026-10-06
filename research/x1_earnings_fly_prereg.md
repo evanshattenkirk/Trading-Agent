@@ -51,13 +51,16 @@ straddle is often 5-10% of the stock), so the costs are a smaller share of it.
   rights, 15:30-16:00 ET on the entry session and 09:30-16:00 ET on the exit session.
 - SEC EDGAR company submissions (`data.sec.gov/submissions`), CIKs from `sec.gov/files/company_tickers.json`.
 - CBOE VIX daily closes (`data/cboe/VIX_History.csv`, already on the Mac from V1).
+- Alpaca SIP daily bars for the 30 names (the date sanity check only).
 - **Coverage check first (reported, not part of the bar):** for five names, list expiries and fetch one 15:45 quote
   in each year 2018-2026. If the plan's history starts after 2018-01-01, the sample starts at the first month with
   quotes for most names, and the report says so. The halves in section 5 stay as dated.
-- **Date sanity check (reported, not part of the bar):** the median absolute move from the entry spot to the exit
-  spot (both by parity) on event pairs vs. the same names' median overnight move on 50 random non-event session
-  pairs. Event moves should be several times larger; if they are not, the dates are wrong and the run is invalid
-  until the date source is fixed (the data, never the rule).
+- **Date sanity check (reported, not part of the bar):** from Alpaca daily bars (split-adjusted), the median
+  absolute move from the entry session's close to the exit session's open on event pairs vs. the same names' median
+  close-to-next-open move on every other session pair 2018-2026. Event moves should be several times larger; if the
+  ratio is below 2, the dates are wrong and the run is invalid until the date source is fixed (the data, never the
+  rule). EDGAR's acceptance-time zone is checked the same way: AAPL reports after the close, so at least 80% of its
+  2.02 filings must read as after-close, or the fetcher refuses to write the file.
 
 ## 5. Periods, statistics, pass bar
 
