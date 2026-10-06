@@ -247,11 +247,30 @@ SENSITIVITIES = {
 REFERENCE = ("buy and hold 15:55-15:55", "intraday 09:35-15:55")
 
 
-def reference(px: pd.DataFrame) -> dict[str, pd.Series]:
+def reference(px: pd.DataFrame, cal: Calendar) -> dict[str, pd.Series]:
+    """Buy and hold over consecutive trading sessions only (a gap in the data would span several days)."""
+    days = list(px.index)
     p = px["p1555"]
-    bh_ = (p / p.shift(1) - 1).fillna(0.0) * 1e4
-    intra = (px["p1555"] / px["p0935"] - 1).fillna(0.0) * 1e4
-    return {REFERENCE[0]: bh_, REFERENCE[1]: intra}
+    bh_ = {d: (p[d] / p[days[i - 1]] - 1) * 1e4 for i, d in enumerate(days)
+           if i and cal.prev_session(d) == days[i - 1]}
+    intra = (px["p1555"] / px["p0935"] - 1).dropna() * 1e4
+    return {REFERENCE[0]: pd.Series(bh_), REFERENCE[1]: intra}
+
+
+def load_oanda_raw(folder: Path, min_minutes: int) -> pd.DataFrame:
+    """Coverage check only: sessions with >= min_minutes RTH bars and a bar in 09:30-09:34 and in 15:45-15:54."""
+    fs = sorted(Path(folder).glob("oanda-SPX500_USD-*.csv"))
+    df = pd.concat([pd.read_csv(f) for f in fs], ignore_index=True)
+    t = pd.to_datetime(df["time"], utc=True)
+    df = df.assign(t=t).drop_duplicates("t").sort_values("t")
+    et = df.t.dt.tz_convert("America/New_York")
+    df = df.assign(day=et.dt.date, hm=et.dt.hour * 60 + et.dt.minute, wd=et.dt.weekday)
+    df = df[(df.hm >= OPEN) & (df.hm < CLOSE) & (df.wd < 5)]
+    g = df.groupby("day")
+    ok = (g.size() >= min_minutes) & g.hm.apply(lambda h: ((h >= 570) & (h < 575)).any() and ((h >= 945) & (h < 955)).any())
+    half = nyse_calendar.half_days_between(2005, 2020)
+    keep = [d for d in ok[ok].index if d not in half]
+    return session_prices_1m(df[df.day.isin(keep)][["day", "hm", "close"]])
 
 
 def summarize(daily: pd.Series, trades: dict, lo: date, hi: date) -> dict:
@@ -268,8 +287,8 @@ def by_year(daily: pd.Series) -> dict:
     return out
 
 
-def run_stage1(oanda: Path, spy5: Path | None) -> dict:
-    px = load_oanda(oanda)
+def run_stage1(oanda: Path, spy5: Path | None, px: pd.DataFrame | None = None) -> dict:
+    px = load_oanda(oanda) if px is None else px
     cal = Calendar(px.index[0].year, px.index[-1].year)
     rec = load_spy_5m(spy5) if spy5 and Path(spy5).exists() else None
     cal_r = Calendar(2025, 2026)
@@ -295,7 +314,7 @@ def run_stage1(oanda: Path, spy5: Path | None) -> dict:
             daily, trades = candidate_series(px, cal, model, base, **dict(kw))
             r[model] = {per: summarize(daily, trades, lo, hi) for per, (lo, hi) in PERIODS.items()}
         res["sensitivities"][label] = r
-    for label, s in reference(px).items():
+    for label, s in reference(px, cal).items():
         res["reference"][label] = {per: stats(window(s, lo, hi), []) for per, (lo, hi) in PERIODS.items()}
     return res
 
@@ -318,7 +337,7 @@ def run_holdout(spy1m: Path, prior: dict | None) -> dict:
         r["holdout_pass"] = holdout_pass(r)
         r["judged"] = bool(s1)
         out["candidates"][name] = r
-    out["reference"] = {k: stats(window(s, lo, hi), []) for k, s in reference(px).items()}
+    out["reference"] = {k: stats(window(s, lo, hi), []) for k, s in reference(px, cal).items()}
     return out
 
 
@@ -404,7 +423,17 @@ def main() -> int:
     ap.add_argument("--spy-1m", type=Path, default=None, help="SIP 1-minute folder (Mac holdout)")
     ap.add_argument("--holdout", action="store_true")
     ap.add_argument("--out", type=Path, default=HERE)
+    ap.add_argument("--coverage-min-minutes", type=int, default=None,
+                    help="coverage check (not judged): rebuild sessions from the raw Oanda CSVs with this minimum")
     a = ap.parse_args()
+    if a.coverage_min_minutes:
+        px = load_oanda_raw(HERE / "data" / "oanda", a.coverage_min_minutes)
+        res = run_stage1(a.oanda, None, px=px)
+        txt = report_stage1(res).replace("stage 1 results", f"coverage check, sessions with >= "
+                                         f"{a.coverage_min_minutes} minutes (NOT judged)")
+        (a.out / "book_h_coverage_check.md").write_text(txt)
+        print(txt)
+        return 0
     if a.holdout:
         prior_f = HERE / "book_h_candidates_results.json"
         prior = json.loads(prior_f.read_text()) if prior_f.exists() else None
