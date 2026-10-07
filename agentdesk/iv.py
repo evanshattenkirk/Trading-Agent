@@ -160,7 +160,9 @@ class RobinhoodChains:
                 for q in got]                                                          # reply isn't yesterday's quote
 
     async def quote(self, contract) -> IVQuote | None:
-        return self.cache.get(contract.broker_id) if contract.broker_id else None
+        """The cached quote, never older than quotes() would return (PaperBroker fills E's and F2's orders here)."""
+        q = self.cache.get(contract.broker_id) if contract.broker_id else None
+        return q if q is not None and self.clock() - q.ts <= self.QUOTE_MAX_AGE_SEC else None
 
     # ------------------------------------------------------------ strike lists
     async def _chain(self, symbol: str, expiry: date) -> dict:

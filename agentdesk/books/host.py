@@ -77,6 +77,7 @@ class BookHost:
         self._errors, self._tasks = 0, set()
         self._inline, self._vix_task = True, None
         self._last_rate_log = -1e18
+        self._prefetch_down, self._last_prefetch_log = False, -1e18     # batched quote fetch failing; last warn
 
     @property
     def enabled(self) -> bool:
@@ -209,8 +210,16 @@ class BookHost:
         except RateLimited as ex:
             self._rate_limited(now, "books", ex)
             return False
-        except Exception:
+        except Exception as ex:     # one dashboard line per episode (a minute apart at most), never an error count
             log.debug("books: batched quote prefetch failed; each book asks on its own", exc_info=True)
+            if not self._prefetch_down and now - self._last_prefetch_log >= 60:
+                self._last_prefetch_log = now
+                log.warning("books: batched leg quote fetch failed: %s", ex)
+                self._log(now, "warn", f"books: batched leg quote fetch failed ({str(ex)[:120]}); "
+                                       "each book asks for its own legs until it recovers")
+            self._prefetch_down = True
+            return True
+        self._prefetch_down = False
         return True
 
     def _rate_limited(self, now: float, who: str, ex) -> None:

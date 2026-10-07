@@ -233,6 +233,26 @@ def test_earnings_uses_the_robinhood_calendar_once_per_day():
     assert b["screen"][0]["symbol"] == "NVDA" and b["screen"][0]["flag"] == "E1"
 
 
+def test_an_empty_robinhood_calendar_is_flagged_and_asked_again():               # review 2026-10-06 M6
+    from agentdesk.desks import load_calendar
+    e, c = make(sim=False)
+    replies = [{"results": []},
+               {"results": [{"symbol": "NVDA", "report": {"date": "2026-10-01", "timing": "pm", "verified": True}}]}]
+    calls = []
+
+    class RH:
+        async def call(self, tool, args):
+            calls.append(tool)
+            return replies.pop(0)
+    e.l2_rh = RH()
+    cal, src = run(load_calendar(c, D))
+    assert cal == [] and src == "Robinhood calendar empty"          # not the success source F2 trusted
+    cal, src = run(load_calendar(c, D))                             # not kept for the day: read again
+    assert [r["symbol"] for r in cal] == ["NVDA"] and src == "Robinhood calendar" and len(calls) == 2
+    run(load_calendar(c, D))
+    assert len(calls) == 2                                          # a real reply is kept for the day
+
+
 def test_earnings_falls_back_to_config_when_the_calendar_call_fails():
     e, c = make(cfg_with_calendar(), sim=False)
 

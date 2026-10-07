@@ -77,6 +77,22 @@ def put_signals(stats: dict[str, dict], cfg: dict) -> list[tuple[str, dict]]:
     return sorted(ok, key=lambda sx: (-sx[1]["chg_pct"], sx[0]))[:int(cfg["max_new_p"])]
 
 
+CAL_DAYS = 31       # desks.load_calendar reads 31 days ahead
+
+
+def calendar_problem(calendar: list[dict] | None, universe: set, today: date, days: int = CAL_DAYS) -> str | None:
+    """Why an earnings calendar can't vouch for F2's names, or None (review 2026-10-06 M6). A successful read with
+    zero rows, or none for F2's universe in the window it covers, is a broken reply, not a quiet month."""
+    if calendar is None:
+        return "earnings calendar unavailable"
+    if not calendar:
+        return "earnings calendar empty"
+    hi = today + timedelta(days=days)
+    if not any(r.get("symbol") in universe and today <= r["date"] <= hi for r in calendar):
+        return f"earnings calendar lists no F2 name in the next {days} days"
+    return None
+
+
 def earnings_conflict(symbol: str, calendar: list[dict] | None, entry: date, exit_: date) -> str | None:
     """A report between the entry day and the exit day (both included) means the spread would hold through it."""
     for r in calendar or []:

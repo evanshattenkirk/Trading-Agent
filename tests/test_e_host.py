@@ -1,5 +1,6 @@
 """EHost: entries from the earnings screen, paper fills, exits, overnight holds and restarts."""
 import asyncio
+import json
 import sys
 from datetime import date, time
 from pathlib import Path
@@ -87,6 +88,11 @@ def test_entries_wait_for_1445_then_open_e1_and_e2_at_paper_fills():
     assert [d["outcome"] for d in h.ej.decisions()] == ["opened", "opened"]
     assert {p.id for p in h.ej.open_positions()[0]} == {amd.id, xom.id}
     assert "IV filter: 0/4 cycles" in amd.entry_reasons
+
+
+def test_the_book_strip_shows_es_open_limit_not_a_default_trade_cap():          # review 2026-10-06
+    h, eng, ch = make()
+    assert h.book.to_dict()["max_trades"] == h.c["max_open"] == 3      # was Book's default of 1, which E never uses
 
 
 def test_e_never_uses_the_engine_broker():
@@ -271,13 +277,64 @@ def test_paused_or_halted_blocks_entries():
 
 
 def test_three_errors_in_a_row_halt_book_e():
-    h, eng, ch = make()
+    """A failure that blocks a due exit still counts (review 2026-10-06 M5): a take profit whose order keeps
+    failing halts E after three polls."""
+    h, eng, ch = make(cal=(AMD_EV,))
     tick(h, ch, at(MON, 14, 45))
-    ch.fail.add("quotes")
+
+    async def broken(*a, **k):
+        raise RuntimeError("order path broke")
+    h.exec.work = broken
+    ch.set("AMD", FRI1, 100, "call", 3.40, 3.50, 0.7)          # take profit is due
     for s in (0, 15, 30):
         ch.now = eng.feed.t = at(TUE, 9, 0, s)
         asyncio.run(h.run(h.on_second(eng.feed.t), True))
     assert h.book.halted
+
+
+def test_a_quote_outage_with_nothing_due_never_halts_book_e():                   # review 2026-10-06 M5
+    h, eng, ch = make()
+    tick(h, ch, at(MON, 14, 45))
+    ch.fail.add("quotes")
+    for s in (0, 15, 30, 45):
+        ch.now = eng.feed.t = at(TUE, 9, 0, s)
+        asyncio.run(h.run(h.on_second(eng.feed.t), True))
+    assert ch.calls.count("quotes") >= 5                    # it kept asking, every poll_sec
+    assert not h.book.halted and h.book.errors == 0 and len(h.book.open) == 2
+    down = [d for d in eng.bus.of("log") if "option quotes unavailable" in d["msg"]]
+    assert len(down) == 1 and down[0]["level"] == "warn"    # one line per outage, not one per poll
+    ch.fail.discard("quotes")
+    tick(h, ch, at(TUE, 9, 1))
+    assert any("option quotes back" in d["msg"] for d in eng.bus.of("log"))
+
+
+def test_flatten_after_a_failed_quote_read_closes_at_the_last_mark():            # review 2026-10-06 M5
+    h, eng, ch = make()
+    tick(h, ch, at(MON, 14, 45))
+    marks = {p.id: p.mark for p in h.book.open}
+    sent = []
+    real = h.broker.submit_combo
+
+    async def spy(*a, **k):
+        sent.append(a)
+        return await real(*a, **k)
+    h.broker.submit_combo = spy
+    ch.fail.add("quotes")                                   # the fresh read fails; quote() would still answer
+    ch.now = at(TUE, 9, 0)
+    asyncio.run(h.flatten("manual flatten", at(TUE, 9, 0)))
+    assert h.book.open == [] and sent == []                 # never a paper fill at stale cached prices
+    for t in eng.journal.trades():
+        assert t["exit_reason"].startswith("manual flatten") and "quotes unavailable" in t["exit_reason"]
+        assert json.loads(t["fills"])[-1]["px"] in marks.values()
+    h2, eng2, ch2 = make()
+    tick(h2, ch2, at(MON, 14, 45))
+    ch2.now = at(TUE, 9, 0)                                 # fresh quotes: the normal paper fill
+    asyncio.run(h2.kill(at(TUE, 9, 0)))
+    assert h2.book.open == [] and all("last mark" not in t["exit_reason"] for t in eng2.journal.trades())
+    h3, eng3, ch3 = make()
+    tick(h3, ch3, at(MON, 14, 45))                          # quotes answer, but with yesterday's prices
+    asyncio.run(h3.kill(at(TUE, 9, 0)))
+    assert h3.book.open == [] and all("quotes unavailable" in t["exit_reason"] for t in eng3.journal.trades())
 
 
 def test_one_names_data_error_does_not_cancel_the_other_entries():             # final review 1

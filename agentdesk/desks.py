@@ -140,6 +140,9 @@ async def load_calendar(crew, today) -> tuple[list[dict], str]:
             data = await asyncio.wait_for(rh.call("get_earnings_calendar", {
                 "start_date": str(today), "days": 31, "filter": "high_market_cap"}), timeout=15)
             cal, src = parse_calendar(data), "Robinhood calendar"
+            if not cal:             # a reply with no rows is a broken read, not a quiet month (review M6)
+                log.warning("earnings calendar: Robinhood replied with no rows")
+                src = "Robinhood calendar empty"
         except Exception as ex:
             log.warning("earnings calendar failed: %s", ex)
             src = f"Robinhood calendar unavailable ({str(ex)[:60]}); using config"
@@ -148,7 +151,7 @@ async def load_calendar(crew, today) -> tuple[list[dict], str]:
         if not cal and crew.e.feed.is_sim:
             cal, src = _sim_calendar(crew, today, holidays(crew.e.cfg)), "sim calendar"
         src = src or "config calendar"
-    if not src.startswith("Robinhood calendar unavailable"):
+    if not src.startswith(("Robinhood calendar unavailable", "Robinhood calendar empty")):     # those are read again
         crew._earnings_cal = (today, cal, src)
     return cal, src
 
