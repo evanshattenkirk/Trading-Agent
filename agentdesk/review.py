@@ -70,6 +70,7 @@ class ReviewSupervisor:
         self.server: uvicorn.Server | None = None
         self.task: asyncio.Task | None = None
         self._busy_logged = False
+        self._claim_logged = False
 
     @property
     def serving(self) -> bool:
@@ -90,7 +91,11 @@ class ReviewSupervisor:
             if self.serving:
                 log.info("dashboard port claimed by pid %s; review page off", ", ".join(map(str, held)))
                 await self._stop_serving()
+            elif not self._claim_logged:                # e.g. at startup: say why the page isn't up
+                log.info("review page off: pid %s holds a claim in %s", ", ".join(map(str, held)), self.claims_dir)
+            self._claim_logged = True
             return
+        self._claim_logged = False
         if self.serving:
             return
         if self.task is not None:                      # it stopped on its own (bind error); start over
