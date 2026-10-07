@@ -110,6 +110,8 @@ gamma × ΔSPY² / 2 since that row, reading delta and gamma off the neighbourin
 synthetic data the fixed script gives −$44 and −$37 a day (start- and end-of-minute stamps) against the −$41
 reference. `research/tests/test_book_a_holdout.py` pins it. The invalid results were removed from the branch; the
 rerun uses the same variants and pass bar. The variants' relative ranks in the invalid run are not used.
+(2026-10-07: the synthetic check itself was never committed. `research/book_a_recenter_check.py` reconstructs it from
+this description; its session sample wasn't recorded, so it isn't verified to give the same four numbers.)
 
 ### 4b. Holdout results (re-centred quotes, Mac run 2026-10-02, commits 86f6928 and 2c9eba3)
 
