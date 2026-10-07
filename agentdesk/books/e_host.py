@@ -63,6 +63,7 @@ class EHost:
         self.e, self.cfg, self.chains, self.vix = engine, cfg, chains, vix
         self.c = cfg["books"][KEY]
         self.book = Book(KEY, self.c, EarningsIV(self.c))
+        self.book.max_trades = int(self.c["max_open"])     # the strip's trades/limit shows E's 3 open, as F1 does
         self.account = account or AccountRisk((cfg.get("books") or {}).get("account"))
         self.other_risk = lambda: sum(p.entry * 100 * p.qty for p, _ in self.e.open)     # A (+ others via HostGroup)
         self.books_changed = lambda now: None      # HostGroup: refresh the dashboard's book strip

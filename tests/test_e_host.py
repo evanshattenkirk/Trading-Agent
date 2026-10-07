@@ -90,6 +90,11 @@ def test_entries_wait_for_1445_then_open_e1_and_e2_at_paper_fills():
     assert "IV filter: 0/4 cycles" in amd.entry_reasons
 
 
+def test_the_book_strip_shows_es_open_limit_not_a_default_trade_cap():          # review 2026-10-06
+    h, eng, ch = make()
+    assert h.book.to_dict()["max_trades"] == h.c["max_open"] == 3      # was Book's default of 1, which E never uses
+
+
 def test_e_never_uses_the_engine_broker():
     h, eng, ch = make()
 
