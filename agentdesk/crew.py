@@ -450,7 +450,7 @@ class Crew:
                 if ev.get("impact") == "high" and ev.get("time_ct"):
                     try:
                         ts = at_ct(self.day, hhmm(str(ev["time_ct"])))
-                    except (TypeError, ValueError):
+                    except Exception:
                         continue
                     if ts not in taken and len(taken) >= MAX_BRIEF_EVENTS:
                         if ("brief-cap", k) not in self._logged:
