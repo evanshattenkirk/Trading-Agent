@@ -14,6 +14,7 @@ Metrics (computed on each snapshot):
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import statistics
 import time
@@ -130,6 +131,7 @@ class L2Monitor:
         return True, "book ok"
 
     async def run_live(self, rh, on_update) -> None:
+        last_warn = -1e18
         while True:
             try:
                 book = await rh.price_book(self.symbol)
@@ -137,8 +139,10 @@ class L2Monitor:
                     st = self.update(book, time.time())
                     if st:
                         on_update(st)
-            except Exception:
-                pass
+            except Exception as ex:                 # observe-only: keep polling, but say why the book went quiet
+                if time.time() - last_warn >= 60:
+                    last_warn = time.time()
+                    logging.getLogger("agentdesk.l2").warning("L2 book read failed (logged once a minute): %s", ex)
             await asyncio.sleep(self.poll)
 
 

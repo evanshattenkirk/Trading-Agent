@@ -96,11 +96,12 @@ class Engine:
                 self.books.halt_all(self.risk.st.halt_reason)
             await self.books.start()
         self.set_agent(self.feed.now(), "arriving", "Booting up. Loading history...")
-        if self.l2 and self.l2.enabled and self.l2_rh is not None and not self.inline:
-            asyncio.create_task(self.l2.run_live(self.l2_rh, lambda st: self._on_l2(st, st.ts)))
+        if self.l2 and self.l2.enabled and self.l2_rh is not None and not self.inline:     # keep the task referenced
+            self.l2._task = asyncio.create_task(self.l2.run_live(self.l2_rh, lambda st: self._on_l2(st, st.ts)))
         if self.l2_rh is not None and not self.inline and self.cfg["robinhood"].get("record_option_quotes", True):
             from .brokers.robinhood import OptionQuoteRecorder
-            asyncio.create_task(OptionQuoteRecorder(self.l2_rh, self.journal).run(lambda: self.price, self.feed.now))
+            self._recorder_task = asyncio.create_task(
+                OptionQuoteRecorder(self.l2_rh, self.journal).run(lambda: self.price, self.feed.now))
         async for item in self.feed.stream():
             if self._stopped:
                 break

@@ -157,6 +157,8 @@ class Crew:
         self.day = None
         self.queue: asyncio.Queue = asyncio.Queue()
         self._worker: asyncio.Task | None = None
+        self._bg: set[asyncio.Task] = set()                 # background tasks, referenced until they finish
+        self._halt_huddled = None                           # (day, halt reason) that already had its huddle
         self.prep: dict[str, dict] = {}                     # briefs the premarket desks wrote at their desks
         self.prep_tasks: dict[str, asyncio.Task] = {}       # ... and the ones still researching
         self._client = None
@@ -198,10 +200,10 @@ class Crew:
         sch = self.cfg["schedule"]
         if "calendar" not in self.ran and t >= hhmm(sch.get("arrive") or sch["premarket"]) and ct(now).weekday() < 5:
             self.ran.add("calendar")
-            if self.offline:
+            if self.offline:                        # offline it only reads the saved file
                 await self._ensure_calendar(now)
             else:                                   # one web call a week; never holds up the clock
-                asyncio.create_task(self._ensure_calendar(now))
+                self._spawn(self._ensure_calendar(now))
         if "arrive" in sch and "arrive" not in self.ran and t >= hhmm(sch["arrive"]) and ct(now).weekday() < 5:
             self.ran.add("arrive")
             if t < hhmm(sch["premarket"]):          # started after the huddle time: the huddle briefs in full
@@ -234,10 +236,15 @@ class Crew:
             q["headline"] = "Winner booked. My vote goes back to 100%."
             self.e.bus.emit("crew", now, desk="quant", phase="done", brief=q)
             self._apply(now)
+            self._log(now, "directive", None, {"slot": "trade-closed", "desks": ["quant"],
+                                               "votes": self.directive.get("votes", {}),
+                                               "book_mults": self.directive.get("book_mults", {}),
+                                               "revised": {"quant": 1.0}, "blackouts": self.directive.get("blackouts", [])})
         if net < 0 and st.loss_streak >= self.cfg.get("consult_quant_after_losses", 2):
             desks = ["quant", "risk"] + (["tape"] if self.e.l2 and self.e.l2.latest else [])
             await self._dispatch("loss-review", desks, now)
-        if st.halted:
+        if st.halted and self._halt_huddled != (self.day, st.halt_reason):    # one huddle per halt, not per close
+            self._halt_huddled = (self.day, st.halt_reason)
             await self._dispatch("halt", ["risk", "quant", "ops"], now)
 
     # ------------------------------------------------------------ premarket catch-up
@@ -251,7 +258,7 @@ class Crew:
         for k in desks:
             if k in INFO_ONLY:                      # read from Macro's brief at the huddle
                 continue
-            if self.offline:
+            if self._inline():
                 await self._prepare(k, now)
             else:
                 self.prep_tasks[k] = asyncio.create_task(self._prepare(k, now))
@@ -288,8 +295,20 @@ class Crew:
             return b
         return await self._brief(key, slot, now)
 
+    def _inline(self) -> bool:
+        """Huddles run on the engine's clock only in the simulator, so a sim day replays the same way. Paper and live
+        always queue them (online or not): a huddle's Robinhood reads (VIX, the earnings calendar) can each wait up to
+        15 s, and the engine's one-second loop (exits, books, watchdog) must not wait with them."""
+        return self.offline and self.e.feed.is_sim
+
+    def _spawn(self, coro) -> asyncio.Task:
+        t = asyncio.create_task(coro)
+        self._bg.add(t)                             # asyncio keeps only a weak reference to a running task
+        t.add_done_callback(self._bg.discard)
+        return t
+
     async def _dispatch(self, slot: str, desks: list[str], now: float) -> None:
-        if self.offline:
+        if self._inline():
             await self._consult(slot, desks, now)
         else:
             await self.queue.put((slot, desks))
