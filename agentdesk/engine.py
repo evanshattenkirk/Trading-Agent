@@ -570,6 +570,8 @@ class Engine:
         finally:
             if intent.scale and pos.qty == held:     # nothing sold (no quote, unfilled, another exit busy): retry it
                 pos.scales_done = max(0, pos.scales_done - 1)
+                if intent.stop_before is not None:   # and no breakeven stop for a scale that didn't happen
+                    pos.stop = intent.stop_before
 
     async def _exit(self, pos: Position, plan: ExitPlan, intent: ExitIntent, now: float) -> None:
         q = await self.quotes.quote(pos.contract)
