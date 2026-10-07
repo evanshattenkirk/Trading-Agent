@@ -94,6 +94,10 @@ PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-sonnet-5-5": (2.0, 10.0), "cla
           "claude-opus-5-5": (4.0, 20.0)}
 WEB_SEARCH_USD = 0.01           # $10 per 1,000 searches
 CITE_TAG = re.compile(r"</?cite\b[^>]*>")     # web-search citation markup the model leaves around quoted facts
+# A desk's web-search brief is untrusted text: at most this many of its events a day become blackouts (or passed
+# events for book B), only times still ahead block entries, and none of them flattens (Evan, decision D4,
+# 2026-10-07); a flatten time comes only from the weekly calendar or crew.events in config.
+MAX_BRIEF_EVENTS = 4
 
 
 def price_of(model: str | None) -> tuple[float, float]:
@@ -153,6 +157,8 @@ class Crew:
         self.day = None
         self.queue: asyncio.Queue = asyncio.Queue()
         self._worker: asyncio.Task | None = None
+        self._bg: set[asyncio.Task] = set()                 # background tasks, referenced until they finish
+        self._halt_huddled = None                           # (day, halt reason) that already had its huddle
         self.prep: dict[str, dict] = {}                     # briefs the premarket desks wrote at their desks
         self.prep_tasks: dict[str, asyncio.Task] = {}       # ... and the ones still researching
         self._client = None
@@ -160,6 +166,7 @@ class Crew:
         self.vix = None                                     # VIX source for the Vol desk (Robinhood or the sim)
         self._calendar: dict | None = None                  # this week's saved economic calendar
         self._event_src: dict[str, str] = {}                # blackout name -> desk that sourced it
+        self._brief_events: dict[str, set] = {}             # desk -> event times its briefs added today (the cap)
         self._logged: set = set()                           # crew_log block keys already written today
         self._cal_check = None
         self.directive = {"size_mult": 1.0, "blackouts": [], "summary": "", "votes": {}}
@@ -181,6 +188,7 @@ class Crew:
             self.day, self.ran = d, set()
             self._drop_prep()
             self._logged, self._cal_check, self.cache_usage = set(), None, self._new_usage()
+            self._brief_events = {}
             self.briefs, self.conviction = {}, {"mult": 1.0, "checks": [], "ts": 0}     # yesterday's reads are done
             self._load_config_events(now)
             st = self.e.risk.st
@@ -192,10 +200,10 @@ class Crew:
         sch = self.cfg["schedule"]
         if "calendar" not in self.ran and t >= hhmm(sch.get("arrive") or sch["premarket"]) and ct(now).weekday() < 5:
             self.ran.add("calendar")
-            if self.offline:
+            if self.offline:                        # offline it only reads the saved file
                 await self._ensure_calendar(now)
             else:                                   # one web call a week; never holds up the clock
-                asyncio.create_task(self._ensure_calendar(now))
+                self._spawn(self._ensure_calendar(now))
         if "arrive" in sch and "arrive" not in self.ran and t >= hhmm(sch["arrive"]) and ct(now).weekday() < 5:
             self.ran.add("arrive")
             if t < hhmm(sch["premarket"]):          # started after the huddle time: the huddle briefs in full
@@ -228,10 +236,15 @@ class Crew:
             q["headline"] = "Winner booked. My vote goes back to 100%."
             self.e.bus.emit("crew", now, desk="quant", phase="done", brief=q)
             self._apply(now)
+            self._log(now, "directive", None, {"slot": "trade-closed", "desks": ["quant"],
+                                               "votes": self.directive.get("votes", {}),
+                                               "book_mults": self.directive.get("book_mults", {}),
+                                               "revised": {"quant": 1.0}, "blackouts": self.directive.get("blackouts", [])})
         if net < 0 and st.loss_streak >= self.cfg.get("consult_quant_after_losses", 2):
             desks = ["quant", "risk"] + (["tape"] if self.e.l2 and self.e.l2.latest else [])
             await self._dispatch("loss-review", desks, now)
-        if st.halted:
+        if st.halted and self._halt_huddled != (self.day, st.halt_reason):    # one huddle per halt, not per close
+            self._halt_huddled = (self.day, st.halt_reason)
             await self._dispatch("halt", ["risk", "quant", "ops"], now)
 
     # ------------------------------------------------------------ premarket catch-up
@@ -245,7 +258,7 @@ class Crew:
         for k in desks:
             if k in INFO_ONLY:                      # read from Macro's brief at the huddle
                 continue
-            if self.offline:
+            if self._inline():
                 await self._prepare(k, now)
             else:
                 self.prep_tasks[k] = asyncio.create_task(self._prepare(k, now))
@@ -282,8 +295,20 @@ class Crew:
             return b
         return await self._brief(key, slot, now)
 
+    def _inline(self) -> bool:
+        """Huddles run on the engine's clock only in the simulator, so a sim day replays the same way. Paper and live
+        always queue them (online or not): a huddle's Robinhood reads (VIX, the earnings calendar) can each wait up to
+        15 s, and the engine's one-second loop (exits, books, watchdog) must not wait with them."""
+        return self.offline and self.e.feed.is_sim
+
+    def _spawn(self, coro) -> asyncio.Task:
+        t = asyncio.create_task(coro)
+        self._bg.add(t)                             # asyncio keeps only a weak reference to a running task
+        t.add_done_callback(self._bg.discard)
+        return t
+
     async def _dispatch(self, slot: str, desks: list[str], now: float) -> None:
-        if self.offline:
+        if self._inline():
             await self._consult(slot, desks, now)
         else:
             await self.queue.put((slot, desks))
@@ -417,18 +442,28 @@ class Crew:
         votes = self._votes()
         mults = self.book_mults()
         self.e.risk.set_book_mults(mults)
-        have = {b.name for b in self.e.risk.st.blackouts}
         for k, b in self.briefs.items():
             if b.get("day") not in (None, str(self.day)):
                 continue
+            taken = self._brief_events.setdefault(k, set())
             for ev in b.get("events", []) or []:
-                if ev.get("impact") == "high" and ev.get("time_ct") and ev.get("name") not in have:
+                if ev.get("impact") == "high" and ev.get("time_ct"):
                     try:
-                        self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
-                        have.add(ev["name"])
-                        self._event_src.setdefault(ev["name"], k)
+                        ts = at_ct(self.day, hhmm(str(ev["time_ct"])))
                     except Exception:
-                        pass
+                        continue
+                    if ts not in taken and len(taken) >= MAX_BRIEF_EVENTS:
+                        if ("brief-cap", k) not in self._logged:
+                            self._logged.add(("brief-cap", k))
+                            self.e.bus.emit("log", now, level="warn", msg=f"{DESKS[k].name if k in DESKS else k} desk: more"
+                                            f" than {MAX_BRIEF_EVENTS} events in today's briefs; ignoring {ev['name']} and later ones")
+                        continue
+                    taken.add(ts)
+                    if ts > now:                    # risk.add_blackout's one-per-event-window rule is the only de-dup
+                        self.e.risk.add_blackout(ts, ev["name"], added_ts=now, flatten=False)
+                    else:                           # already out: book B's day-skip still sees it; it blocks nothing
+                        self.e.risk.note_passed_event(ts, ev["name"])
+                    self._event_src.setdefault(ev["name"], k)
             if b.get("cooldown_minutes") and b.get("slot") == "loss-review" and abs(b.get("ts", 0) - now) < 1:
                 self.e.risk.extend_cooldown(now, float(b["cooldown_minutes"]))
         self._check_calendar(now)
@@ -499,6 +534,47 @@ class Crew:
                 continue
         return out
 
+    def restore_tweaks(self, now: float) -> list[dict]:
+        """Engine start (review M10): today's tweaks the record says are in force ("applied", or "approved" by Evan)
+        are applied again through the same checks (proposals.validate, then engine.apply_tweak), so a mid-day restart
+        doesn't run config.yaml values while the cards and the crew log say otherwise. A day tweak that no longer
+        passes its bounds, and a next-trade tweak (the record can't tell whether an entry used it before the
+        restart), are marked expired with the reason instead. Never raises: a bad record must not stop the engine."""
+        from .proposals import validate
+        gone = []
+        try:
+            self.expire_proposals(now)
+            today = session_date(now)
+            for i in self.book.items:
+                try:
+                    if i.get("status") not in ("applied", "approved") or i.get("scope") not in ("day", "trade") \
+                            or session_date(float(i.get("ts") or 0)) != today:
+                        continue
+                    if i["scope"] == "trade":
+                        why = "engine restarted: a next-trade tweak isn't re-applied (an entry may have used it)"
+                    else:
+                        bad = [msg for k, v in (i.get("params") or {}).items()
+                               for ok, msg, _ in [validate(self.e.cfg, k, v)] if not ok]
+                        if i.get("params") and not bad:
+                            self.e.apply_tweak(i, now)
+                            self.e.bus.emit("log", now, level="info",
+                                            msg=f"crew tweak re-applied after the restart: {i.get('title', '')}")
+                            continue
+                        why = "engine restarted: " + ("; ".join(bad) if bad else "no parameters to apply")
+                except Exception as ex:
+                    why = f"engine restarted: could not re-apply it ({ex})"
+                i.update(status="expired", expired_why=why, decided_ts=now)
+                gone.append(i)
+                self.e.bus.emit("proposal", now, item=i)
+                self.e.bus.emit("log", now, level="warn",
+                                msg=f"crew tweak not re-applied after the restart: {i.get('title', '')} ({why})")
+            if gone:
+                self.book.save()
+        except Exception as ex:
+            log.exception("crew: restoring today's tweaks failed")
+            self.e.bus.emit("log", now, level="warn", msg=f"crew: could not restore today's tweaks ({ex})")
+        return gone
+
     def expire_proposals(self, now: float) -> list[dict]:
         """Clear suggestions whose reason has passed (proposals.py) and tell the dashboard."""
         self._last_expire = now
@@ -508,7 +584,7 @@ class Crew:
         return gone
 
     async def _handle_proposal(self, desk: str, p: dict, now: float) -> None:
-        item = self.book.submit(desk, p, now, events=self.known_events(now))
+        item = self.book.submit(desk, _clean_pitch(p), now, events=self.known_events(now))
         if not item:
             return
         self.e.bus.emit("proposal", now, item=item)
@@ -560,9 +636,10 @@ class Crew:
         b["confidence"] = max(0.0, min(1.0, _num(b.get("confidence"), 0.0)))
         notes = b.get("notes")
         b["notes"] = [CITE_TAG.sub("", str(n)) for n in (notes if isinstance(notes, list) else [notes] if notes else [])]
-        b["events"] = [ev for ev in b.get("events") or [] if _good_event(ev)] if isinstance(b.get("events"), list) else []
+        b["events"] = ([{**ev, "name": CITE_TAG.sub("", str(ev["name"]))} for ev in b.get("events") or [] if _good_event(ev)]
+                       if isinstance(b.get("events"), list) else [])
         props = b.get("proposals")
-        b["proposals"] = [x for x in props if isinstance(x, dict)] if isinstance(props, list) else []
+        b["proposals"] = [_clean_pitch(x) for x in props if isinstance(x, dict)] if isinstance(props, list) else []
         b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0), key)
         b["cooldown_minutes"] = max(0, min(30, int(_num(b.get("cooldown_minutes"), 0))))
         if key in RESTRICT_ONLY + INFO_ONLY:    # inform (or cut) only: no pitches, no blackouts
@@ -827,7 +904,8 @@ class Crew:
             return None
         self.note_usage(msg, key, model)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
-        b = _extract_json(text)
+        cut = getattr(msg, "stop_reason", None) == "max_tokens"      # a cut-off reply is no brief, even if part parses
+        b = None if cut else _extract_json(text)
         if b is None:
             why = f"stop_reason={getattr(msg, 'stop_reason', None)}, {len(text)} chars of text"
             log.warning("crew %s: no JSON brief in the reply (%s); using the offline read", key, why)
@@ -950,6 +1028,9 @@ class Crew:
         if vix and vix > 28:
             b["size_multiplier"] = min(float(b.get("size_multiplier") or 1.0), 0.75)
             b["headline"] = f"VIX {vix:.1f} is above 28: cutting size to 75%."
+        elif not vix and "size_multiplier" in prev:     # can't re-check the VIX rule: a cut stays until VIX reads < 28
+            b["size_multiplier"] = prev["size_multiplier"]
+            b["headline"] = f"VIX n/a: keeping my last vote ({prev['size_multiplier'] * 100:.0f}%)."
         return b
 
     # ------------------------------------------------------------ weekly economic calendar
@@ -981,11 +1062,9 @@ class Crew:
         self._calendar = cal
         if not cal:
             return
-        have = {b.name for b in self.e.risk.st.blackouts}
         for ev in self._calendar_today(d):
-            if ev["impact"] == "high" and ev["name"] not in have:
+            if ev["impact"] == "high":              # one blackout per event window (risk.add_blackout), not per name
                 self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
-                have.add(ev["name"])
                 self._event_src.setdefault(ev["name"], "calendar")
 
     def _calendar_today(self, d) -> list[dict]:
@@ -1069,6 +1148,12 @@ def _num(v, default: float) -> float:
     return x if math.isfinite(x) else default
 
 
+def _clean_pitch(p: dict) -> dict:
+    """A pitch without web-search citation markup in its text (the dashboard card, and the 12-hour re-pitch check
+    compares titles)."""
+    return {**p, **{k: CITE_TAG.sub("", p[k]) for k in ("title", "rationale", "evidence", "spec") if isinstance(p.get(k), str)}}
+
+
 def _good_event(ev) -> bool:
     """An event object with a name, and a time_ct that parses when it has one."""
     if not isinstance(ev, dict) or not ev.get("name"):
@@ -1083,9 +1168,14 @@ def _good_event(ev) -> bool:
 
 def _extract_json(text: str, key: str = "headline") -> dict | None:
     """The largest JSON object in the reply that has `key`. Macro's brief nests "fed" and "rates" objects that
-    carry their own "headline", so the first or last match can be a nested one; the outermost is the brief."""
+    carry their own "headline", so the first or last match can be a nested one; the outermost is the brief. When a
+    top-level object doesn't parse (the reply was cut off inside it), nothing nested inside it counts: a complete
+    "fed" sub-brief must never stand in for a truncated Macro brief."""
     dec, best = json.JSONDecoder(), None
+    broken = [(a, z) for a, z in _top_level_spans(text) if not _decodes(dec, text, a)]
     for m in re.finditer(r"\{", text):
+        if any(a < m.start() < z for a, z in broken):
+            continue
         try:
             obj, end = dec.raw_decode(text, m.start())
         except json.JSONDecodeError:
@@ -1093,3 +1183,40 @@ def _extract_json(text: str, key: str = "headline") -> dict | None:
         if isinstance(obj, dict) and key in obj and (best is None or end - m.start() > best[0]):
             best = (end - m.start(), obj)
     return best[1] if best else None
+
+
+def _decodes(dec, text: str, at: int) -> bool:
+    try:
+        dec.raw_decode(text, at)
+        return True
+    except json.JSONDecodeError:
+        return False
+
+
+def _top_level_spans(text: str) -> list[tuple[int, int]]:
+    """(start, end) of each brace-balanced top-level {...} in the text, strings inside braces skipped; an object
+    that never closes runs to the end of the text."""
+    spans, depth, start, in_str, esc = [], 0, 0, False, False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"' and depth:
+            in_str = True
+        elif ch == "{":
+            if not depth:
+                if text[i + 1:i + 40].lstrip()[:1] not in ('"', "}"):
+                    continue                        # a brace in prose ("{today}"), not the start of a JSON object
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if not depth:
+                spans.append((start, i + 1))
+    if depth:
+        spans.append((start, len(text)))
+    return spans

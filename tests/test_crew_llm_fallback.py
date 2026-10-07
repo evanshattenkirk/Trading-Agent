@@ -57,3 +57,31 @@ def test_extract_json_returns_the_outer_brief_not_a_nested_sub_brief():
     assert b["headline"] == "Light data day" and b["fed"]["bias"] == "hawkish" and b["rates"]["headline"] == "10Y 5.2%"
     assert _extract_json('{"notes": []}') is None
     assert _extract_json('cut off {"headline": "x", "notes": ["a"') is None
+
+
+# A Macro reply cut off inside its notes, after its complete "fed" and "rates" objects (review plan 2026-10-06, M7)
+CUT = ('{"headline": "CPI 07:30 hot; FOMC at 13:00", "bias": "bearish", "confidence": 0.7, "size_multiplier": 0.75,'
+       ' "events": [{"time_ct": "13:00", "name": "FOMC", "impact": "high"}],'
+       ' "fed": {"bias": "hawkish", "headline": "Powell speaks 12:00 CT", "notes": ["dots"]},'
+       ' "rates": {"headline": "10Y 5.2%", "notes": []}, "notes": ["Core CPI +0.4% m/m vs')
+
+
+def test_a_cut_off_macro_reply_is_never_read_as_its_fed_sub_brief(monkeypatch):
+    e, c = online(monkeypatch, CUT, "max_tokens")
+    b = asyncio.run(c._brief("macro", "premarket", e.feed.now()))
+    assert "Powell" not in b["headline"] and "live research unavailable" in b["headline"]
+    warns = [kw["msg"] for kind, _, kw in e.bus.events if kind == "log" and kw.get("level") == "warn"]
+    assert any("stop_reason=max_tokens" in m for m in warns)
+
+
+def test_extract_json_takes_nothing_from_inside_a_cut_off_object():
+    from agentdesk.crew import _extract_json
+    assert _extract_json(CUT) is None
+    assert _extract_json("Brief:\n" + CUT) is None
+    wrapped = '{"brief": {"headline": "Quiet day", "bias": "neutral"}}'      # a complete wrapper still yields its brief
+    assert _extract_json(wrapped)["headline"] == "Quiet day"
+
+
+def test_a_max_tokens_reply_is_no_brief_even_when_its_json_closed(monkeypatch):
+    e, c = online(monkeypatch, '{"headline": "Quiet day", "bias": "neutral", "confidence": 0.5}', "max_tokens")
+    assert asyncio.run(c._llm("macro", e.feed.now())) is None
