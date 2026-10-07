@@ -771,27 +771,34 @@ class RobinhoodBroker(Broker):
 
     async def submit(self, contract, side, qty, limit, now) -> OrderResult:
         legs = [{"option_id": contract.broker_id, "side": side, "position_effect": "open" if side == "buy" else "close"}]
+        acct = self.rh.account
         try:
             review = await self.rh.call("review_option_order", order_args(self.rh.account, legs, qty, limit, True, contract.symbol))
         except Exception as ex:
-            return OrderResult("rejected", message=f"review failed: {ex}")
+            return OrderResult("rejected", message=redact_account(f"review failed: {ex}", acct))
         if not self.live:
             res = await self.paper.submit(contract, side, qty, limit, now)
-            res.review = _short(review)
+            res.review = _short(review, account=acct)
             return res
         args = order_args(self.rh.account, legs, qty, limit, False)
         args["ref_id"] = str(uuid.uuid4())
         try:
             placed = await self.rh.call("place_option_order", args)
-        except Exception:
+        except Exception as first:
+            if not can_retry_place(self.rh, "place_option_order"):
+                log.error("place_option_order failed and its schema has no ref_id, so a retry could place a second "
+                          "order: not retrying (%s)", redact_account(str(first), acct))
+                raise OrderStateError(redact_account(f"place_option_order failed, order state unknown (not retried: "
+                                                     f"no ref_id in the tool schema): {first}", acct)) from first
             try:
                 placed = await self.rh.call("place_option_order", args)   # one retry, same ref_id = no duplicate
             except Exception as ex:
                 # the first call may have reached Robinhood; we can't know whether an order exists
-                raise OrderStateError(f"place_option_order failed twice, order state unknown: {ex}") from ex
+                raise OrderStateError(redact_account(f"place_option_order failed twice, order state unknown: {ex}",
+                                                     acct)) from ex
         oid = str(find_key(placed, ["id", "order_id"]) or "")
         if not oid:
-            raise OrderStateError(f"place_option_order returned no order id: {_short(placed, 200)}")
+            raise OrderStateError(f"place_option_order returned no order id: {_short(placed, 200, account=acct)}")
         self.open_orders.add(oid)
         deadline = time.time() + self.fill_timeout
         rec = None
@@ -819,7 +826,8 @@ class RobinhoodBroker(Broker):
         state, filled, avg = rec
         avg = _per_share(avg, limit) or limit
         status = "filled" if filled >= qty else "partial" if filled else ("rejected" if state in ("rejected", "failed") else "unfilled")
-        return OrderResult(status, filled, avg, oid, state, _short(review), {"placed": _short(placed)})
+        return OrderResult(status, filled, avg, oid, state, _short(review, account=acct),
+                           {"placed": _short(placed, account=acct)})
 
     async def _read_order(self, oid: str) -> tuple[str, int, float] | None:
         """(state, filled qty, avg price) or None if the read failed."""
@@ -873,9 +881,32 @@ def _per_share(avg: float, limit: float) -> float:
     return min((avg, avg / 100), key=lambda v: abs(math.log(v / limit)))
 
 
-def _short(d, n=600):
+def _short(d, n=600, account: str | None = None):
+    """A JSON-safe copy of d, cut to n characters. With `account`, the account number (which review and order
+    replies echo) shows only its last 4 digits, as everywhere else this is stored or shown."""
     s = json.dumps(d, default=str)
+    if account:
+        s = json.dumps(_redacted(json.loads(s), str(account)), ensure_ascii=False)
     return json.loads(s) if len(s) <= n else {"truncated": s[:n]}
+
+
+def _redacted(obj, acct: str):
+    if isinstance(obj, str):
+        return redact_account(obj, acct)
+    if isinstance(obj, dict):
+        return {_redacted(k, acct): _redacted(v, acct) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_redacted(v, acct) for v in obj]
+    if isinstance(obj, (int, float)) and not isinstance(obj, bool) and str(obj) == acct:
+        return redact_account(acct, acct)
+    return obj
+
+
+def can_retry_place(rh, tool: str) -> bool:
+    """A failed place_*_order may be retried only when the live schema takes ref_id: fit_args drops keys the schema
+    doesn't list, and without ref_id a retry could place a second order."""
+    props = (((getattr(rh, "tools", None) or {}).get(tool) or {}).get("properties") or {})
+    return "ref_id" in props
 
 
 # --------------------------------------------------------------------------- rh-inspect (read-only)

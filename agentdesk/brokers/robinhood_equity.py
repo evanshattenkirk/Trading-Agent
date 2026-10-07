@@ -16,7 +16,7 @@ import time
 import uuid
 
 from .base import OrderResult, OrderStateError
-from .robinhood import TERMINAL, _short, dict_items, find_key
+from .robinhood import TERMINAL, _short, can_retry_place, dict_items, find_key, redact_account
 
 log = logging.getLogger("agentdesk.robinhood_equity")
 
@@ -37,9 +37,9 @@ class RobinhoodEquityBroker:
 
     async def _review(self, args: dict):
         try:
-            return _short(await self.rh.call("review_equity_order", args))
+            return _short(await self.rh.call("review_equity_order", args), account=self.rh.account)
         except Exception as ex:
-            return {"error": str(ex)[:200]}
+            return {"error": redact_account(str(ex), self.rh.account)[:200]}
 
     async def buy(self, sym: str, qty: int, limit: float, trigger: float, now: float) -> OrderResult:
         return await self._order(sym, "buy", qty, limit, now, lambda: self.paper.buy(sym, qty, limit, trigger, now))
@@ -58,16 +58,23 @@ class RobinhoodEquityBroker:
             res.review = review
             return res
         args = {**args, "ref_id": str(uuid.uuid4())}
+        acct = self.rh.account
         try:
             placed = await self.rh.call("place_equity_order", args)
-        except Exception:
+        except Exception as first:
+            if not can_retry_place(self.rh, "place_equity_order"):
+                log.error("place_equity_order failed and its schema has no ref_id, so a retry could place a second "
+                          "order: not retrying (%s)", redact_account(str(first), acct))
+                raise OrderStateError(redact_account(f"place_equity_order failed, order state unknown (not retried: "
+                                                     f"no ref_id in the tool schema): {first}", acct)) from first
             try:
                 placed = await self.rh.call("place_equity_order", args)     # same ref_id: no duplicate
             except Exception as ex:
-                raise OrderStateError(f"place_equity_order failed twice, order state unknown: {ex}") from ex
+                raise OrderStateError(redact_account(f"place_equity_order failed twice, order state unknown: {ex}",
+                                                     acct)) from ex
         oid = str(find_key(placed, ["id", "order_id"]) or "")
         if not oid:
-            raise OrderStateError(f"place_equity_order returned no order id: {_short(placed, 200)}")
+            raise OrderStateError(f"place_equity_order returned no order id: {_short(placed, 200, account=acct)}")
         self.open_orders.add(oid)
         rec = await self._poll(oid, self.fill_timeout)
         if not rec or rec[0] not in TERMINAL:
@@ -82,7 +89,7 @@ class RobinhoodEquityBroker:
         self.open_orders.discard(oid)
         state, filled, avg = rec
         status = "filled" if filled >= qty else "partial" if filled else ("rejected" if state in ("rejected", "failed") else "unfilled")
-        return OrderResult(status, filled, avg or limit, oid, state, review, {"placed": _short(placed)})
+        return OrderResult(status, filled, avg or limit, oid, state, review, {"placed": _short(placed, account=acct)})
 
     async def _poll(self, oid: str, timeout: float):
         deadline, rec = time.time() + timeout, None
