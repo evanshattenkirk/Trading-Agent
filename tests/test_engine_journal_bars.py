@@ -129,3 +129,42 @@ def test_book_a_pays_the_same_fee_per_contract_per_side_as_the_books():
     e.broker.submit = fill
     run(e.exit(pos, e.open[0][1], ExitIntent(2, "test", urgent=True), NOW))
     assert pos.fees == pytest.approx(0.08) and e.journal.trades()[0]["pnl"] == pytest.approx(40.0 - 0.08)
+
+
+# --------------------------------------------------------------------------- spread step (HANDOFF 7A)
+class WideAt:
+    """Quotes that are too wide (30%) at the listed strikes and 2% wide elsewhere; records what was quoted."""
+
+    def __init__(self, *wide):
+        self.wide, self.asked = set(wide), []
+
+    async def quote(self, contract):
+        from agentdesk.feeds.base import Quote
+        self.asked.append(contract.strike)
+        return Quote(0.85, 1.15, NOW) if contract.strike in self.wide else Quote(0.99, 1.01, NOW)
+
+    async def start(self):
+        pass
+
+
+def _enter(base: int, quotes):
+    from agentdesk.strategy import EntrySignal
+    e = engine()
+    e.quotes = quotes
+    e.cfg["strikes"]["schedule"] = [{"from": "08:30", "base": base, "max": base}]
+    e.price = 660.2
+    seen = taps(e)
+    run(e.enter(EntrySignal("call", "SWING", NOW, 660.2, "1m", ("1m", 1))))
+    return e, seen
+
+
+def test_a_wide_spread_at_atm_skips_instead_of_stepping_itm():
+    e, seen = _enter(0, WideAt(660.0))
+    assert not e.open and e.quotes.asked == [660.0]                  # never quoted the 659 ITM strike
+    assert any(x["type"] == "skip" and "too wide" in x["why"] for x in seen)
+
+
+def test_a_wide_spread_otm_still_steps_toward_atm():
+    e, _ = _enter(1, WideAt(661.0))
+    assert e.quotes.asked == [661.0, 660.0]
+    assert e.open and e.open[0][0].contract.strike == 660.0

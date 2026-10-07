@@ -412,6 +412,9 @@ class Engine:
                 self._skip(now, es, "no option quote")
                 return
             if q.spread_pct > self.cfg["strikes"]["max_spread_pct"] and choice.offset > -1:
+                if choice.offset == 0:          # at the money already: a step in would go ITM, not toward ATM (HANDOFF 7A)
+                    self._skip(now, es, f"spread {q.spread_pct:.0%} too wide")
+                    return
                 alt = Contract(self.symbol, expiry, choice.strike - (1 if es.side == "call" else -1), es.side)
                 alt = await self.broker.resolve(alt)
                 q2 = await self.quotes.quote(alt)
