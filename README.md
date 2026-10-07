@@ -198,7 +198,7 @@ The engine polls Robinhood's `get_equity_price_book` for SPY every 3 seconds. On
 
 ## Real option quotes, recorded forward
 
-Robinhood's intraday history for past 0DTE contracts comes back gap-filled, so it can't be used for option P&L. The quote recorder (standalone, or inside the engine) therefore saves real 0DTE quotes (calls and puts, ATM−10 through ATM+10) every 10 seconds into `journal.option_quotes`. A few weeks of that settles naked calls vs debit spreads, and the iron fly / condor credits, on real prices.
+Robinhood's intraday history for past 0DTE contracts comes back gap-filled, so it can't be used for option P&L. The quote recorder (standalone, or inside the engine) therefore saves real 0DTE quotes (calls and puts, ATM−10 through ATM+10) every 10 seconds into `journal.option_quotes`. The dashboard header shows REC DOWN when it stops writing during market hours. A few weeks of that settles naked calls vs debit spreads, and the iron fly / condor credits, on real prices.
 
 ## Paper option books B, C, D and G
 
