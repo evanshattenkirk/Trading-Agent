@@ -50,7 +50,10 @@ class SessionArchive:
             self.dir.mkdir(parents=True, exist_ok=True)
             path = self.dir / f"{day}{SNAP_SUFFIX}"
             tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-            tmp.write_text(json.dumps(snap, separators=(",", ":"), default=_default))
+            with open(tmp, "w") as f:
+                f.write(json.dumps(snap, separators=(",", ":"), default=_default))
+                f.flush()
+                os.fsync(f.fileno())             # on disk before the rename, so a power cut never leaves an empty file
             os.replace(tmp, path)
             return path
         except Exception as ex:
@@ -112,23 +115,24 @@ def list_days(directory: Path | str) -> list[str]:
 
 
 def load_day(directory: Path | str, day: str | None = None, max_events: int = 3000) -> dict | None:
-    """The saved snapshot and the last `max_events` feed events of `day` (default: the newest), or None."""
+    """The saved snapshot and the last `max_events` feed events of `day` (default: the newest readable day), or None."""
     d = Path(directory)
     days = list_days(d)
-    if day is None:
-        day = days[0] if days else None
-    if day not in days:
+    if day is not None and day not in days:
         return None
-    snap_path = d / f"{day}{SNAP_SUFFIX}"
-    try:
-        snapshot = json.loads(snap_path.read_text())
-        saved_ts = snap_path.stat().st_mtime
-    except (OSError, ValueError) as ex:
-        log.warning("saved session %s unreadable: %r", day, ex)
+    for day in [day] if day is not None else days:     # an unreadable newest file must not hide the days before it
+        snap_path = d / f"{day}{SNAP_SUFFIX}"
+        try:
+            snapshot = json.loads(snap_path.read_text())
+            saved_ts = snap_path.stat().st_mtime
+            break
+        except (OSError, ValueError) as ex:
+            log.warning("saved session %s unreadable: %r", day, ex)
+    else:
         return None
     events: deque = deque(maxlen=max_events)
     ev_path = d / f"{day}{EVENTS_SUFFIX}"
-    if ev_path.exists():
+    if max_events > 0 and ev_path.exists():           # /api/state asks for none: don't read the whole log
         with open(ev_path) as f:
             for line in f:
                 try:
