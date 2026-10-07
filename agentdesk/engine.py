@@ -10,6 +10,7 @@ import logging
 import time as _time
 from collections import deque
 from datetime import time
+from pathlib import Path
 
 from .bars import Bar, TickBarBuilder, TimeBarBuilder, Trade, VWAP
 from .brokers.base import OrderResult, OrderStateError, RateLimited
@@ -24,6 +25,33 @@ from .strikes import choose_strike
 log = logging.getLogger("agentdesk.engine")
 MAX_BARS = {"144t": 4000, "1m": 400, "5m": 200, "15m": 120}
 WATCHDOG = {"quote_stale_sec": 10, "max_consecutive_errors": 3, "reconcile_sec": 30}
+RECORDER_HEARTBEAT = Path("~/.agentdesk/recorder/heartbeat").expanduser()   # recorder.HEARTBEAT, touched per quote write
+RECORDER_STALE_SEC = 120        # the standalone recorder writes every 10 s in market hours
+
+
+class ThrottleCredit:
+    """The stale-quote watchdog's clock (H2): seconds in which the Robinhood call budget held every call (a
+    RATE_LIMITED pause, or this minute's budget used up) don't count toward a position's quote age, so back-to-back
+    throttles (2+4+8 s) can't trip a safety halt, while an outage with no throttle still trips it after
+    quote_stale_sec. Sampled once a second by the watchdog."""
+
+    def __init__(self):
+        self.last: float | None = None
+        self.held = 0.0                 # budget-held seconds so far
+        self.seen: dict[int, tuple[float, float]] = {}     # id(position) -> (its last_quote_ts, held at that time)
+
+    def tick(self, now: float, budget, positions) -> None:
+        prev, self.last = self.last, now
+        if budget is not None and prev is not None and budget.holding():
+            self.held += min(max(now - prev, 0.0), 2.0)
+        ids = {id(p) for p in positions}
+        self.seen = {k: v for k, v in self.seen.items() if k in ids}
+
+    def age(self, pos, now: float) -> float:
+        s = self.seen.get(id(pos))
+        if s is None or s[0] != pos.last_quote_ts:
+            s = self.seen[id(pos)] = (pos.last_quote_ts, self.held)
+        return now - pos.last_quote_ts - (self.held - s[1])
 
 
 class Engine:
@@ -49,6 +77,8 @@ class Engine:
         self.crew = None
         self.agent = {"activity": "offline", "text": "", "ts": 0.0}
         self._last_sec = 0
+        self._late_minute = None    # last minute the late-print count was logged (debug), and the day of its info summary
+        self._late_day = None
         self._last_manage = 0.0
         self._last_tick_emit = 0.0
         self._last_pos_emit = 0.0
@@ -59,6 +89,10 @@ class Engine:
         self.closers: list = []     # async close() callables run on shutdown (data feed, Robinhood session)
         self.simbook = None         # SimBook in the simulator
         self._last_l2_emit = 0.0
+        self._recorder_task = None  # the engine's own quote recorder, when config turns it on
+        self._rec: dict | None = None           # recorder_status() as last checked, for the snapshot
+        self._rec_checked = -1e18
+        self._rec_sent = -1e18
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
         self.trade_tweaks: dict = {}
         self._last_tape = (0.0, None)
@@ -81,6 +115,8 @@ class Engine:
         restored = self.risk.restore(str(self.day))      # a restart keeps today's P&L, counts, cooldown and halts
         if restored:
             self.bus.emit("log", self.feed.now(), level="warn" if self.risk.st.halted else "info", msg=restored)
+        if self.crew is not None:                   # today's crew tweaks: applied again, or marked expired (M10)
+            self.crew.restore_tweaks(self.feed.now())
         try:
             stale = await self.broker.open_positions()
         except Exception as ex:
@@ -96,11 +132,12 @@ class Engine:
                 self.books.halt_all(self.risk.st.halt_reason)
             await self.books.start()
         self.set_agent(self.feed.now(), "arriving", "Booting up. Loading history...")
-        if self.l2 and self.l2.enabled and self.l2_rh is not None and not self.inline:
-            asyncio.create_task(self.l2.run_live(self.l2_rh, lambda st: self._on_l2(st, st.ts)))
+        if self.l2 and self.l2.enabled and self.l2_rh is not None and not self.inline:     # keep the task referenced
+            self.l2._task = asyncio.create_task(self.l2.run_live(self.l2_rh, lambda st: self._on_l2(st, st.ts)))
         if self.l2_rh is not None and not self.inline and self.cfg["robinhood"].get("record_option_quotes", True):
             from .brokers.robinhood import OptionQuoteRecorder
-            asyncio.create_task(OptionQuoteRecorder(self.l2_rh, self.journal).run(lambda: self.price, self.feed.now))
+            self._recorder_task = asyncio.create_task(
+                OptionQuoteRecorder(self.l2_rh, self.journal).run(lambda: self.price, self.feed.now))
         async for item in self.feed.stream():
             if self._stopped:
                 break
@@ -109,11 +146,14 @@ class Engine:
 
     def stop(self) -> None:
         self._stopped = True
+        log.info("late prints dropped from time bars: %s", self.late_prints())
 
     async def _warmup(self) -> None:
-        hist = await self.feed.history_1m(self.cfg["data"]["history_days"])
+        now = self.feed.now()
+        hist = [b for b in await self.feed.history_1m(self.cfg["data"]["history_days"])
+                if b.t + 60 <= now]            # a REST bar for the minute still running is partial; live prints build it
         agg = {tf: TimeBarBuilder(tf) for tf in ("5m", "15m")}
-        today = session_date(self.feed.now())
+        today = session_date(now)
         last_day, dh, dl, dc = None, None, None, None
         n_today = 0
         for b in hist:
@@ -130,12 +170,7 @@ class Engine:
                 self.levels.on_1m(b)
                 self.vwap.add((b.h + b.l + b.c) / 3, b.v)
                 for x in closed:
-                    if x.tf == "5m":
-                        self.levels.on_5m(x)
-                    st = self.sig.tf[x.tf]
-                    self.bars[x.tf].append({"tf": x.tf, "t": x.t, "end": x.end, "o": x.o, "h": x.h, "l": x.l, "c": x.c,
-                                            "v": x.v, "macd": st.last.macd if st.last else None,
-                                            "sig": st.last.signal if st.last else None, "rsi": st.rsi_val})
+                    self._warm_bar(x)
                 self.price = b.c
                 continue
             if last_day is not None and d != last_day:
@@ -147,12 +182,46 @@ class Engine:
         if dc is not None:
             self.levels.set_prior_day(dh, dl, dc)
             self.price = self.price or dc
-        for bld in agg.values():               # partial 5m/15m from history must not bleed into live bars
-            bld.cur = None
+        gap = self._continue_today(hist, agg, today, now)
         self.day = today
-        self.bus.emit("log", self.feed.now(), level="info",
+        self.bus.emit("log", self.feed.now(), level="warn" if gap and gap > 120 else "info",
                       msg=f"Warm-up: {len(hist)} 1m bars from {self.feed.name} ({n_today} from today); prior day H/L/C "
-                          f"{dh and round(dh, 2)}/{dl and round(dl, 2)}/{dc and round(dc, 2)}")
+                          f"{dh and round(dh, 2)}/{dl and round(dl, 2)}/{dc and round(dc, 2)}"
+                          + (f"; gap {gap:.0f} s between the history and now (prints in it are missing)"
+                             if gap is not None else ""))
+
+    def _warm_bar(self, x: Bar) -> None:
+        """A closed bar of today's history: levels and the chart (its MACD/RSI are already updated)."""
+        if x.tf == "5m":
+            self.levels.on_5m(x)
+        st = self.sig.tf[x.tf]
+        self.bars[x.tf].append({"tf": x.tf, "t": x.t, "end": x.end, "o": x.o, "h": x.h, "l": x.l, "c": x.c,
+                                "v": x.v, "macd": st.last.macd if st.last else None,
+                                "sig": st.last.signal if st.last else None, "rsi": st.rsi_val})
+
+    def _continue_today(self, hist: list[Bar], agg: dict, today, now: float) -> float | None:
+        """Started mid-session: the live builders carry on from today's history, so a minute the history covers never
+        opens a second 1m bar and the 5m/15m period in progress keeps its first minutes instead of restarting
+        part-way. A period that ended before now is closed here if the history covers all of it, else dropped: a
+        partial period never reaches the MACD/RSI. Returns the gap (s) the history leaves before now."""
+        if not hist or session_date(hist[-1].t) != today:
+            return None                        # pre-market start: yesterday's open 5m/15m period must not bleed in
+        covered = min(getattr(self.feed, "history_end", None) or now, now // 60 * 60)
+        self.tb["1m"].closed_t = hist[-1].t
+        for tf, bld in agg.items():
+            cur = bld.cur
+            if cur is not None and cur.t + bld.sec <= now:
+                x = bld._close()
+                if x.t + bld.sec <= covered:
+                    self.sig.on_bar_close(x)
+                    self._warm_bar(x)
+                else:
+                    log.warning("warm-up: dropped the partial %s bar %s (the history stops at %s)", tf, hm(x.t), hm(covered))
+                cur = None
+            self.tb[tf].closed_t, self.tb[tf].cur = bld.closed_t, cur
+        for bld in self.tb.values():
+            bld.since = covered                # a print from before the history's end is in it already
+        return max(0.0, now - covered)
 
     # ------------------------------------------------------------------ feed handling
     async def on_item(self, item) -> None:
@@ -174,9 +243,9 @@ class Engine:
                 c = self.tb[tf].on_trade(tr)
                 if c:
                     closed.append(c)
-        c = self.tick.on_trade(tr)
-        if c:
-            closed.append(c)
+            c = self.tick.on_trade(tr)              # regular-hours prints only, as the time bars
+            if c:
+                closed.append(c)
         for b in closed:
             await self._on_bar(b)
         if is_rth(now):
@@ -195,6 +264,7 @@ class Engine:
             c = self.tb[tf].flush(now)
             if c:
                 await self._on_bar(c)
+        self._log_late(now)
         if self.crew:
             await self.crew.on_clock(now)
         if self.simbook is not None and self.l2 and self.l2.enabled and is_rth(now) and self.price:
@@ -209,6 +279,70 @@ class Engine:
         if self.books:
             await self.books.run(self.books.on_second(now), self.inline)
         self._watchdog(now)
+        self._check_recorder(now)
+
+    def recorder_status(self, now: float) -> dict | None:
+        """Are today's 0DTE quotes landing (review I8)? From the standalone recorder's heartbeat file: "ok" while it
+        is under RECORDER_STALE_SEC old, "engine" while the engine's own recorder runs instead, "down" in market
+        hours otherwise (from two minutes after the open), "idle" outside them, on holidays and after an early
+        close. None in the simulator. `age` is the heartbeat's age in seconds (None before the first write)."""
+        if getattr(self.feed, "is_sim", False):
+            return None
+        try:
+            age = max(0, round(now - RECORDER_HEARTBEAT.stat().st_mtime))
+        except OSError:
+            age = None
+        cal = self.cfg.get("calendar") or {}
+        day, t = str(session_date(now)), ct_time(now)
+        closed = (not is_rth(now) or t < time(8, 32) or day in {str(d) for d in cal.get("holidays") or []}
+                  or (day in {str(d) for d in cal.get("early_close") or []} and t >= time(12, 0)))
+        if age is not None and age < RECORDER_STALE_SEC:
+            state = "ok"
+        elif closed:
+            state = "idle"
+        elif self._recorder_task is not None:
+            state = "engine"
+        else:
+            state = "down"
+        return {"state": state, "age": age}
+
+    def _check_recorder(self, now: float) -> None:
+        """Every 15 s: keeps recorder_status() for the snapshot and sends a 'recorder' event when the state changes,
+        and once a minute anyway so the dashboard's age stays current (a warning in the feed when quotes stop
+        landing in market hours)."""
+        if now - self._rec_checked < 15:
+            return
+        self._rec_checked = now
+        rec, prev = self.recorder_status(now), self._rec
+        self._rec = rec
+        changed = rec is not None and (prev or {}).get("state") != rec["state"]
+        if rec is None or not changed and now - self._rec_sent < 60:
+            return
+        self._rec_sent = now
+        if changed and rec["state"] == "down":
+            why = "no quotes written yet today" if rec["age"] is None else f"last quotes written {rec['age'] // 60} min ago"
+            msg = (f"The 0DTE quote recorder isn't writing ({why}). Check ~/.agentdesk/recorder/recorder.log; "
+                   "Robinhood may need a sign-in.")
+            log.warning(msg)
+            self.bus.emit("log", now, level="warn", msg=msg)
+        self.bus.emit("recorder", now, **rec)
+
+    def _log_late(self, now: float) -> None:
+        """Prints dropped from the 1m/5m/15m bars because the heartbeat had already closed their bar (feed latency
+        plus clock skew): at debug once a minute, at info once after 15:05 CT and at shutdown."""
+        minute = int(now // 60)
+        if minute == self._late_minute:
+            return
+        self._late_minute = minute
+        late = self.late_prints()
+        if any(late.values()):
+            log.debug("late prints dropped from time bars so far: %s", late)
+        if self._late_day != self.day and ct_time(now) >= time(15, 5):
+            self._late_day = self.day
+            log.info("late prints dropped from time bars today: %s", late)
+
+    def late_prints(self) -> dict:
+        return {tf: b.late for tf, b in self.tb.items()}
 
     def _new_day(self, d, now: float) -> None:
         from .proposals import set_path
@@ -260,7 +394,7 @@ class Engine:
             self._errors = max(self._streaks.values(), default=0)
         except asyncio.CancelledError:
             raise
-        except RateLimited as ex:           # Robinhood is pacing the account: skip this round; stale quotes still trip the watchdog
+        except RateLimited as ex:           # Robinhood is pacing the account: skip this round; the watchdog doesn't count the pause
             now = self.feed.now()
             if now - self._last_rate_log >= 60:
                 self._last_rate_log = now
@@ -275,16 +409,31 @@ class Engine:
                 self._trip(f"{self._errors} broker/API errors in a row (last: {what}: {ex})", now)
 
     # ------------------------------------------------------------------ safety watchdog
-    def _trip(self, reason: str, now: float) -> None:
-        """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions."""
-        first = not self.risk.account_flatten()
-        self.risk.halt(f"SAFETY: {reason}", flatten=True)
-        if self.books:
-            self.books.halt_all(f"SAFETY: {reason}", flatten=True)
+    def _trip(self, reason: str, now: float, stale=None) -> None:
+        """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions.
+        A stale quote (`stale`: that position) halts and flattens book A and the 0DTE SPY books B/C/D/G, plus the
+        book holding that position if it is another one (F1); E, F1 and F2 otherwise keep running (Evan approved D3,
+        2026-10-07). Every other cause (broker errors, a position mismatch, an ambiguous order) is account-wide."""
+        msg = f"SAFETY: {reason}"
+        if stale is None:
+            first = not self.risk.account_flatten()
+            self.risk.halt(msg, flatten=True)
+            if self.books:
+                self.books.halt_all(msg, flatten=True)
+            what = "Flattening"
+        else:
+            st = self.risk.st
+            first = not (self.risk.account_flatten()
+                         or (st.halted and st.flatten_all and (st.halt_reason or "").startswith("SAFETY")))
+            self.risk.halt(msg, flatten=True, scope="A")
+            books = self._stale_books(stale)
+            for book in books:
+                book.halt(msg)
+            what = f"Flattening book {', '.join(['A'] + [getattr(b, 'letter', '?') for b in books])} (the other books keep running)"
         if not first:
             return
         log.error("SAFETY HALT: %s", reason)
-        self.bus.emit("log", now, level="error", msg=f"SAFETY HALT: {reason}. Flattening; check open positions and orders in the Robinhood app.")
+        self.bus.emit("log", now, level="error", msg=f"SAFETY HALT: {reason}. {what}; check open positions and orders in the Robinhood app.")
         self.set_agent(now, "alarm", f"SAFETY HALT: {reason}. Flattening. Check the Robinhood app.")
         self.bus.emit("risk", now, risk=self.risk.to_dict())
         asyncio.ensure_future(self._cancel_all_quietly())
@@ -295,17 +444,30 @@ class Engine:
         except Exception as ex:
             log.warning("cancel_all failed: %s", ex)
 
+    def _stale_books(self, pos) -> list:
+        """The books a stale quote on `pos` halts besides A: B/C/D/G, and the book holding `pos` if it is another."""
+        out = list(getattr(getattr(self.books, "bookhost", self.books), "books", None) or [])
+        for h in getattr(self.books, "extras", ()):           # F1 (E and F2 positions are watchdog-exempt)
+            if any(p is pos for p in h.positions()):
+                out.append(h.book)
+        return out
+
     def _watchdog(self, now: float) -> None:
         stale = self.wd["quote_stale_sec"]
         held = [p for p, _ in self.open] + [p for p in (self.books.positions() if self.books else [])
                                             if not getattr(p, "watchdog_exempt", False)]   # book E checks its own multi-day positions
+        if held:                                # time the Robinhood call budget held every call doesn't count (H2)
+            credit = getattr(self, "_throttle", None) or ThrottleCredit()
+            self._throttle = credit
+            rh = getattr(self, "l2_rh", None) or getattr(getattr(self, "quotes", None), "rh", None)
+            credit.tick(now, getattr(rh, "budget", None), held)
         for pos in held:
             if getattr(pos, "_exiting", False) or getattr(pos, "exiting", False):
                 continue                        # a sell is in flight; its own order checks and timeouts guard it
-            age = now - pos.last_quote_ts
+            age = self._throttle.age(pos, now)
             if age > stale:
                 label = getattr(pos, "label", None) or pos.contract.label
-                self._trip(f"no fresh quote for {label} in {age:.0f}s, stop can't be checked", now)
+                self._trip(f"no fresh quote for {label} in {age:.0f}s, stop can't be checked", now, stale=pos)
                 break
         rs = self.wd["reconcile_sec"]
         if self.broker.live and rs and now - self._last_reconcile >= rs and not self._busy.locked() \
@@ -412,6 +574,9 @@ class Engine:
                 self._skip(now, es, "no option quote")
                 return
             if q.spread_pct > self.cfg["strikes"]["max_spread_pct"] and choice.offset > -1:
+                if choice.offset == 0:          # at the money already: a step in would go ITM, not toward ATM (HANDOFF 7A)
+                    self._skip(now, es, f"spread {q.spread_pct:.0%} too wide")
+                    return
                 alt = Contract(self.symbol, expiry, choice.strike - (1 if es.side == "call" else -1), es.side)
                 alt = await self.broker.resolve(alt)
                 q2 = await self.quotes.quote(alt)
@@ -457,6 +622,7 @@ class Engine:
                 return
             pos = Position(contract, es.setup, res.filled_qty, res.avg_price, now,
                            strike_reason=f"{choice.offset:+d}: {choice.reason}", entry_reasons=es.reasons, l2=l2_note)
+            pos.last_quote_ts = max(pos.last_quote_ts, self.feed.now())   # a slow entry can't trip the watchdog (M9)
             pos.mark, pos.bid, pos.ask = q.mark, q.bid, q.ask
             pos.crew = crew_fx
             pos.fees += self.cfg["sizing"]["fee_per_contract"] * res.filled_qty
@@ -570,6 +736,8 @@ class Engine:
         finally:
             if intent.scale and pos.qty == held:     # nothing sold (no quote, unfilled, another exit busy): retry it
                 pos.scales_done = max(0, pos.scales_done - 1)
+                if intent.stop_before is not None:   # and no breakeven stop for a scale that didn't happen
+                    pos.stop = intent.stop_before
 
     async def _exit(self, pos: Position, plan: ExitPlan, intent: ExitIntent, now: float) -> None:
         q = await self.quotes.quote(pos.contract)
@@ -605,7 +773,7 @@ class Engine:
         self.closed.append(pos)
         net = pos.realized - pos.fees
         self.risk.on_trade_closed(net, now)
-        self.journal.record_trade(str(self.day), self.mode, pos)
+        await self._record_trade(pos, now)
         self.bus.emit("trade_closed", now, pos=pos.to_dict(), net=round(net, 2), risk=self.risk.to_dict())
         if net >= 0:
             self.set_agent(now, "celebrating", f"Closed {pos.contract.label} +${net:.0f} ({reason})")
@@ -613,6 +781,22 @@ class Engine:
             self.set_agent(now, "frustrated", f"Closed {pos.contract.label} -${abs(net):.0f} ({reason})")
         if self.crew:
             await self.crew.on_trade_closed(pos, net, now)
+
+    async def _record_trade(self, pos: Position, now: float) -> None:
+        """Journal a closed trade, retrying once (the recorder writes the same SQLite file). The position is already
+        closed and booked, so a failure is logged with the whole trade and never raised into the error streak."""
+        for attempt in (1, 2):
+            try:
+                self.journal.record_trade(str(self.day), self.mode, pos)
+                return
+            except Exception as ex:
+                if attempt == 1:
+                    log.warning("journal write for %s failed (%s); retrying once", pos.contract.label, ex)
+                    await asyncio.sleep(0.5)
+                    continue
+                log.error("trade not journaled after a retry (%s): %s", ex, pos.to_dict())
+                self.bus.emit("log", now, level="error",
+                              msg=f"trade {pos.contract.label} not journaled ({ex}); the day log has the full trade")
 
     # ------------------------------------------------------------------ crew proposals
     def apply_tweak(self, item: dict, now: float) -> None:
@@ -630,6 +814,8 @@ class Engine:
                 set_path(self.cfg, k, v)
             write_override(item["params"])
         self.bus.emit("log", now, level="info", msg=f"crew tweak ({item['scope']}): {item['title']} {item['params']}")
+        if item["scope"] in ("day", "standing"):      # the page's exit-plan and RSI text read this config
+            self.bus.emit("config", now, config={k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")})
 
     def decide_proposal(self, pid: str, approve: bool) -> dict | None:
         now = self.feed.now()
@@ -723,4 +909,5 @@ class Engine:
                    if self.l2 else None),
             "config": {k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")},
             "books": self.books.snapshot() if self.books else None,
+            "recorder": self._rec,
         }

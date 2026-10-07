@@ -141,7 +141,9 @@ def test_recorder_keeps_its_own_pacing():
     from agentdesk import recorder
     cfg = load_config()
     rc = recorder.recorder_cfg(cfg, recorder.settings(cfg))
-    assert CallBudget.from_cfg(rc["robinhood"]) is None
+    b = CallBudget.from_cfg(rc["robinhood"])
+    assert b is not None and b.per_min == 100                          # its own cap, not the engine's 120 (I7)
+    assert CallBudget.from_cfg(recorder.recorder_cfg(cfg, recorder.settings(cfg), capped=False)["robinhood"]) is None
 
 
 # ------------------------------------------------------------------ fetch_quotes + BookHost batching
@@ -185,9 +187,26 @@ def test_fetch_quotes_reuses_fresh_quotes_instead_of_asking_again():
     for l in FLY:
         q.set(l.right, l.strike, 1.0, 1.02)
     cs = contracts(FLY)
-    run(fetch_quotes(q, cs))
-    again = run(fetch_quotes(q, cs))
+    t = [1000.0]
+    clock = lambda: t[0]                                                # noqa: E731 - frozen, so a slow runner can't age the cache
+    run(fetch_quotes(q, cs, clock=clock))
+    t[0] += 0.4                                                         # inside max_age (0.5 s)
+    again = run(fetch_quotes(q, cs, clock=clock))
     assert len(q.batches) == 1 and all(x is not None and x.ask == 1.02 for x in again)
+
+
+def test_fetch_quotes_asks_again_once_the_cached_quotes_are_older_than_max_age():
+    from books_fakes import contracts
+    q = RHQuotes(ct_ts(9, 0))
+    for l in FLY:
+        q.set(l.right, l.strike, 1.0, 1.02)
+    cs = contracts(FLY)
+    t = [1000.0]
+    clock = lambda: t[0]                                                # noqa: E731
+    run(fetch_quotes(q, cs, clock=clock))
+    t[0] += 0.6                                                         # past max_age
+    run(fetch_quotes(q, cs, clock=clock))
+    assert len(q.batches) == 2
 
 
 class Opener(Strategy):
@@ -238,6 +257,37 @@ def test_a_throttle_never_counts_toward_a_book_halt():
     assert not any(b.halted for b in host.books) and all(b.errors == 0 for b in host.books)
     logs = [d for d in host.e.bus.of("log") if "rate limit" in d["msg"]]
     assert len(logs) == 1 and logs[0]["level"] == "warn"                 # one line per episode, not one per call
+
+
+def test_a_failed_batched_prefetch_logs_one_warn_line_per_episode(monkeypatch):   # review 2026-10-06 I8
+    from agentdesk.books import host as host_mod
+    q, host = host_with_two_open_books()
+    real = host_mod.fetch_quotes
+    down = [True]
+
+    async def flaky(quotes, cs):
+        if down[0] and len(cs) == 6:                  # only the host's batched call (4 fly + 2 calendar legs) fails
+            raise RuntimeError("get_option_quotes: 502 Bad Gateway")
+        return await real(quotes, cs)
+    monkeypatch.setattr(host_mod, "fetch_quotes", flaky)
+
+    def warns():
+        return [d for d in host.e.bus.of("log") if "batched" in d["msg"]]
+    for i in range(1, 6):
+        q.cache.clear()
+        q.now = ct_ts(9, 1, i)
+        run(host.on_second(ct_ts(9, 1, i)))
+    assert len(warns()) == 1 and warns()[0]["level"] == "warn" and "502" in warns()[0]["msg"]
+    down[0] = False
+    q.now = ct_ts(9, 1, 6)
+    run(host.on_second(ct_ts(9, 1, 6)))
+    down[0] = True
+    for i in range(10, 13):                           # a new outage two minutes later: one more line
+        q.cache.clear()
+        q.now = ct_ts(9, 3, i)
+        run(host.on_second(ct_ts(9, 3, i)))
+    assert len(warns()) == 2
+    assert not any(b.halted for b in host.books)      # each book still got its quotes on its own
 
 
 @pytest.mark.parametrize("which", ["E", "F"])

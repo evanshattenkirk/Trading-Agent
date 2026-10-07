@@ -6,6 +6,7 @@ from agentdesk.indicators import MACD, RSI
 
 vix = pd.read_csv("data/vix.csv", parse_dates=["DATE"]).set_index("DATE")
 vix.index = vix.index.date
+MAX_VIX_AGE_DAYS = 5      # an older "prior" close means vix.csv has a hole or ends early: skip the day
 
 def load():
     spx = pd.read_pickle("data/spx_rth_1m.pkl")
@@ -25,7 +26,7 @@ def vrp(days, M):
     vdates = sorted(vix.index)
     for i, d in enumerate(days):
         prev = [x for x in vdates if x < d]
-        if not prev: continue
+        if not prev or (d - prev[-1]).days > MAX_VIX_AGE_DAYS: continue
         v = vix.loc[prev[-1], "CLOSE"]
         sd = v / 100 / math.sqrt(252)
         rows.append((d, abs(C[i] / O[i] - 1), sd, v))
@@ -71,7 +72,7 @@ def structures(days, M, res, scale, sigs):
     rows = []
     for i, k0, k1 in sigs:
         prev = [x for x in vdates if x < days[i]]
-        if not prev: continue
+        if not prev or (days[i] - prev[-1]).days > MAX_VIX_AGE_DAYS: continue
         sd_day = vix.loc[prev[-1], "CLOSE"] / 100 / math.sqrt(252)
         S0, S1 = C[i, k0] / scale, C[i, k1] / scale
         f0 = max(0.0, (nb - 1 - k0) / nb) + 15 / 390        # SPY 0DTE trades to 16:15

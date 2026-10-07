@@ -8,7 +8,9 @@ import time
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -49,6 +51,15 @@ def test_page_and_review_config(tmp_path):
     assert c.get("/static/app.js").status_code == 200
 
 
+def test_page_config_and_assets_are_revalidated(tmp_path):
+    """At 08:10 the same URL serves the live page again; nothing may come from a stale cache (M17)."""
+    c = client(saved(tmp_path))
+    assert c.get("/").headers["cache-control"] == "no-cache"
+    assert c.get("/config.js").headers["cache-control"] == "no-store"
+    for path in ("/static/app.js", "/static/book_f.js", "/static/styles.css"):
+        assert c.get(path).headers["cache-control"] == "no-cache", path
+
+
 def test_state_is_the_newest_saved_snapshot(tmp_path):
     c = client(saved(tmp_path))
     assert c.get("/api/state").json()["price"] == 765.0
@@ -86,11 +97,11 @@ def test_other_hosts_refused(tmp_path):
 
 def test_no_websocket(tmp_path):
     c = client(saved(tmp_path))
-    try:
+    accepted = False
+    with pytest.raises(WebSocketDisconnect):    # the handshake is refused (or, if accepted, the close at exit)
         with c.websocket_connect("/ws", headers={"origin": BASE}):
-            assert False, "review server must not accept a websocket"
-    except Exception:
-        pass
+            accepted = True
+    assert not accepted, "review server must not accept a websocket"
 
 
 # ------------------------------------------------------------------ supervisor

@@ -194,6 +194,7 @@ def test_summary_stats():
 
 
 def test_run_end_to_end_on_thetadata_shaped_files(tmp_path):
+    pytest.importorskip("pyarrow")                    # the run writes parquet
     qdir = tmp_path / "spy_0dte"; qdir.mkdir()
     for d, drift in (("2025-03-19", 0.0), ("2025-03-20", 4.0), ("2025-03-21", -1.0)):
         p = make_panel({m("09:30"): 570.0, m("13:00"): 570.0 + drift}, range(555, 586))
@@ -238,6 +239,7 @@ def test_replay_without_tp_or_stop_holds_to_the_close():
 
 
 def test_run_reports_the_d_variant_without_tp_or_stop(tmp_path):
+    pytest.importorskip("pyarrow")                    # the run writes parquet
     qdir = tmp_path / "spy_0dte"; qdir.mkdir()
     for d, drift in (("2025-03-19", 0.0), ("2025-03-20", 4.0)):
         p = make_panel({m("09:30"): 570.0, m("13:00"): 570.0 + drift}, range(555, 586))

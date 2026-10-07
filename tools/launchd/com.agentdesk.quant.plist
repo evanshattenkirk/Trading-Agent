@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: tools/install_paper.sh fills in __APP__ and __HOME__ and loads it as a per-user LaunchAgent (its
+     no-quant option leaves it out). Fridays at 16:00 in the Mac's SYSTEM time zone (launchd ignores a
+     TZ exported in a shell; keep the Mac on Central, and tools/quant_week.sh waits for 15:15 CT if it fires
+     earlier): book A's SIP replay, the weekly Quant report into ~/.agentdesk/reports, and tools/prune.sh on the
+     first Friday of a month. If the Mac is asleep at 16:00, launchd runs it on wake. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agentdesk.quant</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__APP__/src/tools/quant_week.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>ProcessType</key><string>Standard</string>
+  <key>StandardOutPath</key><string>__HOME__/.agentdesk/reports/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.agentdesk/reports/launchd.err.log</string>
+</dict>
+</plist>

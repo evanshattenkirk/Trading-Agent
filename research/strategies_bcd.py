@@ -44,11 +44,13 @@ def load(data):
         for k in "OHLC": M[k] = M[k] * f
     return (d1, M5), (d2, M2), vix
 
+MAX_VIX_AGE_DAYS = 5      # an older "prior" close means vix.csv has a hole or ends early: skip the day (NaN)
+
 def prev_vix(vix, days):
     vd = sorted(vix.index); out = []; j = 0
     for d in days:
         while j + 1 < len(vd) and vd[j + 1] < d: j += 1
-        out.append(vix[vd[j]] if vd[j] < d else np.nan)
+        out.append(vix[vd[j]] if vd[j] < d and (d - vd[j]).days <= MAX_VIX_AGE_DAYS else np.nan)
     return np.array(out)
 
 def sd_left(sd_day, bar_close_idx):          # remaining RTH variance share (+15 min SPY 0DTE tail)

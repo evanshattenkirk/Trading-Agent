@@ -81,8 +81,11 @@ def test_event_log_appends_across_restarts(tmp_path):
 def test_event_log_never_raises_into_the_bus(tmp_path):
     (tmp_path / "2026-09-29.events.jsonl").mkdir()          # can't open a directory for writing
     bus = Bus()
+    seen = []
     bus.taps.append(EventLog(tmp_path))
+    bus.taps.append(seen.append)                            # a good tap after the broken one
     bus.emit("log", ts("2026-09-29"), msg="still fine")     # must not raise
+    assert [m["msg"] for m in seen] == ["still fine"]
 
 
 def test_bus_tap_errors_never_reach_the_engine():
@@ -90,8 +93,11 @@ def test_bus_tap_errors_never_reach_the_engine():
 
     def bad(msg):
         raise ValueError("tap broke")
+    seen = []
     bus.taps.append(bad)
+    bus.taps.append(seen.append)
     bus.emit("log", 1.0, msg="x")
+    assert [m["msg"] for m in seen] == ["x"]
 
 
 def test_feed_events_cover_what_the_activity_tab_shows():
@@ -150,3 +156,41 @@ def test_position_mark_updates_are_not_saved(tmp_path):
     log.close()
     kept = [(e["type"], e["event"]) for e in map(json.loads, (tmp_path / "2026-09-29.events.jsonl").read_text().splitlines())]
     assert kept == [(k, ev) for k in ("book_position", "position", "f_position") for ev in ("open", "closed")]
+
+
+def test_an_unreadable_newest_snapshot_falls_back_to_the_next_day(tmp_path):
+    """A power cut during the 60 s save can leave an empty newest file; the earlier days must still show (L17)."""
+    arc = SessionArchive(tmp_path)
+    arc.save(Engine("2026-09-28", price=760.0))
+    arc.save(Engine("2026-09-29", price=765.0))
+    (tmp_path / "2026-09-29.snapshot.json").write_text("")
+    got = load_day(tmp_path)
+    assert got["day"] == "2026-09-28" and got["snapshot"]["price"] == 760.0
+    assert got["days"] == ["2026-09-29", "2026-09-28"]
+    assert load_day(tmp_path, "2026-09-29") is None                          # asked for by name: no silent swap
+
+
+def test_snapshot_is_fsynced_before_the_rename(tmp_path, monkeypatch):
+    import agentdesk.archive as archive
+    calls = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(archive.os, "fsync", lambda fd: (calls.append("fsync"), real_fsync(fd))[1])
+    monkeypatch.setattr(archive.os, "replace", lambda a, b: (calls.append("replace"), real_replace(a, b))[1])
+    assert SessionArchive(tmp_path).save(Engine(price=765.5)) is not None
+    assert calls == ["fsync", "replace"]
+    assert json.loads((tmp_path / "2026-09-29.snapshot.json").read_text())["price"] == 765.5
+
+
+def test_load_day_without_events_never_opens_the_events_file(tmp_path, monkeypatch):
+    """The review server's /api/state asks for max_events=0 on every poll; it must not parse the whole log (M17)."""
+    import agentdesk.archive as archive
+    SessionArchive(tmp_path).save(Engine(price=765.5))
+    log = EventLog(tmp_path)
+    log({"type": "log", "ts": ts("2026-09-29"), "msg": "a"})
+    log.close()
+
+    def no_open(*a, **k):
+        raise AssertionError(f"opened {a[0]}")
+    monkeypatch.setattr(archive, "open", no_open, raising=False)
+    got = load_day(tmp_path, max_events=0)
+    assert got["snapshot"]["price"] == 765.5 and got["events"] == []

@@ -102,6 +102,15 @@ def test_earnings_inside_the_hold_blocks_the_entry():
     assert S.earnings_conflict("AMD", cal, THU, MON) is None
 
 
+def test_an_empty_calendar_or_one_without_f2_names_is_not_a_calendar():         # review 2026-10-06 M6
+    uni = {"NVDA", "AMD"}
+    assert "unavailable" in S.calendar_problem(None, uni, THU)
+    assert "empty" in S.calendar_problem([], uni, THU)
+    assert "no F2 name" in S.calendar_problem([{"symbol": "XYZ", "date": FRI, "timing": "pm"}], uni, THU)
+    assert "no F2 name" in S.calendar_problem([{"symbol": "AMD", "date": date(2026, 11, 2), "timing": "pm"}], uni, THU)
+    assert S.calendar_problem([{"symbol": "AMD", "date": date(2026, 11, 1), "timing": "pm"}], uni, THU) is None
+
+
 def test_realized_vol_annualizes_log_returns():
     flat = _daily()
     assert realized_vol(flat) == pytest.approx(0.0)
@@ -139,18 +148,22 @@ def chain(ch, sym="NVDA", exp=EXP, call=(3.00, 3.10), put=(2.60, 2.70), short_ca
     ch.set(sym, exp, 95, "put", *short_put, 0.58)
 
 
-def make(rows=(), cal=(), data=None, **over):
+COVER = [{"symbol": "AAPL", "date": date(2026, 10, 29), "timing": "pm"}]    # an F2 name inside 31 days, no hold
+
+
+def make(rows=(), cal=None, data=None, **over):
     cfg = copy.deepcopy(BASE)
     cfg["books"]["F2_debit_spreads"].update({"max_debit": 1000, **over})
     eng = FakeEngine(FakeQuotes(), cfg)
     ch = FakeChains()
     chain(ch)
     f1 = FakeF1(rows)
-    rows_cal = list(cal)
+    rows_cal = list(COVER if cal is None else cal)
 
     async def calendar(today):
         return list(rows_cal)
     h = F2Host(eng, cfg, ch, data=data, fhost=f1, calendar_fn=calendar)
+    h.cal_rows = rows_cal
     asyncio.run(h.start())
     return h, eng, ch, f1
 
@@ -269,6 +282,115 @@ def test_report_inside_the_hold_skips_and_a_missing_calendar_blocks():
     stock(f12, "NVDA", 100.6, et(THU, 9, 36))
     tick(h2, ch2, et(THU, 9, 36))
     assert not h2.book.open and "calendar unavailable" in h2.j.decisions(str(THU))[-1]["reason"]
+
+
+def break_out(h, ch, f1):
+    tick(h, ch, et(THU, 9, 35, 10))
+    stock(f1, "NVDA", 100.6, et(THU, 9, 36))
+    tick(h, ch, et(THU, 9, 36))
+
+
+def test_an_empty_calendar_blocks_entries_like_a_missing_one():                   # review 2026-10-06 M6
+    h, eng, ch, f1 = make(rows=[_row("NVDA", 3.0)], cal=[])
+    break_out(h, ch, f1)
+    assert not h.book.open
+    assert "earnings calendar empty: not trading blind" in h.j.decisions(str(THU))[-1]["reason"]
+    h, eng, ch, f1 = make(rows=[_row("NVDA", 3.0)], cal=[{"symbol": "XYZ", "date": FRI, "timing": "pm"}])
+    break_out(h, ch, f1)
+    assert not h.book.open and "no F2 name" in h.j.decisions(str(THU))[-1]["reason"]
+    h, eng, ch, f1 = make(rows=[_row("NVDA", 3.0)], cal=[], require_calendar=False)
+    break_out(h, ch, f1)
+    assert h.book.open                                       # Evan's switch still lets it trade without one
+
+
+def test_a_report_that_moves_into_an_open_hold_forces_the_exit():                 # review 2026-10-06 M6
+    h, eng, ch, f1 = opened_call()
+    ch.px["NVDA"] = 100.8
+    h.cal_rows.append({"symbol": "NVDA", "date": MON, "timing": "am"})     # published after Thursday's entry
+    tick(h, ch, et(THU, 11, 0))
+    assert h.book.open                                       # Thursday's calendar was read once, at the entry
+    tick(h, ch, et(FRI, 9, 31))                              # Friday's first read sees it
+    assert not h.book.open
+    c = h.book.closed[0]
+    assert c.exit_reason == f"report moved into hold: reports {MON} am inside the hold"
+    assert eng.journal.trades()[0]["exit_reason"] == c.exit_reason       # a normal exit at fresh quotes
+
+
+def test_a_report_check_that_cannot_read_the_calendar_retries():                  # review 2026-10-06 M6
+    h, eng, ch, f1 = opened_call()
+    ch.px["NVDA"] = 100.8
+    h.cal_rows[:] = []                                       # Friday's reply comes back empty
+    tick(h, ch, et(FRI, 9, 31))
+    assert h.book.open and h.refreshed != FRI
+    assert len([d for d in eng.bus.of("log") if "not re-checked" in d["msg"]]) == 1
+    h.cal_rows[:] = COVER + [{"symbol": "NVDA", "date": MON, "timing": "pm"}]
+    tick(h, ch, et(FRI, 9, 32))                              # inside the retry gap
+    assert h.book.open
+    tick(h, ch, et(FRI, 9, 36, 31))
+    assert not h.book.open and h.book.closed[0].exit_reason.startswith("report moved into hold")
+
+
+# ------------------------------------------------------------------ quote outages (review 2026-10-06 M5)
+def test_flatten_after_a_failed_quote_read_closes_at_the_last_mark():
+    h, eng, ch, f1 = opened_call()
+    mark = h.book.open[0].mark
+    sent = []
+    real = h.broker.submit_combo
+
+    async def spy(*a, **k):
+        sent.append(a)
+        return await real(*a, **k)
+    h.broker.submit_combo = spy
+    ch.fail.add("quotes")
+    ch.now = et(FRI, 10, 0)
+    asyncio.run(h.flatten("manual flatten", et(FRI, 10, 0)))
+    assert not h.book.open and sent == []                    # never a paper fill at stale cached prices
+    [t] = eng.journal.trades()
+    assert t["exit_reason"] == f"manual flatten (quotes unavailable: closed at last mark {mark:.2f})"
+    assert h.j.open_positions()[0] == []
+
+
+def test_a_quote_outage_with_nothing_due_never_halts_book_f2():
+    h, eng, ch, f1 = opened_call()
+    ch.fail.add("spots")                                     # day 1: the OR-low check can't read the stock
+    for s in (0, 5, 10, 15):
+        ch.now = eng.feed.t = et(THU, 9, 40, s)
+        asyncio.run(h.run(h.on_second(eng.feed.t), True))
+    ch.fail = {"quotes"}                                     # day 2: the option quotes are down
+    for s in (0, 5, 10, 15):
+        ch.now = eng.feed.t = et(FRI, 10, 0, s)
+        asyncio.run(h.run(h.on_second(eng.feed.t), True))
+    assert not h.book.halted and h.book.errors == 0 and h.book.open
+    logs = [d["msg"] for d in eng.bus.of("log")]
+    assert len([m for m in logs if "stock quotes unavailable" in m]) == 1
+    assert len([m for m in logs if "option quotes unavailable" in m]) == 1
+    ch.fail = set()
+    tick(h, ch, et(FRI, 10, 1))
+    assert any("option quotes back" in d["msg"] for d in eng.bus.of("log"))
+
+
+def test_a_failing_trigger_poll_never_halts_book_f2():
+    data = FakeData(THU)
+    data.fail_quotes = True
+    h, eng, ch, f1 = make(rows=[_row("NVDA", 3.0)], data=data)
+    for s in range(10, 30, 2):
+        ch.now = eng.feed.t = et(THU, 9, 35, s)
+        asyncio.run(h.run(h.on_second(eng.feed.t), True))
+    assert data.calls.count("quotes") >= 5 and not h.book.halted and h.book.errors == 0 and h.armed
+
+
+def test_a_due_exit_that_keeps_failing_still_halts_book_f2():
+    h, eng, ch, f1 = opened_call()
+
+    async def broken(*a, **k):
+        raise RuntimeError("order path broke")
+    h.exec.work = broken
+    ch.set("NVDA", EXP, 100, "call", 5.40, 5.50, 0.5)       # take profit is due
+    ch.set("NVDA", EXP, 105, "call", 1.20, 1.25, 0.5)
+    for s in (0, 5, 10):
+        ch.now = eng.feed.t = et(FRI, 10, 0, s)
+        asyncio.run(h.run(h.on_second(eng.feed.t), True))
+    assert h.book.halted
 
 
 def test_expensive_or_wide_structures_are_skipped():

@@ -99,6 +99,33 @@ def test_token_is_never_served_to_the_page(env):
         assert TOKEN not in c.get(path).text
 
 
+def test_non_ascii_token_header_is_refused_not_an_error(env):
+    e, c = env
+    r = c.post("/api/kill", headers={"X-AgentDesk-Token": "t0ken-é".encode("utf-8")})
+    assert r.status_code == 401 and r.json()["ok"] is False and e.calls == []
+
+
+def test_page_config_and_assets_are_revalidated(env):
+    """A bookmark opened after hours must not run a cached live config.js against the review server (M17)."""
+    _, c = env
+    assert c.get("/").headers["cache-control"] == "no-cache"
+    assert c.get("/config.js").headers["cache-control"] == "no-store"
+    for path in ("/static/app.js", "/static/styles.css", "/static/panel.js"):
+        r = c.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
+
+
+def test_state_serialises_odd_values_once(env):
+    from datetime import date
+    e, _ = env
+    calls = []
+    e.snapshot = lambda: calls.append(1) or {"type": "snapshot", "day": date(2026, 10, 6), "px": 765.25}
+    c = TestClient(create_app(e, Bus(), token=TOKEN), base_url=BASE)
+    r = c.get("/api/state")
+    assert r.json() == {"type": "snapshot", "day": "2026-10-06", "px": 765.25} and len(calls) == 1
+    assert r.headers["content-type"].startswith("application/json")
+
+
 def test_token_source_order(monkeypatch):
     monkeypatch.delenv("AGENTDESK_TOKEN", raising=False)
     a, b = resolve_token({}), resolve_token({})

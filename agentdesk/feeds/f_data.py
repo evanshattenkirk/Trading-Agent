@@ -147,9 +147,9 @@ class RobinhoodEquityData:
         self.throttle = Throttle(int(cfg.get("max_calls_per_s", 20)))
 
     async def _call(self, tool: str, args: dict, retry: bool = True):
-        start = getattr(self.rh, "start", None)
-        if start is not None:
-            await start()                                   # idempotent: the engine usually connected already
+        if not getattr(self, "_rh_started", False) and getattr(self.rh, "start", None) is not None:
+            await self.rh.start()       # once (the engine has usually connected already); a dropped session is
+            self._rh_started = True     # reopened inside rh.call, under its lock, not by a second start() here
         if "account_number" in args and args["account_number"] is None:
             args = {**args, "account_number": getattr(self.rh, "account", None)}   # known only after start()
         await self.throttle.wait()

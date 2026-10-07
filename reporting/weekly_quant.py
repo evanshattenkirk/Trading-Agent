@@ -194,7 +194,28 @@ def max_month_share(trades: list):
 def _connect(path) -> sqlite3.Connection:
     db = sqlite3.connect(f"file:{Path(path).expanduser()}?mode=ro", uri=True, timeout=30)
     db.row_factory = sqlite3.Row
+    _with_archives(db, path)
     return db
+
+
+def _with_archives(db, path) -> None:
+    """Quotes tools/prune_journal.py moved to <journal dir>/archive/quotes-YYYY.db stay in the report: a temp view
+    named option_quotes (SQLite looks in temp before main) adds them to the journal's own rows."""
+    files = sorted((Path(path).expanduser().parent / "archive").glob("quotes-*.db"))[-9:]   # SQLite attaches <= 10
+    cols = [r[1] for r in db.execute("PRAGMA main.table_info(option_quotes)")] if files else []
+    if not cols:
+        return
+    names = ", ".join(cols)
+    parts = [f"SELECT {names} FROM main.option_quotes"]
+    for i, f in enumerate(files):
+        try:
+            db.execute(f"ATTACH DATABASE ? AS qa{i}", (f"file:{f}?mode=ro",))
+        except sqlite3.Error:
+            continue
+        if set(cols) <= {r[1] for r in db.execute(f"PRAGMA qa{i}.table_info(option_quotes)")}:
+            parts.append(f"SELECT {names} FROM qa{i}.option_quotes")
+    if len(parts) > 1:
+        db.execute("CREATE TEMP VIEW option_quotes AS " + " UNION ALL ".join(parts))
 
 
 def _loads(s):
@@ -382,6 +403,32 @@ def _ct(ts: float) -> datetime:
     return datetime.fromtimestamp(ts, CT)
 
 
+def _straddle_rows(db, lo: float, hi: float, entry_ct: str, exit_ct: str) -> list:
+    """Only the rows straddle_vs_realized looks at, per recorded day between lo and hi: that day's 0DTE quotes in the
+    5 minutes from entry_ct, and its first 0DTE snapshot at or after exit_ct (indexed reads, not the whole table)."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='option_quotes_expiry_ts'").fetchone():
+        return db.execute("SELECT ts, expiry, strike, right, bid, ask, spot FROM option_quotes WHERE ts BETWEEN ? AND ? "
+                          "ORDER BY ts", (lo, hi)).fetchall()     # a journal the engine hasn't indexed yet: one scan
+    sql = "SELECT ts, expiry, strike, right, bid, ask, spot FROM option_quotes WHERE expiry=? AND ts BETWEEN ? AND ? ORDER BY ts"
+    first, last = db.execute("SELECT MIN(ts), MAX(ts) FROM option_quotes WHERE ts BETWEEN ? AND ?", (lo, hi)).fetchone()
+    rows = []
+    if first is None:
+        return rows
+    d, d_last = _ct(first).date(), _ct(last).date()
+    while d <= d_last:
+        day = d.isoformat()
+        e_at = datetime.fromisoformat(f"{day}T{entry_ct}").replace(tzinfo=CT).timestamp()
+        x_at = datetime.fromisoformat(f"{day}T{exit_ct}").replace(tzinfo=CT).timestamp()
+        day_end = min(hi, datetime.fromisoformat(f"{d + timedelta(days=1)}T00:00").replace(tzinfo=CT).timestamp() - 1e-6)
+        rows += db.execute(sql, (day, max(lo, e_at), min(day_end, e_at + 300))).fetchall()
+        x = db.execute("SELECT MIN(ts) FROM option_quotes WHERE expiry=? AND ts BETWEEN ? AND ?",
+                       (day, max(lo, x_at), day_end)).fetchone()[0]
+        if x is not None and not e_at <= x <= e_at + 300:
+            rows += db.execute(sql, (day, x, x)).fetchall()
+        d += timedelta(days=1)
+    return rows
+
+
 def straddle_vs_realized(path, start: str, end: str, entry_ct: str = "08:45", exit_ct: str = "14:30") -> dict:
     """Per session: the 0DTE ATM straddle mid at the first snapshot at/after entry_ct vs |spot move| to exit_ct."""
     db = _connect(path)
@@ -390,8 +437,7 @@ def straddle_vs_realized(path, start: str, end: str, entry_ct: str = "08:45", ex
             return {"days": 0}
         lo = datetime.fromisoformat(f"{start}T00:00").replace(tzinfo=CT).timestamp()
         hi = datetime.fromisoformat(f"{end}T23:59").replace(tzinfo=CT).timestamp()
-        rows = db.execute("SELECT ts, expiry, strike, right, bid, ask, spot FROM option_quotes WHERE ts BETWEEN ? AND ? "
-                          "ORDER BY ts", (lo, hi)).fetchall()
+        rows = _straddle_rows(db, lo, hi, entry_ct, exit_ct)
     finally:
         db.close()
     by_day: dict = {}
@@ -722,6 +768,7 @@ def render_markdown(rep: dict) -> str:
             L += _book_section(b, r)
     L += _straddle_section(rep)
     L += _crew_section(rep)
+    L += _postmortem_section(rep)
     L += ["## Notes", "",
           "- Journal schema: the multi-book framework's trades table (PR #6: `book`, `legs`, `max_loss`). "
           "A journal without `book` is read as all book A.",
@@ -822,6 +869,51 @@ def _straddle_section(rep: dict) -> list:
     return L + [""]
 
 
+def load_postmortems(root, start: str, end: str) -> dict:
+    """The Post-mortem desk's daily book A audits (agentdesk/desks.py writes <root>/YYYY-MM-DD.md after each paper
+    session) from start to end: headline, trade count, rule breaks and round trips flagged for review."""
+    root = Path(root).expanduser()
+    days = []
+    for f in sorted(root.glob("????-??-??.md")) if root.is_dir() else []:
+        if not start <= f.stem <= end:
+            continue
+        try:
+            lines = f.read_text().splitlines()
+        except OSError:
+            continue
+        rows = [[c.strip() for c in ln.strip().strip("|").split("|")] for ln in lines
+                if ln.startswith("| ") and not ln.startswith("| Contract") and not ln.startswith("|---")]
+        reviews = []
+        for ln in lines[lines.index("Review:") + 1:] if "Review:" in lines else []:
+            if not ln.startswith("- "):
+                break
+            reviews.append(ln[2:])
+        days.append({"day": f.stem, "headline": next((ln for ln in lines[1:] if ln.strip() and not ln.startswith("|")), ""),
+                     "trades": len(rows),
+                     "breaks": [f"{r[0]}: {r[-1]}" for r in rows if len(r) > 1 and r[-1] not in ("none", "")],
+                     "reviews": reviews})
+    return {"dir": str(root), "days": days}
+
+
+def _postmortem_section(rep: dict) -> list:
+    pm = rep.get("postmortems")
+    if pm is None:
+        return []
+    L = ["## Post-mortem audits (book A)", ""]
+    if not pm["days"]:
+        return L + [f"No post-mortem files for this week in {pm['dir']} (the desk writes one after each paper session).", ""]
+    L += [f"The Post-mortem desk's rule audit after each session ({pm['dir']}).", "",
+          "| Day | Trades | Audit |", "|---|---|---|"]
+    L += [f"| {d['day']} | {d['trades']} | {d['headline'].replace('|', '/')} |" for d in pm["days"]]
+    breaks = [f"- {d['day']} {b}" for d in pm["days"] for b in d["breaks"]]
+    reviews = [f"- {d['day']} {r}" for d in pm["days"] for r in d["reviews"]]
+    if breaks:
+        L += ["", "Rule breaks (each needs a look at the engine):"] + breaks
+    if reviews:
+        L += ["", "Round trips to review:"] + reviews
+    return L + [""]
+
+
 def _json_default(o):
     if isinstance(o, float) and (math.isinf(o) or math.isnan(o)):
         return None
@@ -835,6 +927,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="reports", help="directory for quant-<date>.md and .json")
     ap.add_argument("--modes", default="paper,shadow", help="journal modes to include (sim never belongs here)")
     ap.add_argument("--sip-dir", help="directory holding research/iex_vs_sip.py output runs (book A SIP replay)")
+    ap.add_argument("--postmortem-dir", default="~/.agentdesk/postmortems",
+                    help="the Post-mortem desk's daily files (crew.postmortem_dir)")
     a = ap.parse_args(argv)
     path = Path(a.journal).expanduser()
     if not path.exists():
@@ -842,6 +936,7 @@ def main(argv=None) -> int:
         return 2
     we = date.fromisoformat(a.week_ending) if a.week_ending else last_friday(datetime.now(CT).date())
     rep = build_report(path, we, tuple(m.strip() for m in a.modes.split(",") if m.strip()), sip_dir=a.sip_dir)
+    rep["postmortems"] = load_postmortems(a.postmortem_dir, rep["week_start"], rep["week_ending"])
     md = render_markdown(rep)
     out = Path(a.out).expanduser()
     out.mkdir(parents=True, exist_ok=True)

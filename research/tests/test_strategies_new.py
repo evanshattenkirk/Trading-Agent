@@ -355,3 +355,16 @@ def test_vega_check_pairs_hold_to_close_runs_with_and_without_the_same_day_vix()
     out = sn.vega_check("F3", days, M, vixp, vix_today, sn.COSTS["mid-1c"])
     assert set(out.columns) >= {"date", "ret_prior_vix", "ret_day_vix"}
     assert (out.ret_day_vix > out.ret_prior_vix).all()
+
+
+# ---------------------------------------------------------------- M20: F3's PASS carries its feasibility note
+def test_committed_report_regenerates_from_the_results_and_flags_f3():
+    import json
+    res = json.loads((RESEARCH / "strategies_new_results.json").read_text())
+    f3 = res["F3"]["mid-1c"]
+    assert f3["all"]["n"] == 2263 and f3["2005-14"]["n"] + f3["2015-20"]["n"] == 2082 and f3["2025-26"]["n"] == 181
+    out = sn.report(res)
+    assert out == (RESEARCH / "strategies_new_report.md").read_text()
+    f3_section = out.split("## F3")[1].split("## F4")[0]
+    assert "Feasibility note" in f3_section and "2,082 of F3's 2,263" in f3_section
+    assert "Feasibility note" not in out.split("## F3")[0]                     # F3 only

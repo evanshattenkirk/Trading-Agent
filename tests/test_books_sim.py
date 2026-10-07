@@ -6,6 +6,8 @@ import pytest
 from agentdesk.__main__ import build
 from agentdesk.config import load_config
 
+pytestmark = pytest.mark.slow          # each synthetic day replays a whole session (~9 s)
+
 CFG = load_config()
 SEEDS = (21, 7)
 
@@ -21,22 +23,35 @@ def run_day(seed, books_on):
     return engine
 
 
+@pytest.fixture(scope="module")
+def day():
+    """run_day memoised per (seed, books_on) for this module: the tagging test reads the same books-on days the
+    identity test already ran. Tests only read the finished engine."""
+    memo = {}
+
+    def get(seed, books_on):
+        if (seed, books_on) not in memo:
+            memo[seed, books_on] = run_day(seed, books_on)
+        return memo[seed, books_on]
+    return get
+
+
 def a_trades(engine):
     return [(p.contract.label, p.setup, p.qty_initial, round(p.entry, 2), p.exit_reason, round(p.realized - p.fees, 2))
             for p in engine.closed]
 
 
 @pytest.mark.parametrize("seed", SEEDS)
-def test_book_a_is_identical_with_books_on_and_off(seed):
-    off, on = run_day(seed, False), run_day(seed, True)
+def test_book_a_is_identical_with_books_on_and_off(seed, day):
+    off, on = day(seed, False), day(seed, True)
     assert a_trades(on) == a_trades(off)
     assert on.risk.st.day_pnl == pytest.approx(off.risk.st.day_pnl)
 
 
-def test_books_trade_in_sim_and_journal_rows_are_tagged():
+def test_books_trade_in_sim_and_journal_rows_are_tagged(day):
     books_traded, total = set(), 0
     for seed in SEEDS:
-        e = run_day(seed, True)
+        e = day(seed, True)
         rows = e.journal.trades()
         assert {r["book"] for r in rows} <= {"A", "B", "C", "D", "F1", "G"}     # F1: stocks in play (shares); G: call calendar (F3)
         assert sum(1 for r in rows if r["book"] == "A") == len(e.closed)

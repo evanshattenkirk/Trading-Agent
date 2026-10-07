@@ -180,6 +180,19 @@ def test_vol_re_votes_from_the_current_vix_each_read(monkeypatch):              
     assert b["size_multiplier"] == 1.15 and "above 28" not in b["headline"]
 
 
+def test_vol_keeps_its_last_vote_when_vix_cannot_be_read(monkeypatch):           # review plan 2026-10-06, L1
+    e, c = online(monkeypatch, '{"headline": "unused"}', now=at_ct(D, time(11, 30)))
+    c.vix = FakeVix(current=31.2, prev=None)                               # no prior close today
+    c.briefs["vol"] = {"headline": "am", "day": str(D), "ts": at_ct(D, time(8, 25)), "size_multiplier": 1.15,
+                       "confidence": 0.7, "bias": "bullish"}
+    c.briefs["vol"] = run(c._brief("vol", "midday", e.feed.now())) | {"day": str(D)}
+    assert c.briefs["vol"]["size_multiplier"] == 0.75
+    c.vix.cur = None                                                       # Robinhood's VIX read fails too
+    b = run(c._brief("vol", "late", at_ct(D, time(13, 15))))
+    assert b["size_multiplier"] == 0.75 and "VIX n/a" in b["headline"] and "75%" in b["headline"]
+    assert b["vote_base"] == 1.15                                          # the cut still lifts once VIX reads < 28
+
+
 def test_expected_move_comes_from_the_recorded_atm_straddle_during_the_session(monkeypatch):
     now = at_ct(D, time(11, 30))
     e, c = online(monkeypatch, '{"headline": "unused"}', now=now)

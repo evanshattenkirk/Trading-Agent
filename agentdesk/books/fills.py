@@ -51,12 +51,13 @@ class ComboExecutor:
                 return res
 
     async def _review(self, legs, contracts, qty: int, limit: float, opening: bool, credit: bool) -> dict:
-        from ..brokers.robinhood import _short, order_args
+        from ..brokers.robinhood import _short, order_args, redact_account
         direction = "credit" if credit == opening else "debit"      # opening a credit or closing a debit receives
+        acct = getattr(self.reviewer, "account", None)
         try:
             ids = [await self.reviewer.instrument_id(c) for c in contracts]
             args = order_args(self.reviewer.account, rh_legs(legs, ids, opening), qty, limit, True, contracts[0].symbol,
                               direction=direction)
-            return _short(await self.reviewer.call("review_option_order", args))
+            return _short(await self.reviewer.call("review_option_order", args), account=acct)
         except Exception as ex:
-            return {"error": str(ex)[:200]}
+            return {"error": redact_account(str(ex), acct)[:200]}

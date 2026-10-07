@@ -16,7 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"           # the Mac runs 3.12
           cache: pip
-      - run: pip install -r requirements.txt
-      - run: python -m pytest -q tests
+          cache-dependency-path: requirements.lock
+      # requirements.lock pins every package (uv pip compile requirements.txt -o requirements.lock --python-version 3.12)
+      - run: pip install -r requirements.lock
+      - run: python -m pytest -q tests research/tests
