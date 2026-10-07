@@ -605,7 +605,7 @@ class Engine:
         self.closed.append(pos)
         net = pos.realized - pos.fees
         self.risk.on_trade_closed(net, now)
-        self.journal.record_trade(str(self.day), self.mode, pos)
+        await self._record_trade(pos, now)
         self.bus.emit("trade_closed", now, pos=pos.to_dict(), net=round(net, 2), risk=self.risk.to_dict())
         if net >= 0:
             self.set_agent(now, "celebrating", f"Closed {pos.contract.label} +${net:.0f} ({reason})")
@@ -614,7 +614,21 @@ class Engine:
         if self.crew:
             await self.crew.on_trade_closed(pos, net, now)
 
-    # ------------------------------------------------------------------ crew proposals
+    async def _record_trade(self, pos: Position, now: float) -> None:
+        """Journal a closed trade, retrying once (the recorder writes the same SQLite file). The position is already
+        closed and booked, so a failure is logged with the whole trade and never raised into the error streak."""
+        for attempt in (1, 2):
+            try:
+                self.journal.record_trade(str(self.day), self.mode, pos)
+                return
+            except Exception as ex:
+                if attempt == 1:
+                    log.warning("journal write for %s failed (%s); retrying once", pos.contract.label, ex)
+                    await asyncio.sleep(0.5)
+                    continue
+                log.error("trade not journaled after a retry (%s): %s", ex, pos.to_dict())
+                self.bus.emit("log", now, level="error",
+                              msg=f"trade {pos.contract.label} not journaled ({ex}); the day log has the full trade")
     def apply_tweak(self, item: dict, now: float) -> None:
         from .proposals import get_path, set_path, write_override
         import copy as _copy

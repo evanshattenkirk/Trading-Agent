@@ -87,6 +87,8 @@ class CallMeter:
 
     def __init__(self, db_path: Path | str, tag: str = "recorder"):
         self.db = sqlite3.connect(str(db_path), timeout=30, check_same_thread=False)
+        from .journal import use_wal
+        use_wal(self.db)                # same file as the engine's journal: WAL on every writer
         self.db.execute(RH_CALLS)
         self.db.commit()
         self.tag = tag
