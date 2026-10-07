@@ -145,13 +145,17 @@ def test_a_fresh_install_builds_tests_and_links_a_release(box):
 
 
 def test_the_release_carries_the_docs_a_test_may_read(box):
-    """The suite runs inside the release, so a test that opens README.md or docs/ must find them there too."""
+    """The suite runs inside the release, so a test that opens README.md, docs/ or the CI workflow
+    (tests/test_deps_and_ci.py) must find them there too."""
     (box["repo"] / "README.md").write_text("readme\n")
     (box["repo"] / "docs" / "superpowers").mkdir(parents=True)
     (box["repo"] / "docs" / "superpowers" / "spec.md").write_text("spec\n")
+    (box["repo"] / ".github" / "workflows").mkdir(parents=True)
+    (box["repo"] / ".github" / "workflows" / "tests.yml").write_text("name: tests\n")
     assert install(box).returncode == 0
     src = (box["app"] / "current").resolve() / "src"
     assert (src / "README.md").is_file() and (src / "docs" / "superpowers" / "spec.md").is_file()
+    assert (src / ".github" / "workflows" / "tests.yml").is_file()
     assert not (src / "research" / "data").exists()                       # caches stay in the checkout
 
 

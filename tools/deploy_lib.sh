@@ -12,7 +12,7 @@
 
 PORT=8765
 DEPLOY_PATHS="agentdesk reporting research tests tools config.yaml requirements.txt"
-OPTIONAL_PATHS="requirements.lock pyproject.toml docs README.md CLAUDE.md HANDOFF.md"   # docs: a test may read them
+OPTIONAL_PATHS="requirements.lock pyproject.toml docs README.md CLAUDE.md HANDOFF.md .github"   # a test may read them
 STATE_FILES=".env overrides.yaml"      # machine state that lives in the deployed tree, carried to each new release
 REL=""
 REL_LIVE=""
