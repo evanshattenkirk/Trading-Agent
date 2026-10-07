@@ -9,8 +9,9 @@ Modes
             On feed iex the "144t" bars use tick_bar_size_iex prints, exactly as the live engine does.
 
 Option prices
-  model      Black-Scholes on the replayed spot with a 0DTE skew (--iv). Directionally useful,
-             but real 0DTE IV moves intraday; treat P&L as an estimate.
+  model      Black-Scholes on the replayed spot with a 0DTE skew. --iv is a VIX-style level (0.16 = VIX 16),
+             priced on the trading-day clock of HANDOFF section 7 (0.80 x VIX/sqrt(252) x sqrt(RTH share
+             left + 15/390)). Directionally useful, but real 0DTE IV moves intraday; treat P&L as an estimate.
   alpaca     real 1m option bars from Alpaca (needs options data on your plan).
   (Robinhood's get_option_historicals returned only gap-filled bars for past 0DTE contracts when
   tested on 2026-09-25, so it is not offered here. `--source robinhood` does pull real SPY 1m bars.)
@@ -35,7 +36,7 @@ from .config import set_tick_bar_for_feed
 from .engine import Engine
 from .feeds.base import Feed, Heartbeat, Quote, QuoteSource
 from .journal import Journal
-from .pricing import quote_from_model, tick_spread
+from .pricing import quote_from_model, tick_spread, trading_clock_t_sec
 
 
 class ReplayFeed(Feed):
@@ -72,13 +73,22 @@ class ReplayFeed(Feed):
 
 
 class ModelQuotes(QuoteSource):
+    """Black-Scholes 0DTE quotes on the replayed spot, with the simulator's skew.
+    clock="trading" (default): `iv` is a VIX-style annual vol (prior VIX close / 100) and the time left counts on the
+    trading-day clock of HANDOFF section 7, as the B/D research does (pricing.trading_clock_t_sec).
+    clock="calendar": time left / 365 days, the convention before 2026-10-07. It priced 0DTE calls at about half of
+    real (the "cheap-option model"); kept only so committed research (book_a_variants.py) reproduces."""
     name = "model"
 
-    def __init__(self, feed: ReplayFeed, iv: float):
-        self.feed, self.iv = feed, iv
+    def __init__(self, feed: ReplayFeed, iv: float, clock: str = "trading"):
+        if clock not in ("trading", "calendar"):
+            raise ValueError(f"clock must be 'trading' or 'calendar', not {clock!r}")
+        self.feed, self.iv, self.clock = feed, iv, clock
 
     async def quote(self, c) -> Quote | None:
         t_left = max(0.0, at_ct(self.feed.day, time(15, 15)) - self.feed.t)
+        if self.clock == "trading":
+            t_left = trading_clock_t_sec(t_left)
         bid, ask = quote_from_model(self.feed.px, c.strike, t_left, self.iv, c.right)
         return Quote(bid, ask, self.feed.t)
 

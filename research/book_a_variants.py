@@ -7,8 +7,12 @@ Each variant replays the same sessions through the unchanged live Engine (agentd
 Data (research/fetch_data.sh, then research/load_oanda.py):
   S&P 500 CFD 1-minute bars 2005-01 .. 2020-05 (data/spx_rth_1m.pkl). Each session and its warm-up history are
   re-based so the prior close = 765 (SPY today), so $1 strikes mean what they mean now.
-  VIX daily closes (data/vix.csv). Option IV for a session = prior VIX close x 0.80 (remaining-RTH scale, as in
-  HANDOFF section 7), fed to the backtest's Black-Scholes model with its 0DTE skew. Only information known at entry.
+  VIX daily closes (data/vix.csv). Option IV for a session = prior VIX close x 0.80, fed to the backtest's
+  Black-Scholes model with its 0DTE skew. Only information known at entry.
+  NOTE (2026-10-07): that IV is used on the calendar clock (time left / 365 days), not HANDOFF section 7's
+  trading-day clock, so 0DTE calls price at about half of real (ATM $1.10 vs $2.51 at S=765, VIX 16, 09:30 ET):
+  the "cheap-option model". backtest.ModelQuotes now defaults to the trading clock; this script pins
+  clock="calendar" so the committed tables reproduce. See book_a_variants.md.
 
 Fills (two runs per variant):
   mid1   buys at mid + 1c (never above the ask), sells at mid - 1c (never below the bid)
@@ -178,6 +182,8 @@ def load_sessions():
 def prior_vix(vix_close, vdays, day: date) -> float | None:
     import bisect
     i = bisect.bisect_left(vdays, day) - 1
+    if i >= 0 and (day - vdays[i]).days > 5:     # warn only: the committed tables must reproduce (see README)
+        print(f"warning: prior VIX close for {day} is from {vdays[i]}, {(day - vdays[i]).days} days old", flush=True)
     return vix_close[vdays[i]] if i >= 0 else None
 
 
@@ -190,7 +196,7 @@ def bars_of(sess, k: float) -> list[Bar]:
 # ---------------------------------------------------------------- one session
 async def run_session(cfg, day: date, hist: list[Bar], bars: list[Bar], iv: float, fill: str) -> list:
     feed = ReplayFeed(day, hist, bars)
-    quotes = ModelQuotes(feed, iv)
+    quotes = ModelQuotes(feed, iv, clock="calendar")     # the committed tables' (cheap-option) clock; see the docstring
     eng = MirrorEngine(cfg, feed, quotes, FillBroker(quotes, fill), Bus(), Journal(None), "backtest")
     await eng.run()
     for pos, plan in list(eng.open):            # anything left is marked at the bid

@@ -8,7 +8,9 @@ import time
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -95,11 +97,11 @@ def test_other_hosts_refused(tmp_path):
 
 def test_no_websocket(tmp_path):
     c = client(saved(tmp_path))
-    try:
+    accepted = False
+    with pytest.raises(WebSocketDisconnect):    # the handshake is refused (or, if accepted, the close at exit)
         with c.websocket_connect("/ws", headers={"origin": BASE}):
-            assert False, "review server must not accept a websocket"
-    except Exception:
-        pass
+            accepted = True
+    assert not accepted, "review server must not accept a websocket"
 
 
 # ------------------------------------------------------------------ supervisor

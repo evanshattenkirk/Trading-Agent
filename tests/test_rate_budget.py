@@ -187,9 +187,26 @@ def test_fetch_quotes_reuses_fresh_quotes_instead_of_asking_again():
     for l in FLY:
         q.set(l.right, l.strike, 1.0, 1.02)
     cs = contracts(FLY)
-    run(fetch_quotes(q, cs))
-    again = run(fetch_quotes(q, cs))
+    t = [1000.0]
+    clock = lambda: t[0]                                                # noqa: E731 - frozen, so a slow runner can't age the cache
+    run(fetch_quotes(q, cs, clock=clock))
+    t[0] += 0.4                                                         # inside max_age (0.5 s)
+    again = run(fetch_quotes(q, cs, clock=clock))
     assert len(q.batches) == 1 and all(x is not None and x.ask == 1.02 for x in again)
+
+
+def test_fetch_quotes_asks_again_once_the_cached_quotes_are_older_than_max_age():
+    from books_fakes import contracts
+    q = RHQuotes(ct_ts(9, 0))
+    for l in FLY:
+        q.set(l.right, l.strike, 1.0, 1.02)
+    cs = contracts(FLY)
+    t = [1000.0]
+    clock = lambda: t[0]                                                # noqa: E731
+    run(fetch_quotes(q, cs, clock=clock))
+    t[0] += 0.6                                                         # past max_age
+    run(fetch_quotes(q, cs, clock=clock))
+    assert len(q.batches) == 2
 
 
 class Opener(Strategy):

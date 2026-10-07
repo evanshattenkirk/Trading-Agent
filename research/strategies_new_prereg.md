@@ -25,7 +25,7 @@ These are proposals for *additional* paper books (F, G, ...). Nothing here chang
 - Stats per trade as % of max risk (credit structures) or % of debit (calendar); by period and by year;
   $ per 1 lot; max drawdown of the 1-lot equity curve; daily-P&L correlation with book D (unfiltered).
 - Capacity in the $10k paper account: `lots = floor($300 / max loss per lot)` (HANDOFF section 11, $10k row),
-  inside the $1,500 account open-risk cap.
+  inside the account open-risk cap ($1,500 when this was frozen; $2,500 since Evan raised it on 2026-09-29).
 
 Bar index k: 5m bar k closes at 09:35 + 5k ET. k=5 is 10:00, k=47 is 13:30, k=70 is 15:25 ET.
 

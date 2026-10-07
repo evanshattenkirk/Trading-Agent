@@ -81,8 +81,11 @@ def test_event_log_appends_across_restarts(tmp_path):
 def test_event_log_never_raises_into_the_bus(tmp_path):
     (tmp_path / "2026-09-29.events.jsonl").mkdir()          # can't open a directory for writing
     bus = Bus()
+    seen = []
     bus.taps.append(EventLog(tmp_path))
+    bus.taps.append(seen.append)                            # a good tap after the broken one
     bus.emit("log", ts("2026-09-29"), msg="still fine")     # must not raise
+    assert [m["msg"] for m in seen] == ["still fine"]
 
 
 def test_bus_tap_errors_never_reach_the_engine():
@@ -90,8 +93,11 @@ def test_bus_tap_errors_never_reach_the_engine():
 
     def bad(msg):
         raise ValueError("tap broke")
+    seen = []
     bus.taps.append(bad)
+    bus.taps.append(seen.append)
     bus.emit("log", 1.0, msg="x")
+    assert [m["msg"] for m in seen] == ["x"]
 
 
 def test_feed_events_cover_what_the_activity_tab_shows():

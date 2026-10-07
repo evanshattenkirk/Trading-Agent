@@ -4,6 +4,13 @@ Thread "Improve book A strategy" (Evan, 2026-10-02: "see how we could improve A'
 trades and make money"; he approved this list the same day). Script: `research/book_a_variants.py`. Nothing here
 changes book A's live rules or `config.yaml`; a variant that passes is a proposal for Evan.
 
+Results: `book_a_variants.md`. **Note added 2026-10-07, after the run (the rules below are unchanged):** the
+"Option prices" rule in section 2 says HANDOFF section 7's remaining-RTH scale, but the script fed prior VIX × 0.80 to
+the backtest model on a calendar clock (time left ÷ 365 days), which prices 0DTE calls at about half of real (ATM
+$1.10 vs $2.51 at S = 765, VIX 16, 09:30 ET). The 2005-2020 tables are therefore labelled "cheap-option model". The
+real-quote holdout (section 5, ThetaData quotes) is unaffected. See the pricing note at the top of
+`book_a_variants.md`.
+
 ## 1. Why these variants
 
 The 60-session SIP replay (`research/iex_vs_sip_out_60d_clean`, model option prices) shows book A takes about 5.6

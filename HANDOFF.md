@@ -62,7 +62,7 @@ This is the complete record of what was built, verified, tested and decided in t
 | SPY trade stream → 144t/1m/5m/15m bars, VWAP | Alpaca Basic, **IEX** websocket (free) | 1 connection, 30 symbols, 200 REST calls/min. IEX carries about **3.7% of SPY prints** (measured; see the note below), so the engine builds the "144t" series from **5 IEX prints** (`strategy.tick_bar_size_iex`), roughly equivalent in time. That's an approximation; time bars are unaffected |
 | SPY 1m history for warm-up and backtests | Alpaca (SIP history older than 15 min is free) or `--source robinhood` | Robinhood history needs no data key |
 | Option quotes (all books) | Robinhood `get_option_quotes` | Real NBBO-like bid/ask plus IV and greeks. Alpaca's free option feed is indicative only; don't use it for fills |
-| Level 2 | Robinhood `get_equity_price_book` | Polled every second, observe mode |
+| Level 2 | Robinhood `get_equity_price_book` | Polled every 3 s (`l2.poll_ms: 3000`; was every second), observe mode |
 | Earnings calendar, IV (book E) | Robinhood `get_earnings_calendar`, `get_option_quotes` | Record daily IV to build history |
 | Research crew | Anthropic API (`ANTHROPIC_API_KEY`) with web search | Offline templated fallback without a key |
 
@@ -233,8 +233,11 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
 
 **Size:** `min(5, floor($500/ask))`.
 
+**Fees:** $0.04 per contract per side ($0.02 OCC + $0.02 ORF, section 2), the same as the other books (`sizing.fee_per_contract`, $0.03 until 2026-10-07).
+
 **Exits** (on premium mid):
 - −20% hard stop (paper runs −35% since 2026-10-03, Evan's choice after the real-quote holdout; `research/book_a_variants.md` 4b).
+- Scale-outs are fractions of the starting size, with a half rounding up and one contract always kept as the runner (2026-10-07): 5 contracts sell 3 at the first target and 1 at the second, 3 sell 2, 2 sell 1, and 1 contract doesn't scale.
 - SWING: sell 50% at +25% and 25% at +50%; stop to breakeven; runner trails 25% off its peak; a 1m cross back sells everything before any scale. After a scale, the runner goes on the 1m cross back, unless "ripping" (5m histogram rising and price above VWAP), in which case it waits for the 5m cross back. 20-minute time stop at under +10%.
 - SCALP: sell 50% at +15%; trail 15%; exit on the 144t cross back; 6-minute time stop at under +5%.
 - Flatten at 14:40 CT, 5 minutes before sellout, before high-impact events, or on the kill switch.
@@ -269,7 +272,7 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
 
 **Read:** the entire edge is the variance risk premium, meaning how rich real 0DTE premium is versus the move that follows. At IV 0.60 (little premium) it disappears.
 - Vilkov's real-quote study (SPX 0DTE, 2016–2026, net of half-spreads + 0.5 bp) puts the short straddle/strangle at only **about +1.2 bp/day net**. Treat the table above as an upper bound.
-  - **Correction (2026-09-28):** Vilkov's repo corrected its cost model in August 2026 (`KNOWN-ISSUES.md`; the half-spread had been charged at 1/100 of its true size). After the fix, a short iron fly/condor entered at 10:00 ET and held to settlement has Sharpe **−0.56 at mid** and **−2.67 net** on SPXW. The +1.2 bp/day figure above is out of date. SPY 0DTE quotes are about 1¢ wide (~0.13 bp of spot) versus ~1.7 bp for SPXW, so the cost drag doesn't transfer directly. The negative result at mid does carry over as a warning, though B uses take-profits, stops and early closes. The real-quote check (section 10, step 7a) decides B; see `research/historical-option-data.md` in the project files.
+  - **Correction (2026-09-28):** Vilkov's repo corrected its cost model in August 2026 (`KNOWN-ISSUES.md`; the half-spread had been charged at 1/100 of its true size). After the fix, a short iron fly/condor entered at 10:00 ET and held to settlement has Sharpe **−0.56 at mid** and **−2.67 net** on SPXW. The +1.2 bp/day figure above is out of date. SPY 0DTE quotes are about 1¢ wide (~0.13 bp of spot) versus ~1.7 bp for SPXW, so the cost drag doesn't transfer directly. The negative result at mid does carry over as a warning, though B uses take-profits, stops and early closes. The real-quote check (section 10, step 7a) decides B; see `historical-option-data.md` in the claude.ai project files (`/mnt/project-files/research/`; it isn't in this repo).
 - **The go/no-go number:** the real opening ATM straddle cost vs the realized move afterwards, computed from `option_quotes` after 4+ weeks of paper.
 
 ### C. ChatGPT's bullish 30-min ORB → $2 bull-put credit spread (paper book C, as requested)
@@ -283,7 +286,7 @@ The nearest level below the chosen strike (PDH/L/C, opening range, HOD/LOD, VWAP
   - green candle
   - volume at least 0.8× the rolling 20-bar median
   - at most 2 trades a day
-- **Structure:** short put ≈ 1 strike below spot, long put 2 lower; size from max loss (`floor(budget / maxLoss)`, budget $400).
+- **Structure:** short put ≈ 1 strike below spot, long put 2 lower; size from max loss, `floor(min($400 budget, $300 per-position cap) / maxLoss)`, so the lower limit wins (`books/account.py` `size`).
 - **Exits** (on the underlying, first one wins): −0.18%, +0.45%, 5m MACD cross below signal, 45 minutes, and 15:15 ET at the latest.
 
 **15-year backtest** (the ChatGPT doc had 60 sessions and 24 trades):
@@ -307,17 +310,20 @@ Every expression lost in every period, including the $2 call debit spread and 1-
 
 **Rules:**
 - **Entry** at 09:00 CT (10:00 ET): short call and put at ±0.9× the remaining-session expected move from VIX, wings $2 beyond. One 4-leg credit order.
-- **Quiet filter (on by default):** the first-hour range is below its trailing 14-day median, and price is within 0.12% of VWAP at entry.
+- **Quiet filter (on by default), as built:** the 08:30–09:00 CT range (9:30–10:00 ET, known at entry) is below its trailing 14-day median of the same window, and price is within 0.12% of VWAP at entry.
+  - *As first written and backtested (look-ahead):* the first-hour range, 9:30–10:30 ET, which ends 30 minutes after the 10:00 ET entry, so it can't be traded. The quiet columns in the table below use this version.
 - **Exits:** take profit at 50% of credit; stop when the closing debit reaches 2× the credit; close 14:25 CT.
 - **Size:** 1 lot, about $150 risk and about $45 credit.
 
-**Backtest:**
+**Backtest** (the quiet columns are the look-ahead 9:30–10:30 ET filter; the built filter's numbers follow the table):
 
-| Period | No filter (1¢, IV 0.80) | Quiet filter (1¢, IV 0.80) | Quiet at 2¢ taker | Quiet at IV 0.60 |
+| Period | No filter (1¢, IV 0.80) | Quiet filter, look-ahead (1¢, IV 0.80) | Look-ahead quiet at 2¢ taker | Look-ahead quiet at IV 0.60 |
 |---|---|---|---|---|
 | 2005–14 | +4.7%, PF 1.57, t +9.2 | +8.4%, PF 2.58, t +12.1 (n=769) | +4.0%, PF 1.58 | +0.2%, PF 1.02 |
 | 2015–20 | +3.1%, PF 1.34, t +3.7 | +7.3%, PF 2.29, t +7.2 (n=342) | +3.5%, PF 1.50 | −1.0%, PF 0.90 |
 | 2025–26 | +8.5%, PF 2.59, t +6.7 | +12.6%, PF 6.91, t +9.0 (n=91) | +10.1%, PF 5.12 | +5.9%, PF 2.13 |
+
+**The built filter** (08:30–09:00 CT range vs its 14-day median, plus price within 0.12% of VWAP; `research/d_quiet_check.py`), per trade on risk for 2005–14 / 2015–20 / 2025–26: +7.5% / +5.7% / +12.0% at 1¢ and IV 0.80, +3.3% / +1.5% / +9.0% at 2¢ taker fills, and 0.0% / −3.7% / +4.1% at IV 0.60. These are the numbers to quote for book D; they predate the 2026-10-07 research data fixes (`research/README.md`).
 
 Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about +$5 to +$19 per lot per trade.
 - **It carries the same caveat as B:** it's variance-premium dependent. The quiet filter was also taken from the ChatGPT doc's condor idea, so it isn't an independent out-of-sample discovery.
@@ -347,7 +353,7 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 - **Both:**
   - **Never hold through the announcement.**
   - Skip if VIX > 30, or if the earnings-expiry IV is already above its recorded 80th percentile, once history exists.
-  - Max debit $250 per position; max 3 open; at most one per sector.
+  - Max debit per position $500 for E1 and $250 for E2 (`books.E_earnings_iv.max_debit`, `max_debit_e2`; this said $250 for both when written); max 3 open; at most one per sector.
 - **Data:** record daily ATM IV (front, earnings expiry and ~30-day) for the universe from `get_option_quotes`. For a real backtest, buy **ThetaData** ($40–80/mo, US equity options NBBO history) or Databento, and replay 2018–2026.
 
 **Promotion gate:** at least 100 events, mean > 0 after taker costs, t > 2, and no single month more than 40% of P&L.
@@ -356,7 +362,7 @@ Worst day: about −$90 to −$135 per lot. Averages are small in dollars: about
 
 ## 8. Research summary
 
-**11 published intraday strategies** (pre-registered; significance bar adjusted for multiple tests, |t| > 2.86):
+**11 published intraday strategies** (pre-registered; significance bar adjusted for multiple tests: |t| > 2.86 in 2005–14, and |t| > 1.96 with the same sign in 2015–20):
 
 | Strategy | t 2005–14 | t 2015–20 | t 2025–26 |
 |---|---|---|---|
@@ -378,6 +384,29 @@ The directional edges decayed after publication. The only effect that is modeled
     The conditional put ratio (0.93) is now −0.75, and the top-3 basket (0.82) is now −0.82. So "no 0DTE strategy survives costs" now holds for SPXW. For SPY, whose spreads are about 10× tighter, it is open until the real-quote replay. This strengthens the case for the real-quote checks in section 10, step 7, before any promotion.
 - Beckmeyer, Branger & Gayda: retail 0DTE traders lost about $241k/day on average. Multi-leg, premium-collecting trades did better than single-leg debits.
 - Low-turnover references on S&P 2005–2020 (price only): buy and hold Sharpe 0.44 (max DD −57%); 200-day trend 0.45 (−22%); VIX-scaled exposure 0.63 (needs leverage).
+
+**House pass bar (2026-10-07).** New studies use this bar unless their pre-registration says why not, before any result:
+1. In-sample mean P&L > 0 at patient fills (mid ∓ 1¢ per leg).
+2. Out-of-sample (or holdout) mean daily P&L t ≥ 2.33 at patient fills: one-sided p ≈ 0.01, which is 0.05 split over up to five candidates. With more candidates in one file, use 0.05 / k one-sided.
+3. Out-of-sample mean P&L > 0 at taker fills.
+4. The in-sample period must be one in which the trade could actually be placed (expiries listed, data known at entry). A modeled pass still needs a real-quote replay before paper promotion.
+
+Studies already run keep the bar they froze; changing a frozen bar after seeing results would be fitting. What each used:
+
+| Study | Bar |
+|---|---|
+| `research.py`, 11 intraday strategies (2026-09-27) | \|t\| > 2.86 in-sample (Bonferroni) and \|t\| > 1.96 out-of-sample, same sign |
+| `strategies_bcd.py`, books B, C, D (2026-09-27) | no common frozen bar: sign and t in every period, at both cost levels and IV 0.60; C also against its brief's kill rule (PF below 1.1 at natural fills) |
+| `strategies_new.py`, F1–F4 (book G is F3) | in-sample t > 2.86 at mid − 1¢, mean > 0 at natural fills out-of-sample, premium-scale break-even ≤ 0.85, 1 lot under $300. No out-of-sample significance, and the in-sample period predated the expiries F3 needs, which is how F3 passed; its real-quote replay failed (2026-10-06) |
+| `book_a_variants.py` (2026-10-02), `book_h_candidates.py` stage 1, `vix_carry.py` | the house bar (1–3) |
+| `book_a_holdout.py` round 2 | t ≥ 2.33 at mid ± 1¢ and mean > 0 at taker, on real quotes |
+| Book H holdout (stage-1 survivors only) | t ≥ 1.65 at mid ∓ 1¢ and mean > 0 at taker |
+| Book F replication, F1 v2, `f2c_drift.py` | PF ≥ 1.1, day-clustered t > 2, mean > 0 in both halves |
+| Book F2 (`strategy_f2_prereg.md` section 5) | per setup: PF ≥ 1.1 at taker, day-clustered t > 2, at least 20 paper sessions and 100 trades, and a positive mean in both halves of the real-quote backtest |
+| X1 and the `strategies_equity_prereg.md` drafts | at taker: PF ≥ 1.1, mean > 0 in both halves, clustered t > 2.50 (Bonferroni over X1–X4) |
+| Book E promotion (section 7E) | at least 100 events, mean > 0 after taker costs, t > 2, no month above 40% of P&L |
+
+Section 10's paper promotion minimums are separate and apply on top of whichever bar a book's research used.
 
 ---
 
