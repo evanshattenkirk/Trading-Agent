@@ -21,9 +21,11 @@ def test_review_plist_runs_the_review_command_from_the_pinned_deploy():
 
 def test_install_paper_installs_review_and_verifies_both_jobs_loaded():
     s = (TOOLS / "install_paper.sh").read_text()
-    assert subprocess.run(["bash", "-n", str(TOOLS / "install_paper.sh")]).returncode == 0
+    lib = (TOOLS / "deploy_lib.sh").read_text()                   # load_job is shared with install_recorder.sh
+    for f in ("install_paper.sh", "install_recorder.sh", "deploy_lib.sh", "claims.sh"):
+        assert subprocess.run(["bash", "-n", str(TOOLS / f)]).returncode == 0, f
     assert "com.agentdesk.review" in s and "mkdir -p" in s and ".agentdesk/review" in s
-    assert re.search(r"launchctl print", s)                       # load is verified, not assumed
+    assert 'deploy_lib.sh"' in s and re.search(r"launchctl print", lib)   # load is verified, not assumed
     assert re.search(r"load_job .*paper", s) and re.search(r"load_job .*REVIEW", s)
 
 
