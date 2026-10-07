@@ -246,6 +246,20 @@ def test_quotes_never_return_an_old_cached_quote_as_current():                  
     assert asyncio.run(ch.quotes([c])) == [None]
 
 
+def test_quote_honours_the_same_max_age_as_quotes():                              # review 2026-10-06 M5
+    """PaperBroker fills E's and F2's orders from quote(): after an outage it must not fill at an old cached price."""
+    from agentdesk.exits import Contract
+    clock = [NOW]
+    rh = FakeRH({"get_option_quotes": {"results": [{"instrument_id": "c1", "bid_price": "1.00", "ask_price": "1.10"}]}})
+    ch = RobinhoodChains(rh, clock=lambda: clock[0])
+    c = Contract("AMD", "2026-10-09", 100.0, "call", "c1")
+    asyncio.run(ch.quotes([c]))
+    clock[0] += ch.QUOTE_MAX_AGE_SEC
+    assert asyncio.run(ch.quote(c)).ask == 1.10
+    clock[0] += 1
+    assert asyncio.run(ch.quote(c)) is None
+
+
 def test_the_in_memory_strike_list_expires_like_the_file(tmp_path):                # 2026-10-01 sweep item 12
     rh = FakeRH({"get_option_instruments": instruments("2026-10-09", [100])})
     t = [NOW]
