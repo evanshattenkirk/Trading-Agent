@@ -144,6 +144,17 @@ def test_a_fresh_install_builds_tests_and_links_a_release(box):
     assert "Not deployed" not in r.stdout
 
 
+def test_the_release_carries_the_docs_a_test_may_read(box):
+    """The suite runs inside the release, so a test that opens README.md or docs/ must find them there too."""
+    (box["repo"] / "README.md").write_text("readme\n")
+    (box["repo"] / "docs" / "superpowers").mkdir(parents=True)
+    (box["repo"] / "docs" / "superpowers" / "spec.md").write_text("spec\n")
+    assert install(box).returncode == 0
+    src = (box["app"] / "current").resolve() / "src"
+    assert (src / "README.md").is_file() and (src / "docs" / "superpowers" / "spec.md").is_file()
+    assert not (src / "research" / "data").exists()                       # caches stay in the checkout
+
+
 def test_a_lock_file_installs_with_uv_pip_sync(box):
     (box["repo"] / "requirements.lock").write_text("pyyaml==6.0.2\n")
     assert install(box).returncode == 0
