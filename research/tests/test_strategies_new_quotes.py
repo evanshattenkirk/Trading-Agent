@@ -80,6 +80,7 @@ def _write_day(folder: Path, d: str, spot: float):
 
 
 def test_run_end_to_end_writes_report_and_results(tmp_path):
+    pytest.importorskip("pyarrow")                    # the run writes parquet
     q = tmp_path / "quotes"; q.mkdir()
     _write_day(q, "2025-03-19", 500.0)
     _write_day(q, "2025-03-20", 505.0)
@@ -123,6 +124,7 @@ def test_calendar_stops_when_spot_runs_away_from_the_strike():
 
 
 def test_run_includes_f3_when_next_expiry_quotes_are_given(tmp_path):
+    pytest.importorskip("pyarrow")                    # the run writes parquet
     q = tmp_path / "quotes"; q.mkdir(); nx = tmp_path / "next"; nx.mkdir()
     _write_day(q, "2025-03-19", 500.0)
     _write_day(nx, "2025-03-19", 500.0)

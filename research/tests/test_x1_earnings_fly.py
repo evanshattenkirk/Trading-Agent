@@ -210,6 +210,7 @@ def test_sanity_ratio():
 
 
 def test_run_end_to_end(tmp_path):
+    pytest.importorskip("pyarrow")                    # the run writes parquet
     with open(tmp_path / "earnings.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=E.FIELDS)
         w.writeheader()

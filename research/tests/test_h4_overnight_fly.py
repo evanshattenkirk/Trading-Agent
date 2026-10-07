@@ -136,6 +136,7 @@ def test_stats_of_trades():
 
 
 def test_run_end_to_end(tmp_path):
+    pytest.importorskip("pyarrow")                    # the run writes parquet
     nq, q, out = tmp_path / "spy_next", tmp_path / "spy_0dte", tmp_path / "out"
     nq.mkdir(), q.mkdir()
     for d, e in ((date(2022, 3, 1), date(2022, 3, 2)),          # traded (out-of-sample)
