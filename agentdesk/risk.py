@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,6 +48,7 @@ class RiskState:
     blackouts: list[Blackout] = field(default_factory=list)
     passed_events: list[tuple] = field(default_factory=list)    # (event_ts, name): high-impact events today whose
                                                                 # blackout had ended when a desk heard of them
+    sticky_halt: dict | None = None # the halt a restart keeps (reason, scope, flatten_all), without startup checks
 
 
 class RiskStore:
@@ -67,10 +69,22 @@ class RiskStore:
             raise ValueError("not a JSON object")
         return d if d.get("day") == day else None
 
+    def move_aside(self) -> Path | None:
+        """Rename an unreadable state file to <name>.corrupt-<time>, so saving the halted state can't overwrite it."""
+        aside = self.path.with_name(f"{self.path.name}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}")
+        try:
+            os.replace(self.path, aside)
+            return aside
+        except OSError as ex:
+            log.error("could not move the unreadable risk state %s aside: %s", self.path, ex)
+            return None
+
     def save(self, day: str, st: RiskState) -> None:
         d = {"day": day, **{k: getattr(st, k) for k in self.FIELDS}}
         if st.halted and not st.halt_sticky:      # re-checked at startup; don't carry it over
             d.update(halted=False, halt_reason=None, flatten_all=False, halt_scope="account")
+        elif st.halted and st.sticky_halt:        # a startup check layered on a sticky halt: save the sticky one only
+            d.update(st.sticky_halt)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(d, indent=1))
@@ -103,7 +117,13 @@ class RiskManager:
         try:
             saved = self.store.load(day)
         except Exception as ex:
-            self.halt(f"could not read saved risk state {self.store.path} ({ex}); fix or delete it, then restart")
+            aside = self.store.move_aside()
+            if aside is None:                    # it can't be moved: keep the halt in memory, never write over it
+                path, self.store = self.store.path, None
+                self.halt(f"could not read saved risk state {path} ({ex}); fix or delete it, then restart")
+            else:
+                self.halt(f"could not read saved risk state ({ex}); moved it to {aside}. Today's P&L and counts start "
+                          f"from zero: check that file, then restart with --clear-halt")
             return self.st.halt_reason
         if not saved:
             self._save()
@@ -115,12 +135,14 @@ class RiskManager:
         st.size_mult = min(1.0, float(st.size_mult))       # a saved crew cut can only restrict
         st.book_mults = {str(k): min(1.0, float(v)) for k, v in (st.book_mults or {}).items()}
         st.halt_sticky = True
+        st.sticky_halt = {k: getattr(st, k) for k in ("halt_reason", "halt_scope", "flatten_all")} if st.halted else None
         note = (f"Restored today's risk state: day P&L {st.day_pnl:+.2f}, {st.trades} trades"
                 + (f", cooldown until {hm(st.cooldown_until)}" if st.cooldown_until else "")
                 + (f", halted: {st.halt_reason}" if st.halted else ""))
         if st.halted and self.clear_halt_on_restore:
             note += " (halt cleared by --clear-halt)"
             st.halted, st.halt_reason, st.flatten_all, st.halt_scope = False, None, False, "account"
+            st.sticky_halt = None
         self._save()
         return note
 
@@ -245,6 +267,10 @@ class RiskManager:
         st.halt_scope = scope if not st.halted else ("account" if "account" in (st.halt_scope, scope) else "A")
         st.halted, st.halt_reason = True, reason
         st.flatten_all = st.flatten_all or flatten
+        if sticky:                              # what a restart restores: sticky halts only, never a startup check
+            prev = st.sticky_halt or {}
+            st.sticky_halt = {"halt_reason": reason, "flatten_all": bool(prev.get("flatten_all")) or flatten,
+                              "halt_scope": "account" if "account" in (prev.get("halt_scope"), scope) else "A"}
         self._save()
 
     def account_flatten(self) -> bool:
