@@ -844,7 +844,8 @@ class Crew:
             return None
         self.note_usage(msg, key, model)
         text = "".join(getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text")
-        b = _extract_json(text)
+        cut = getattr(msg, "stop_reason", None) == "max_tokens"      # a cut-off reply is no brief, even if part parses
+        b = None if cut else _extract_json(text)
         if b is None:
             why = f"stop_reason={getattr(msg, 'stop_reason', None)}, {len(text)} chars of text"
             log.warning("crew %s: no JSON brief in the reply (%s); using the offline read", key, why)
@@ -1104,9 +1105,14 @@ def _good_event(ev) -> bool:
 
 def _extract_json(text: str, key: str = "headline") -> dict | None:
     """The largest JSON object in the reply that has `key`. Macro's brief nests "fed" and "rates" objects that
-    carry their own "headline", so the first or last match can be a nested one; the outermost is the brief."""
+    carry their own "headline", so the first or last match can be a nested one; the outermost is the brief. When a
+    top-level object doesn't parse (the reply was cut off inside it), nothing nested inside it counts: a complete
+    "fed" sub-brief must never stand in for a truncated Macro brief."""
     dec, best = json.JSONDecoder(), None
+    broken = [(a, z) for a, z in _top_level_spans(text) if not _decodes(dec, text, a)]
     for m in re.finditer(r"\{", text):
+        if any(a < m.start() < z for a, z in broken):
+            continue
         try:
             obj, end = dec.raw_decode(text, m.start())
         except json.JSONDecodeError:
@@ -1114,3 +1120,40 @@ def _extract_json(text: str, key: str = "headline") -> dict | None:
         if isinstance(obj, dict) and key in obj and (best is None or end - m.start() > best[0]):
             best = (end - m.start(), obj)
     return best[1] if best else None
+
+
+def _decodes(dec, text: str, at: int) -> bool:
+    try:
+        dec.raw_decode(text, at)
+        return True
+    except json.JSONDecodeError:
+        return False
+
+
+def _top_level_spans(text: str) -> list[tuple[int, int]]:
+    """(start, end) of each brace-balanced top-level {...} in the text, strings inside braces skipped; an object
+    that never closes runs to the end of the text."""
+    spans, depth, start, in_str, esc = [], 0, 0, False, False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"' and depth:
+            in_str = True
+        elif ch == "{":
+            if not depth:
+                if text[i + 1:i + 40].lstrip()[:1] not in ('"', "}"):
+                    continue                        # a brace in prose ("{today}"), not the start of a JSON object
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if not depth:
+                spans.append((start, i + 1))
+    if depth:
+        spans.append((start, len(text)))
+    return spans
