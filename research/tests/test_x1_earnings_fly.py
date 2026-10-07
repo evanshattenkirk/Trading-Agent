@@ -49,27 +49,42 @@ def test_classify_sessions():
     # Tuesday before the open after Monday's holiday (2024-01-15 MLK) -> entry the previous Friday
     c = E.classify(datetime(2024, 1, 16, 7, 0))
     assert c["entry_session"] == date(2024, 1, 12)
-    # during market hours
-    assert E.classify(datetime(2024, 8, 1, 12, 0))["timing"] == "dmh"
+    # filed during market hours (JPM files after its 08:30 call): the release came before that open, so R is today
+    c = E.classify(datetime(2024, 7, 12, 10, 30))
+    assert (c["timing"], c["report_session"], c["entry_session"]) == ("dmh", date(2024, 7, 12), date(2024, 7, 11))
     # Saturday filing -> Monday report, Friday entry
     c = E.classify(datetime(2024, 8, 3, 9, 0))
     assert (c["timing"], c["report_session"], c["entry_session"]) == ("amc", date(2024, 8, 5), date(2024, 8, 2))
 
 
-def test_space_drops_close_filings_and_flags_during_market():
-    ev = [{"accepted_et": datetime(2024, 1, 25, 16, 30), "timing": "amc"},
-          {"accepted_et": datetime(2024, 2, 20, 16, 30), "timing": "amc"},       # 26 days later: dropped
-          {"accepted_et": datetime(2024, 4, 25, 12, 0), "timing": "dmh"},
-          {"accepted_et": datetime(2024, 7, 25, 16, 30), "timing": "amc"}]
+def test_space_keeps_the_last_filing_of_each_45_day_cluster():
+    # TSLA-like: a deliveries 8-K on the 2nd, the results release three weeks later
+    ev = [{"accepted_et": datetime(2024, 1, 2, 8, 0), "timing": "bmo"},
+          {"accepted_et": datetime(2024, 1, 24, 16, 5), "timing": "amc"},
+          {"accepted_et": datetime(2024, 4, 2, 8, 0), "timing": "bmo"},
+          {"accepted_et": datetime(2024, 4, 23, 16, 5), "timing": "amc"},
+          {"accepted_et": datetime(2024, 7, 12, 10, 30), "timing": "dmh"}]
     st = [e["status"] for e in E.space(ev)]
-    assert st[0] == "kept" and st[1].startswith("dropped") and st[2].startswith("skipped") and st[3] == "kept"
+    assert st[0].startswith("dropped: same 45-day cluster as 2024-01-24") and st[1] == "kept"
+    assert st[2].startswith("dropped") and st[3] == "kept" and st[4] == "kept"
+    # the cluster is anchored at its first filing: 40 + 40 days apart are two clusters
+    ev = [{"accepted_et": datetime(2024, 1, 1), "timing": "amc"}, {"accepted_et": datetime(2024, 2, 10), "timing": "amc"},
+          {"accepted_et": datetime(2024, 3, 21), "timing": "amc"}]
+    assert [e["status"] for e in E.space(ev)][1:] == ["kept", "kept"]
+
+
+def test_merge_filings_dedupes_accessions_across_ciks():
+    old = [{"accessionNumber": "a", "form": "8-K"}, {"accessionNumber": "b", "form": "8-K"}]
+    new = [{"accessionNumber": "b", "form": "8-K"}, {"accessionNumber": "c", "form": "8-K"}]
+    assert [r["accessionNumber"] for r in E.merge_filings([new, old])] == ["b", "c", "a"]
+    assert E.EXTRA_CIKS == {"XOM": [34088], "DIS": [1001039]}
 
 
 def test_pick_zone_uses_both_anchors():
     def evs(sym, timing, n=5):
         return [{"symbol": sym, "timing": timing, "status": "kept"} for _ in range(n)]
-    right = evs("AAPL", "amc") + evs("JPM", "bmo")
-    wrong = evs("AAPL", "dmh") + evs("JPM", "bmo")       # ET clocks read as UTC: 16:30 -> 12:30
+    right = evs("AAPL", "amc") + evs("KO", "bmo")
+    wrong = evs("AAPL", "dmh") + evs("KO", "bmo")         # ET clocks read as UTC: 16:30 -> 12:30
     assert E.pick_zone({"utc": wrong, "et": right}) == "et"
     assert E.pick_zone({"utc": wrong, "et": wrong}) is None
 

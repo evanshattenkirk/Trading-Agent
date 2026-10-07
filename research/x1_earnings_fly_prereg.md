@@ -91,3 +91,30 @@ Exit at 09:45 and at 15:45 ET on the exit session; wings at 1.0 × and 2.0 × th
   legs into the close" rule forbids for 0DTE; this needs Evan's explicit OK in the spec. Size and loss limits left to
   Evan.
 - **Fail:** dropped, with the result committed.
+
+## Amendment 1 (2026-10-07, before any option quote or replay result)
+
+The first Mac run fetched only EDGAR filing times. The script then refused to write the date file because its JPM
+time-zone anchor failed. No quote was pulled and no trade was replayed. These changes fix how report dates are read
+from EDGAR. They touch no trading rule (entry, strikes, wings, filters, exit, fills, costs and the pass bar are
+unchanged).
+
+1. **Time-zone anchor:** JPM files its 8-K at about 10:30 ET, after its 07:00 release and 08:30 call, so it can't
+   anchor "before the open". KO, which files at about 07:00 ET, replaces it. The stamps are true UTC (MSFT 16:04,
+   NVDA 16:21, KO 06:58 and WMT 06:59 ET match their known release times).
+2. **8-Ks filed during market hours:** large caps release results before the open or after the close, never during
+   the session. An 8-K accepted between 09:30 and 16:00 ET on session D follows a release made before D's open (JPM,
+   BAC, MA, UNH, PG) or after the prior close. Either way the first session to trade the news is D. So R = D and the
+   entry is the session before D. Section 2's during-market skip is withdrawn. These events are labelled `dmh` in the
+   date file, and their count is reported.
+3. **Clusters of 2.02 filings:** TSLA files its quarterly delivery figures as 8-K Item 2.02 about three weeks before
+   its results. Section 2's spacing rule kept the first filing of each pair, which would trade delivery days instead
+   of earnings. Filings now group into clusters: each cluster starts at a filing and takes every later filing less
+   than 45 days after it. The **last** filing in each cluster is kept, and the dropped ones are listed. This also
+   keeps the actual release when a company pre-announces.
+4. **Company numbers:** SEC's ticker map points XOM at its new holding company (CIK 2115436, one filing) and DIS at
+   the post-2019 company (CIK 1744489). Their earlier filings sit under CIK 34088 (XOM) and CIK 1001039 (DIS), which
+   are now read as well, with duplicates removed.
+
+The date sanity check (section 4) still guards all of this. If event moves are less than 2x normal overnight moves,
+the run is invalid.

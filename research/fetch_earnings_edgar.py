@@ -7,9 +7,10 @@ the cloud sessions).
     SEC_USER_AGENT="Name email@example.com" .venv/bin/python research/fetch_earnings_edgar.py   # if SEC returns 403
 
 SEC asks automated clients for a User-Agent naming a contact; the default names this repo. Output columns: symbol,
-accepted_et, timing (bmo / amc / dmh = during market hours), report_session, entry_session, status (kept, or why
-not). The time zone of EDGAR's acceptanceDateTime is checked against two anchors (AAPL reports after the close, JPM
-before the open); the script refuses to write a file that fails them.
+accepted_et, timing (bmo / amc / dmh = filed during market hours), report_session, entry_session, status (kept, or
+why not). The time zone of EDGAR's acceptanceDateTime is checked against two anchors (AAPL files after the close, KO
+before the open); the script refuses to write a file that fails them. Rules, with amendment 1 (2026-10-07), in
+research/x1_earnings_fly_prereg.md.
 """
 from __future__ import annotations
 
@@ -37,7 +38,9 @@ UA = os.environ.get("SEC_USER_AGENT", "AgentDesk research github.com/evanshatten
 OPEN, CLOSE = dtime(9, 30), dtime(16, 0)
 SPACING_DAYS = 45
 FIRST = date(2017, 10, 1)            # a quarter before the sample, so the 45-day spacing starts clean
-ANCHORS = {"AAPL": "amc", "JPM": "bmo"}
+ANCHORS = {"AAPL": "amc", "KO": "bmo"}           # amendment 1: JPM files its 8-K after its call
+# SEC's ticker map points at the current registrant; older filings sit under the earlier one (amendment 1)
+EXTRA_CIKS = {"XOM": [34088], "DIS": [1001039]}
 FIELDS = ["symbol", "accepted_et", "timing", "report_session", "entry_session", "status"]
 
 
@@ -98,29 +101,32 @@ def prev_session(d: date) -> date:
 
 def classify(acc: datetime) -> dict:
     """Timing and sessions for one acceptance time (naive, Eastern). The report session R is the first session whose
-    09:30 open comes after the acceptance; the entry session is the one before R."""
+    09:30 open comes after the acceptance; an 8-K filed during market hours on session D follows a release made before
+    D's open (or after the prior close), so R = D (amendment 1). The entry session is the one before R."""
     d, t = acc.date(), acc.time()
     if is_session(d) and t < OPEN:
         timing, r = "bmo", d
     elif is_session(d) and t < CLOSE:
-        timing, r = "dmh", next_session(d)
+        timing, r = "dmh", d
     else:
         timing, r = "amc", next_session(d)
     return {"timing": timing, "report_session": r, "entry_session": prev_session(r)}
 
 
 def space(events: list[dict], days: int = SPACING_DAYS) -> list[dict]:
-    """Sorted by acceptance; a filing less than `days` calendar days after the previous kept one is dropped. The
-    rest keep status "kept" unless they're during-market reports."""
-    out, last = [], None
-    for e in sorted(events, key=lambda e: e["accepted_et"]):
-        e = dict(e)
-        if last is not None and (e["accepted_et"] - last).days < days:
-            e["status"] = f"dropped: {days} days after {last.date()}"
-        else:
-            last = e["accepted_et"]
-            e["status"] = "skipped: during market hours" if e["timing"] == "dmh" else "kept"
-        out.append(e)
+    """Sorted by acceptance, filings group into clusters that start at a filing and take every later one less than
+    `days` calendar days after it; the LAST of each cluster is kept (amendment 1: TSLA's quarterly delivery 8-Ks, and
+    any pre-announcement, come before the results release in the same cluster)."""
+    evs = sorted(events, key=lambda e: e["accepted_et"])
+    out, i = [], 0
+    while i < len(evs):
+        j = i
+        while j + 1 < len(evs) and (evs[j + 1]["accepted_et"] - evs[i]["accepted_et"]).days < days:
+            j += 1
+        kept = evs[j]["accepted_et"].date()
+        for k in range(i, j + 1):
+            out.append({**evs[k], "status": "kept" if k == j else f"dropped: same {days}-day cluster as {kept}"})
+        i = j + 1
     return out
 
 
@@ -186,6 +192,18 @@ def all_filings(cik: int) -> list[dict]:
     return rows
 
 
+def merge_filings(lists: list[list[dict]]) -> list[dict]:
+    """Filings from several CIKs of one company, each accession number once."""
+    seen, out = set(), []
+    for rows in lists:
+        for r in rows:
+            key = r.get("accessionNumber") or (r.get("form"), r.get("acceptanceDateTime"))
+            if key not in seen:
+                seen.add(key)
+                out.append(r)
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=OUT)
@@ -197,16 +215,16 @@ def main() -> int:
         raise SystemExit(f"no CIK for {missing}")
     filings = {}
     for s in names:
-        filings[s] = all_filings(ciks[s])
-        print(f"{s}: CIK {ciks[s]}, {len(results_filings(filings[s]))} 8-K 2.02 filings in total")
+        ids = [ciks[s]] + EXTRA_CIKS.get(s, [])
+        filings[s] = merge_filings([all_filings(c) for c in ids])
+        print(f"{s}: CIK {ids}, {len(results_filings(filings[s]))} 8-K 2.02 filings in total")
         time.sleep(0.2)
     by_zone = {z: [e for s in names for e in events_for(s, filings[s], z)] for z in ("utc", "et")}
     for z, ev in by_zone.items():
-        print(f"reading stamps as {z}: AAPL amc {anchor_share(ev, 'AAPL', 'amc')}, "
-              f"JPM bmo {anchor_share(ev, 'JPM', 'bmo')}")
+        print(f"reading stamps as {z}: " + ", ".join(f"{s} {t} {anchor_share(ev, s, t)}" for s, t in ANCHORS.items()))
     zone = pick_zone(by_zone)
     if zone is None:
-        raise SystemExit("neither time-zone reading passes the AAPL/JPM anchors; check EDGAR's acceptanceDateTime")
+        raise SystemExit("neither time-zone reading passes the AAPL/KO anchors; check EDGAR's acceptanceDateTime")
     events = by_zone[zone]
     a.out.parent.mkdir(parents=True, exist_ok=True)
     with open(a.out, "w", newline="") as fh:
@@ -216,8 +234,11 @@ def main() -> int:
     kept = [e for e in events if e["status"] == "kept"]
     print(f"stamps read as {zone}; {len(events)} filings, {len(kept)} kept "
           f"({sum(e['timing'] == 'bmo' for e in kept)} bmo, {sum(e['timing'] == 'amc' for e in kept)} amc), "
-          f"{sum(e['status'].startswith('skipped') for e in events)} during market, "
-          f"{sum(e['status'].startswith('dropped') for e in events)} dropped by spacing -> {a.out}")
+          f"{sum(e['timing'] == 'dmh' for e in kept)} filed during market hours, "
+          f"{sum(e['status'].startswith('dropped') for e in events)} dropped by clustering -> {a.out}")
+    for s in names:
+        mine = [e for e in kept if e["symbol"] == s]
+        print(f"  {s}: {len(mine)} kept ({sum(e['timing'] == 'dmh' for e in mine)} filed during market hours)")
     return 0
 
 
