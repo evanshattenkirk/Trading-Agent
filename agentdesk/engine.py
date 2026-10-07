@@ -49,6 +49,8 @@ class Engine:
         self.crew = None
         self.agent = {"activity": "offline", "text": "", "ts": 0.0}
         self._last_sec = 0
+        self._late_minute = None    # last minute the late-print count was logged (debug), and the day of its info summary
+        self._late_day = None
         self._last_manage = 0.0
         self._last_tick_emit = 0.0
         self._last_pos_emit = 0.0
@@ -112,11 +114,14 @@ class Engine:
 
     def stop(self) -> None:
         self._stopped = True
+        log.info("late prints dropped from time bars: %s", self.late_prints())
 
     async def _warmup(self) -> None:
-        hist = await self.feed.history_1m(self.cfg["data"]["history_days"])
+        now = self.feed.now()
+        hist = [b for b in await self.feed.history_1m(self.cfg["data"]["history_days"])
+                if b.t + 60 <= now]            # a REST bar for the minute still running is partial; live prints build it
         agg = {tf: TimeBarBuilder(tf) for tf in ("5m", "15m")}
-        today = session_date(self.feed.now())
+        today = session_date(now)
         last_day, dh, dl, dc = None, None, None, None
         n_today = 0
         for b in hist:
@@ -133,12 +138,7 @@ class Engine:
                 self.levels.on_1m(b)
                 self.vwap.add((b.h + b.l + b.c) / 3, b.v)
                 for x in closed:
-                    if x.tf == "5m":
-                        self.levels.on_5m(x)
-                    st = self.sig.tf[x.tf]
-                    self.bars[x.tf].append({"tf": x.tf, "t": x.t, "end": x.end, "o": x.o, "h": x.h, "l": x.l, "c": x.c,
-                                            "v": x.v, "macd": st.last.macd if st.last else None,
-                                            "sig": st.last.signal if st.last else None, "rsi": st.rsi_val})
+                    self._warm_bar(x)
                 self.price = b.c
                 continue
             if last_day is not None and d != last_day:
@@ -150,12 +150,46 @@ class Engine:
         if dc is not None:
             self.levels.set_prior_day(dh, dl, dc)
             self.price = self.price or dc
-        for bld in agg.values():               # partial 5m/15m from history must not bleed into live bars
-            bld.cur = None
+        gap = self._continue_today(hist, agg, today, now)
         self.day = today
-        self.bus.emit("log", self.feed.now(), level="info",
+        self.bus.emit("log", self.feed.now(), level="warn" if gap and gap > 120 else "info",
                       msg=f"Warm-up: {len(hist)} 1m bars from {self.feed.name} ({n_today} from today); prior day H/L/C "
-                          f"{dh and round(dh, 2)}/{dl and round(dl, 2)}/{dc and round(dc, 2)}")
+                          f"{dh and round(dh, 2)}/{dl and round(dl, 2)}/{dc and round(dc, 2)}"
+                          + (f"; gap {gap:.0f} s between the history and now (prints in it are missing)"
+                             if gap is not None else ""))
+
+    def _warm_bar(self, x: Bar) -> None:
+        """A closed bar of today's history: levels and the chart (its MACD/RSI are already updated)."""
+        if x.tf == "5m":
+            self.levels.on_5m(x)
+        st = self.sig.tf[x.tf]
+        self.bars[x.tf].append({"tf": x.tf, "t": x.t, "end": x.end, "o": x.o, "h": x.h, "l": x.l, "c": x.c,
+                                "v": x.v, "macd": st.last.macd if st.last else None,
+                                "sig": st.last.signal if st.last else None, "rsi": st.rsi_val})
+
+    def _continue_today(self, hist: list[Bar], agg: dict, today, now: float) -> float | None:
+        """Started mid-session: the live builders carry on from today's history, so a minute the history covers never
+        opens a second 1m bar and the 5m/15m period in progress keeps its first minutes instead of restarting
+        part-way. A period that ended before now is closed here if the history covers all of it, else dropped: a
+        partial period never reaches the MACD/RSI. Returns the gap (s) the history leaves before now."""
+        if not hist or session_date(hist[-1].t) != today:
+            return None                        # pre-market start: yesterday's open 5m/15m period must not bleed in
+        covered = min(getattr(self.feed, "history_end", None) or now, now // 60 * 60)
+        self.tb["1m"].closed_t = hist[-1].t
+        for tf, bld in agg.items():
+            cur = bld.cur
+            if cur is not None and cur.t + bld.sec <= now:
+                x = bld._close()
+                if x.t + bld.sec <= covered:
+                    self.sig.on_bar_close(x)
+                    self._warm_bar(x)
+                else:
+                    log.warning("warm-up: dropped the partial %s bar %s (the history stops at %s)", tf, hm(x.t), hm(covered))
+                cur = None
+            self.tb[tf].closed_t, self.tb[tf].cur = bld.closed_t, cur
+        for bld in self.tb.values():
+            bld.since = covered                # a print from before the history's end is in it already
+        return max(0.0, now - covered)
 
     # ------------------------------------------------------------------ feed handling
     async def on_item(self, item) -> None:
@@ -177,9 +211,9 @@ class Engine:
                 c = self.tb[tf].on_trade(tr)
                 if c:
                     closed.append(c)
-        c = self.tick.on_trade(tr)
-        if c:
-            closed.append(c)
+            c = self.tick.on_trade(tr)              # regular-hours prints only, as the time bars
+            if c:
+                closed.append(c)
         for b in closed:
             await self._on_bar(b)
         if is_rth(now):
@@ -198,6 +232,7 @@ class Engine:
             c = self.tb[tf].flush(now)
             if c:
                 await self._on_bar(c)
+        self._log_late(now)
         if self.crew:
             await self.crew.on_clock(now)
         if self.simbook is not None and self.l2 and self.l2.enabled and is_rth(now) and self.price:
@@ -212,6 +247,23 @@ class Engine:
         if self.books:
             await self.books.run(self.books.on_second(now), self.inline)
         self._watchdog(now)
+
+    def _log_late(self, now: float) -> None:
+        """Prints dropped from the 1m/5m/15m bars because the heartbeat had already closed their bar (feed latency
+        plus clock skew): at debug once a minute, at info once after 15:05 CT and at shutdown."""
+        minute = int(now // 60)
+        if minute == self._late_minute:
+            return
+        self._late_minute = minute
+        late = self.late_prints()
+        if any(late.values()):
+            log.debug("late prints dropped from time bars so far: %s", late)
+        if self._late_day != self.day and ct_time(now) >= time(15, 5):
+            self._late_day = self.day
+            log.info("late prints dropped from time bars today: %s", late)
+
+    def late_prints(self) -> dict:
+        return {tf: b.late for tf, b in self.tb.items()}
 
     def _new_day(self, d, now: float) -> None:
         from .proposals import set_path
@@ -415,6 +467,9 @@ class Engine:
                 self._skip(now, es, "no option quote")
                 return
             if q.spread_pct > self.cfg["strikes"]["max_spread_pct"] and choice.offset > -1:
+                if choice.offset == 0:          # at the money already: a step in would go ITM, not toward ATM (HANDOFF 7A)
+                    self._skip(now, es, f"spread {q.spread_pct:.0%} too wide")
+                    return
                 alt = Contract(self.symbol, expiry, choice.strike - (1 if es.side == "call" else -1), es.side)
                 alt = await self.broker.resolve(alt)
                 q2 = await self.quotes.quote(alt)
@@ -573,6 +628,8 @@ class Engine:
         finally:
             if intent.scale and pos.qty == held:     # nothing sold (no quote, unfilled, another exit busy): retry it
                 pos.scales_done = max(0, pos.scales_done - 1)
+                if intent.stop_before is not None:   # and no breakeven stop for a scale that didn't happen
+                    pos.stop = intent.stop_before
 
     async def _exit(self, pos: Position, plan: ExitPlan, intent: ExitIntent, now: float) -> None:
         q = await self.quotes.quote(pos.contract)
@@ -608,7 +665,7 @@ class Engine:
         self.closed.append(pos)
         net = pos.realized - pos.fees
         self.risk.on_trade_closed(net, now)
-        self.journal.record_trade(str(self.day), self.mode, pos)
+        await self._record_trade(pos, now)
         self.bus.emit("trade_closed", now, pos=pos.to_dict(), net=round(net, 2), risk=self.risk.to_dict())
         if net >= 0:
             self.set_agent(now, "celebrating", f"Closed {pos.contract.label} +${net:.0f} ({reason})")
@@ -616,6 +673,22 @@ class Engine:
             self.set_agent(now, "frustrated", f"Closed {pos.contract.label} -${abs(net):.0f} ({reason})")
         if self.crew:
             await self.crew.on_trade_closed(pos, net, now)
+
+    async def _record_trade(self, pos: Position, now: float) -> None:
+        """Journal a closed trade, retrying once (the recorder writes the same SQLite file). The position is already
+        closed and booked, so a failure is logged with the whole trade and never raised into the error streak."""
+        for attempt in (1, 2):
+            try:
+                self.journal.record_trade(str(self.day), self.mode, pos)
+                return
+            except Exception as ex:
+                if attempt == 1:
+                    log.warning("journal write for %s failed (%s); retrying once", pos.contract.label, ex)
+                    await asyncio.sleep(0.5)
+                    continue
+                log.error("trade not journaled after a retry (%s): %s", ex, pos.to_dict())
+                self.bus.emit("log", now, level="error",
+                              msg=f"trade {pos.contract.label} not journaled ({ex}); the day log has the full trade")
 
     # ------------------------------------------------------------------ crew proposals
     def apply_tweak(self, item: dict, now: float) -> None:

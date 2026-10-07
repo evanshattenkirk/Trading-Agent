@@ -382,6 +382,32 @@ def _ct(ts: float) -> datetime:
     return datetime.fromtimestamp(ts, CT)
 
 
+def _straddle_rows(db, lo: float, hi: float, entry_ct: str, exit_ct: str) -> list:
+    """Only the rows straddle_vs_realized looks at, per recorded day between lo and hi: that day's 0DTE quotes in the
+    5 minutes from entry_ct, and its first 0DTE snapshot at or after exit_ct (indexed reads, not the whole table)."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='option_quotes_expiry_ts'").fetchone():
+        return db.execute("SELECT ts, expiry, strike, right, bid, ask, spot FROM option_quotes WHERE ts BETWEEN ? AND ? "
+                          "ORDER BY ts", (lo, hi)).fetchall()     # a journal the engine hasn't indexed yet: one scan
+    sql = "SELECT ts, expiry, strike, right, bid, ask, spot FROM option_quotes WHERE expiry=? AND ts BETWEEN ? AND ? ORDER BY ts"
+    first, last = db.execute("SELECT MIN(ts), MAX(ts) FROM option_quotes WHERE ts BETWEEN ? AND ?", (lo, hi)).fetchone()
+    rows = []
+    if first is None:
+        return rows
+    d, d_last = _ct(first).date(), _ct(last).date()
+    while d <= d_last:
+        day = d.isoformat()
+        e_at = datetime.fromisoformat(f"{day}T{entry_ct}").replace(tzinfo=CT).timestamp()
+        x_at = datetime.fromisoformat(f"{day}T{exit_ct}").replace(tzinfo=CT).timestamp()
+        day_end = min(hi, datetime.fromisoformat(f"{d + timedelta(days=1)}T00:00").replace(tzinfo=CT).timestamp() - 1e-6)
+        rows += db.execute(sql, (day, max(lo, e_at), min(day_end, e_at + 300))).fetchall()
+        x = db.execute("SELECT MIN(ts) FROM option_quotes WHERE expiry=? AND ts BETWEEN ? AND ?",
+                       (day, max(lo, x_at), day_end)).fetchone()[0]
+        if x is not None and not e_at <= x <= e_at + 300:
+            rows += db.execute(sql, (day, x, x)).fetchall()
+        d += timedelta(days=1)
+    return rows
+
+
 def straddle_vs_realized(path, start: str, end: str, entry_ct: str = "08:45", exit_ct: str = "14:30") -> dict:
     """Per session: the 0DTE ATM straddle mid at the first snapshot at/after entry_ct vs |spot move| to exit_ct."""
     db = _connect(path)
@@ -390,8 +416,7 @@ def straddle_vs_realized(path, start: str, end: str, entry_ct: str = "08:45", ex
             return {"days": 0}
         lo = datetime.fromisoformat(f"{start}T00:00").replace(tzinfo=CT).timestamp()
         hi = datetime.fromisoformat(f"{end}T23:59").replace(tzinfo=CT).timestamp()
-        rows = db.execute("SELECT ts, expiry, strike, right, bid, ask, spot FROM option_quotes WHERE ts BETWEEN ? AND ? "
-                          "ORDER BY ts", (lo, hi)).fetchall()
+        rows = _straddle_rows(db, lo, hi, entry_ct, exit_ct)
     finally:
         db.close()
     by_day: dict = {}
