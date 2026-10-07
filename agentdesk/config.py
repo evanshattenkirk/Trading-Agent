@@ -27,6 +27,8 @@ class Cfg(dict):
 
 
 def _load_dotenv(path: Path) -> None:
+    if os.environ.get("AGENTDESK_NO_DOTENV", "") not in ("", "0"):     # the test suite sets it: no real keys in tests
+        return
     if not path.exists():
         return
     for line in path.read_text().splitlines():
