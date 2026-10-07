@@ -18,7 +18,7 @@ def main(jsonl: str, out: str, start_hhmm: str = "08:58", artifact: bool = True)
     body = re.sub(r'<script src="[^"]+"></script>\s*', "", body)
     css = (WEB / "styles.css").read_text()
     lib = (WEB / "vendor" / "lightweight-charts.standalone.production.js").read_text()
-    js = "\n".join((WEB / f).read_text() for f in ("office.js", "app.js", "layout.js"))
+    js = "\n".join((WEB / f).read_text() for f in ("office.js", "panel.js", "app.js", "layout.js"))   # index.html order; book_f.js needs a server
     data = json.dumps(events, separators=(",", ":"))
     head = ('<title>AgentDesk</title>\n'
             '<link rel="preconnect" href="https://fonts.googleapis.com">\n'

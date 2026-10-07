@@ -1,6 +1,7 @@
 """Pre-registered test of intraday SPX/SPY strategies. Parameters come from the published papers, not fitted here.
 In-sample 2005-2014, out-of-sample 2015-2020 (1m S&P 500 CFD), recent check 2025-04..2026-03 (SPY 5m)."""
 import math, sys, json
+from datetime import date, timedelta
 import numpy as np, pandas as pd
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 from agentdesk.indicators import MACD, RSI
@@ -17,11 +18,40 @@ def matrices(df, res):
     di = df["day"].map(idx).values; bi = df["b"].values
     for k, col in zip("OHLCV", ["open", "high", "low", "close", "volume"]):
         M[k][di, bi] = df[col].values
-    for k in "OHLC":                                  # forward-fill gaps within a day
-        a = pd.DataFrame(M[k]).ffill(axis=1).bfill(axis=1).values
+    for k in "OHLC":                                  # forward-fill gaps within a day (never from a later bar)
+        a = pd.DataFrame(M[k]).ffill(axis=1).values
         M[k] = a
     M["V"] = np.nan_to_num(M["V"], nan=0.0) + 1e-9
+    keep = ~np.isnan(M["O"][:, 0])                    # a session without its 09:30 bar is dropped, not back-filled
+    if not keep.all():
+        days = [d for d, k in zip(days, keep) if k]
+        M = {k: v[keep] for k, v in M.items()}
     return days, M, nb
+
+
+# NYSE closures the rule-based calendar misses (same set as book_h_candidates.py)
+EXTRA_CLOSURES = {date(2007, 1, 2), date(2012, 10, 29), date(2012, 10, 30)}
+
+
+def prior_session_close(days, C):
+    """prevC per session: the last close of the prior NYSE session's row; NaN when the data lacks that session (a
+    dropped half day or gap), instead of an older close. A row on an NYSE holiday (the CFD can trade then) is skipped."""
+    here = str(__import__("pathlib").Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.append(here)
+    import nyse_calendar
+    if not len(days):
+        return np.array([])
+    closed = nyse_calendar.holidays_between(days[0].year - 1, days[-1].year + 1) | EXTRA_CLOSURES
+    row = {d: i for i, d in enumerate(days)}
+    out = np.full(len(days), np.nan)
+    for i in range(1, len(days)):
+        p = days[i] - timedelta(days=1)
+        while p.weekday() >= 5 or p in closed:
+            p -= timedelta(days=1)
+        if p in row:
+            out[i] = C[row[p], -1]
+    return out
 
 def bp(x): return x * 1e4
 
@@ -30,7 +60,7 @@ def strategies(days, M, res):
     nd, nb = C.shape
     b = lambda minute: minute // res                  # bar index that *ends* at minute offset
     last = nb - 1
-    prevC = np.r_[np.nan, C[:-1, last]]
+    prevC = prior_session_close(days, C)
     op = O[:, 0]
     out = {}
     # 1 Gao-Han-Li-Zhou intraday momentum: (prev close -> 10:00) predicts 15:30 -> 16:00

@@ -3,7 +3,7 @@
 The engine calls on_bar / on_second / kill / flatten / halt_all; book A's own path is untouched. Every fill here is
 paper (PaperBroker.submit_combo); in shadow/live the first price of each order also goes to review_option_order.
 One book's error halts and flattens that book only. A stale combo quote is caught by the engine's watchdog, which
-halts everything, as for book A.
+halts and flattens book A and the 0DTE books B/C/D/G (F1 only when the stale position is its own; E and F2 keep running).
 """
 from __future__ import annotations
 
@@ -77,6 +77,7 @@ class BookHost:
         self._errors, self._tasks = 0, set()
         self._inline, self._vix_task = True, None
         self._last_rate_log = -1e18
+        self._prefetch_down, self._last_prefetch_log = False, -1e18     # batched quote fetch failing; last warn
 
     @property
     def enabled(self) -> bool:
@@ -209,8 +210,16 @@ class BookHost:
         except RateLimited as ex:
             self._rate_limited(now, "books", ex)
             return False
-        except Exception:
+        except Exception as ex:     # one dashboard line per episode (a minute apart at most), never an error count
             log.debug("books: batched quote prefetch failed; each book asks on its own", exc_info=True)
+            if not self._prefetch_down and now - self._last_prefetch_log >= 60:
+                self._last_prefetch_log = now
+                log.warning("books: batched leg quote fetch failed: %s", ex)
+                self._log(now, "warn", f"books: batched leg quote fetch failed ({str(ex)[:120]}); "
+                                       "each book asks for its own legs until it recovers")
+            self._prefetch_down = True
+            return True
+        self._prefetch_down = False
         return True
 
     def _rate_limited(self, now: float, who: str, ex) -> None:
@@ -260,6 +269,7 @@ class BookHost:
         st = self.e.risk.st
         before = self.cfg["risk"]["event_blackout"]["before_min"] * 60
         events = [(b.start + before, b.name) for b in st.blackouts if session_date(b.start + before) == d]
+        events = sorted(events + [(t, n) for t, n in st.passed_events if session_date(t) == d])  # + prints already out
         return MarketContext(now=now, day=d, spot=self.e.price, vwap=self.e.vwap.value, events=events,
                              vix_prev=self.vix_prev if self._vix_day == d else None, vix1d_flag=self._vix1d_flag(d),
                              size_mult=self.e.risk.book_mult(book.letter), open=list(book.open))
@@ -385,7 +395,7 @@ class BookHost:
             cq = await self._quote(pos.legs, pos.contracts, now, opening=False)
             forced = self._forced(book, pos, now)
             if cq.problem and not forced:
-                continue            # the engine watchdog halts everything if this lasts quote_stale_sec
+                continue            # the engine watchdog halts A and B/C/D/G if this lasts quote_stale_sec
             if not cq.problem:
                 pos.last_quote_ts = now
                 pos.mark = round(cq.mid(pos.credit), 3)

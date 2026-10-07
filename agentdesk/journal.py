@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
+
+log = logging.getLogger("agentdesk.journal")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS trades (
@@ -28,14 +31,31 @@ CREATE TABLE IF NOT EXISTS iv_history (
   call_bid REAL, call_ask REAL, call_iv REAL, put_bid REAL, put_ask REAL, put_iv REAL, atm_iv REAL,
   earnings_date TEXT, earnings_timing TEXT, T INTEGER, PRIMARY KEY (day, symbol, kind)
 );
+CREATE TABLE IF NOT EXISTS rh_calls (
+  ts REAL, tool TEXT, ms REAL, ok INTEGER, kind TEXT, err TEXT, tag TEXT
+);
+CREATE INDEX IF NOT EXISTS option_quotes_expiry_ts ON option_quotes(expiry, ts);
+CREATE INDEX IF NOT EXISTS option_quotes_ts ON option_quotes(ts);
+CREATE INDEX IF NOT EXISTS rh_calls_tag_ts ON rh_calls(tag, ts);
 """
 IV_COLS = ("day", "ts", "symbol", "kind", "expiry", "dte", "strike", "spot", "call_bid", "call_ask", "call_iv",
            "put_bid", "put_ask", "put_iv", "atm_iv", "earnings_date", "earnings_timing", "T")
 
 
+def use_wal(db: sqlite3.Connection) -> None:
+    """The engine and the standalone recorder write the same file while the weekly report reads it: WAL lets readers
+    and one writer work at once. The mode sticks to the file; a switch that can't get the lock is retried next open."""
+    try:
+        db.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError as ex:
+        log.warning("journal: could not switch to WAL (%s); staying in the current mode", ex)
+
+
 class Journal:
-    def __init__(self, path: Path | str | None):
-        self.db = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False)
+    def __init__(self, path: Path | str | None, timeout: float = 30.0):
+        self.db = sqlite3.connect(str(path) if path else ":memory:", timeout=timeout, check_same_thread=False)
+        if path:
+            use_wal(self.db)
         self.db.executescript(SCHEMA)
         for col in ("l2 TEXT", "book TEXT DEFAULT 'A'", "legs TEXT", "max_loss REAL", "crew TEXT"):
             try:
@@ -47,6 +67,17 @@ class Journal:
         d = p.to_dict()
         basis = getattr(p, "risk_basis", None) or p.entry * 100 * p.qty_initial
         crew = getattr(p, "crew", None) or (getattr(p, "meta", None) or {}).get("crew")     # what the crew did to it
+        try:
+            self._insert_trade(session, mode, p, book, d, basis, crew)
+            self.db.commit()
+        except Exception:
+            try:
+                self.db.rollback()      # a failed INSERT or COMMIT must not leave the row pending, or a retry writes it twice
+            except Exception:
+                pass
+            raise
+
+    def _insert_trade(self, session, mode, p, book, d, basis, crew) -> None:
         self.db.execute(
             "INSERT INTO trades (session,mode,contract,occ,setup,qty,entry,opened_ts,closed_ts,realized,fees,pnl,pnl_pct,peak,"
             "exit_reason,strike_reason,entry_reasons,fills,l2,book,legs,max_loss,crew) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -55,7 +86,6 @@ class Journal:
              p.exit_reason, p.strike_reason, json.dumps(p.entry_reasons), json.dumps(p.fills), json.dumps(p.l2),
              book, json.dumps(d["legs"]) if "legs" in d else None, getattr(p, "risk_basis", None),
              json.dumps(crew) if crew else None))
-        self.db.commit()
 
     def record_quotes(self, rows: list[tuple]) -> None:
         if rows:

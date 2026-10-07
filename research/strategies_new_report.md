@@ -139,6 +139,8 @@ Daily P&L correlation with book D (mid-1c): 0.84
 
 Pre-registered decision rule: **PASS** t_2005-14_mid>2.86 yes, natural_avg_2015-20>0 yes, natural_avg_2025-26>0 yes, breakeven_s<=0.85 yes, fits_300_cap yes
 
+**Feasibility note (2026-10-07): this PASS rests on contracts that did not exist.** 2,082 of F3's 2,263 modeled trades (every 2005-14 and 2015-20 row, which the rule's first two checks use) fall before November 2022, when SPY first listed Tuesday and Thursday expiries. Every Monday-Thursday entry needs a Tuesday or Thursday expiry for one of its two legs, so none of those trades could have been placed. The only feasible modeled evidence is the 181 trades of 2025-26. The real-quote replay of 2026-10-06 (`strategies_new_quotes_report.md`, actual next listed expiry) fails the kill rule: -3.29% of the debit per trade at mid -+ 1c (patient), t -5.40; -7.40% at taker.
+
 By year (mid-1c, avg % / t): 2005 +5.1/+2.2; 2006 +5.2/+2.3; 2007 +10.3/+5.1; 2008 +1.6/+0.7; 2009 +9.2/+4.7; 2010 +13.0/+7.3; 2011 +11.3/+6.4; 2012 +10.5/+3.5; 2013 +3.7/+0.9; 2014 +2.7/+0.8; 2015 +9.4/+4.0; 2016 +5.4/+1.8; 2017 -5.1/-0.5; 2018 +4.3/+1.6; 2019 +8.8/+3.4; 2020 +1.7/+0.4; 2025 +12.3/+6.3; 2026 +11.1/+2.8
 
 ## F4

@@ -45,13 +45,12 @@ sizing:
   max_trade_dollars: 500
   max_contracts: 5
   min_contracts: 1
-  fee_per_contract: 0.03  # regulatory pass-through, approx
+  fee_per_contract: 0.04  # per contract per side: $0.02 OCC + $0.02 ORF (HANDOFF 2), as books.account.fee_per_leg
 
 orders:
   entry_limit: mid_plus   # mid_plus: mid + 35% of spread, capped at ask
   entry_spread_frac: 0.35
-  reprice_after_ms: 2500
-  max_reprices: 2
+  max_reprices: 2         # each reprice goes out at once at the touch (ask to buy, bid to sell); there is no wait
   exit_urgent: bid        # stops/flatten go out at the bid
 
 exits:
@@ -211,11 +210,16 @@ books:
   G_call_calendar: {enabled: false, paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, max_debit: 3.00, take_profit_pct: 0.25, stop_pct: 0.35, close_ct: "14:25"}
 
 calendar:
+  # NYSE rules (research/nyse_calendar.py; tests/test_paper_session.py checks these lists against it through 2028).
   # 12:00 CT closes: entries stop 11:20, flatten 11:40. Full-day holidays need no entry (no prints = no trades).
-  early_close: [2026-11-27, 2026-12-24, 2027-07-02, 2027-11-26, 2027-12-24]
-  # NYSE full-day holidays; the Earnings desk counts trading days with these (book E's T-10 / T-3 / T-1 windows)
+  # 2027 has one: July 3 is a Saturday (Friday Jul 2 trades a full day, as in 2021) and Dec 24 is the Christmas holiday.
+  early_close: [2026-11-27, 2026-12-24, 2027-11-26, 2028-07-03, 2028-11-24]
+  # NYSE full-day holidays; the Earnings desk counts trading days with these (book E's T-10 / T-3 / T-1 windows), and
+  # tools/paper_session.sh skips them (it reads this list). New Year's Day 2028 is a Saturday and is not observed.
   holidays: [2026-11-26, 2026-12-25, 2027-01-01, 2027-01-18, 2027-02-15, 2027-03-26, 2027-05-31, 2027-06-18,
-             2027-07-05, 2027-09-06, 2027-11-25, 2027-12-24]
+             2027-07-05, 2027-09-06, 2027-11-25, 2027-12-24,
+             2028-01-17, 2028-02-21, 2028-04-14, 2028-05-29, 2028-06-19, 2028-07-04, 2028-09-04, 2028-11-23,
+             2028-12-25]
 
 server:
   host: 127.0.0.1         # localhost only; the dashboard controls also need the token in the printed link

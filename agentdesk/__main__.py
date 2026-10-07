@@ -135,6 +135,12 @@ async def run_session(engine, bus, server, cfg, mode: str, host: str, port: int,
     archive = attach(cfg, mode, bus)
     saver = asyncio.create_task(archive.run(engine, float(review_cfg(cfg)["snapshot_every_sec"])),
                                 name="session-archive") if archive else None
+    rh = getattr(engine, "l2_rh", None)
+    if rh is not None:                # a Robinhood browser sign-in also shows on the dashboard, not only in the log
+        from time import time as _now
+        rh.on_sign_in = lambda msg: bus.emit("log", _now(), level="warn", msg=msg)
+    if archive:                       # saved right after the shutdown flatten too, before the sessions close
+        serve_kw.setdefault("after_flatten", lambda: archive.save(engine))
     try:
         return await lifecycle.serve(engine, server, getattr(engine, "closers", ()), **serve_kw)
     finally:
@@ -151,6 +157,8 @@ def cmd_run(args) -> None:
     from . import lifecycle
     from .server import LOCAL_HOSTS, create_app, resolve_token
 
+    for noisy in ("httpx", "httpcore", "mcp"):     # else the day log gets an INFO line per Robinhood call
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     cfg = load_config(args.config)
     mode = args.mode or cfg["mode"]
     with dashboard_claim(cfg):
@@ -362,7 +370,7 @@ def main() -> None:
     bt.add_argument("--ticks", action="store_true", help="download trades to build real 144t bars (slow, heavy)")
     bt.add_argument("--options", choices=["model", "alpaca"], default="model")
     bt.add_argument("--source", choices=["alpaca", "robinhood"], default="alpaca", help="where SPY 1m bars come from")
-    bt.add_argument("--iv", type=float, default=0.16, help="model IV when --options model")
+    bt.add_argument("--iv", type=float, default=0.16, help="model IV when --options model: VIX-style (0.16 = VIX 16), trading-day clock")
     bt.add_argument("--csv", default=None, help="use a local 1m CSV (t,o,h,l,c,v) instead of downloading")
     bt.add_argument("--sim-days", type=int, default=0, help="run on N synthetic days (plumbing check only)")
     bt.add_argument("--out", default="backtest")

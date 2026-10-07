@@ -7,7 +7,9 @@ Signals: C arms from F1's 09:35 scan (F2's names, green, RVOL5 >= 2) and buys wh
 before 10:30 ET; P scans F2's names at 15:40 ET for a >= 3% up day on >= 1.8x average volume.
 F2 holds for days: open positions live in f2_positions, are restored at startup, are left out of the engine's
 10-second quote watchdog (F2 quotes them every poll_sec itself) and are NOT sold at shutdown. The kill switch, a
-safety halt, an F2 halt and the dashboard Flatten button still sell them. A report inside the hold blocks the entry.
+safety halt, an F2 halt and the dashboard Flatten button still sell them (at the last mark, flagged, when no fresh
+quotes come back). A report inside the hold blocks the entry, and so does an empty calendar; one that moves into an
+open hold (checked on each day's calendar read) forces the exit. A quote outage with no exit due never halts F2.
 """
 from __future__ import annotations
 
@@ -34,6 +36,8 @@ from .host import FILLS
 
 log = logging.getLogger("agentdesk.book_f2")
 MAX_EXIT_TRIES = 3
+REFRESH_RETRY_SEC = 300     # the day's report check on open spreads retries this often until the calendar reads
+NO_LEG_QUOTE, QUOTES_DOWN = "no quote on a leg", "quotes unavailable"      # why a close went at the last mark
 LIVE_FIELDS = ("id", "book", "qty", "mark", "peak", "unrealized", "realized", "fees", "total_pnl", "pnl_pct",
                "max_loss", "status")
 
@@ -88,6 +92,9 @@ class F2Host:
         self._busy, self._tasks = False, set()
         self._last_poll = self._last_emit = self._last_rate_log = -1e18
         self._exit_tries: dict = {}
+        self._outage: dict = {}             # what read is failing -> since when (one log line per outage)
+        self.refreshed = self._cal_warned = None
+        self._refresh_try = -1e18
         self._reset_day(None)
 
     def _reset_day(self, day) -> None:
@@ -188,6 +195,10 @@ class F2Host:
                 await self.flatten(f"book halted: {b.halt_reason}", now)
 
     async def _tick(self, now: float) -> None:
+        if self.book.open and self.refreshed != self.day and is_rth(now) and now - self._refresh_try >= REFRESH_RETRY_SEC:
+            self._refresh_try = now
+            if await self._refresh_holds(now):
+                self.refreshed = self.day
         if self.book.open:
             await self._manage(now)
         t = F.et_time(now)
@@ -231,7 +242,13 @@ class F2Host:
         return out
 
     async def _triggers(self, now: float) -> None:
-        px = await self._last_prices(sorted(self.armed), now)
+        try:
+            px = await self._last_prices(sorted(self.armed), now)
+        except Exception as ex:     # retried next poll; a halt here would sell the open spreads (review M5)
+            if isinstance(ex, RateLimited):
+                raise
+            return self._read_failed(now, "breakout quotes", ex)
+        self._read_ok(now, "breakout quotes")
         for s, r in list(self.armed.items()):
             p = px.get(s)
             if p is not None and p > r.or_high:
@@ -280,9 +297,33 @@ class F2Host:
         except Exception as ex:
             cal = None
             self._log(now, "warn", f"book F2: earnings calendar failed ({ex})")
-        if cal is not None:
-            self.cal, self.cal_ok = cal, True
+        self.cal = cal          # kept for the day only once it lists F2's names; an empty reply is read again
+        self.cal_ok = S.calendar_problem(cal, self.universe, self.day) is None
         return cal
+
+    async def _refresh_holds(self, now: float) -> bool:
+        """The day's report check on every open spread, as E does (review 2026-10-06 M6): a report that moved into
+        the hold, or was first listed after the entry, forces the exit at the next poll. False when the calendar
+        can't vouch for F2's names (the caller retries)."""
+        cal = await self._calendar(now)
+        why = S.calendar_problem(cal, self.universe, self.day)
+        if why:
+            if self._cal_warned != self.day:
+                self._cal_warned = self.day
+                self._log(now, "warn", f"book F2: {why}; open spreads not re-checked for reports yet, retrying "
+                                       f"every {REFRESH_RETRY_SEC // 60} min")
+            return False
+        for p in self.book.open:
+            m = p.meta
+            if m.get("report_exit"):
+                continue
+            hit = S.earnings_conflict(m["symbol"], cal, date.fromisoformat(m.get("entry_day") or str(self.day)),
+                                      date.fromisoformat(m["exit_day"]))
+            if hit:
+                m["report_exit"] = hit
+                self.j.save(p, now)
+                self._log(now, "warn", f"book F2: {p.label}: report moved into hold ({hit}); exiting")
+        return True
 
     async def _consider(self, sym: str, setup: str, now: float, spot: float, signal: dict) -> None:
         rec = {"day": str(self.day), "ts": now, "symbol": sym, "setup": setup, "spot": spot, "signal": signal}
@@ -301,8 +342,9 @@ class F2Host:
             return skip(why)
         xd = S.exit_day(self.day, setup, self.holidays, self.c)
         cal = await self._calendar(now)
-        if cal is None and self.c.get("require_calendar", True):
-            return skip("earnings calendar unavailable: not trading blind into a report")
+        why = S.calendar_problem(cal, self.universe, self.day) if self.c.get("require_calendar", True) else None
+        if why:
+            return skip(f"{why}: not trading blind into a report")
         why = S.earnings_conflict(sym, cal, self.day, xd)
         if why:
             return skip(why)
@@ -394,6 +436,8 @@ class F2Host:
         m, today = p.meta, str(session_date(now))
         if any(c.expiry <= today for c in p.contracts):
             return "expiry day: never held into expiration"
+        if m.get("report_exit"):
+            return f"report moved into hold: {m['report_exit']}"
         t = S.exit_time_et(m.get("setup_key", S.CALL), self.c, half)
         if today > m["exit_day"] or (today == m["exit_day"] and F.et_time(now) >= t):
             return f"time exit {m['exit_day']} {t:%H:%M} ET"
@@ -413,11 +457,22 @@ class F2Host:
             qs, quoted = await self.chains.quotes([c for p in held for c in p.contracts]), True
         except Exception as ex:
             if not any(due.values()):
-                raise
+                if isinstance(ex, RateLimited):
+                    raise
+                return self._read_failed(now, "option quotes", ex)     # nothing due: hold, never a halt (M5)
             self._log(now, "warn", f"book F2: quotes failed during a forced exit ({ex})")
             qs, quoted = [None] * sum(len(p.contracts) for p in held), False
+        else:
+            self._read_ok(now, "option quotes")
         first_day = [p for p in held if p.meta.get("or_low") and p.meta.get("entry_day") == str(self.day)]
-        spots = await self.chains.spots(sorted({p.meta["symbol"] for p in first_day})) if first_day else {}
+        spots = {}
+        if first_day:
+            try:
+                spots = await self.chains.spots(sorted({p.meta["symbol"] for p in first_day}))
+            except Exception as ex:             # no OR-low check this poll; the other exits still run (M5)
+                self._read_failed(now, "stock quotes", ex)
+            else:
+                self._read_ok(now, "stock quotes")
         i = 0
         for p in held:
             pq, i = qs[i:i + len(p.contracts)], i + len(p.contracts)
@@ -432,10 +487,11 @@ class F2Host:
                 reason = f"thesis stop: {p.meta['symbol']} {sp:.2f} at or below the OR low {p.meta['or_low']:.2f}"
             if reason:
                 tries = self._exit_tries[p.id] = self._exit_tries.get(p.id, 0) + 1
-                if quoted:          # without fresh quotes a paper fill would use stale cached prices
+                if quoted and self._fresh(pq, now):     # stale cached prices never make a paper fill
                     await self._exit(p, ExitIntent(reason, urgent=True), now)
-                if p.status == "open" and ((quoted and any(q is None for q in pq)) or tries >= MAX_EXIT_TRIES):
-                    self._close_at_mark(p, reason, now)
+                missing = quoted and any(q is None for q in pq)
+                if p.status == "open" and (missing or tries >= MAX_EXIT_TRIES):
+                    self._close_at_mark(p, reason, now, NO_LEG_QUOTE if missing else QUOTES_DOWN)
                 continue
             it = S.tp_stop(p.entry, p.mark, p.width, self.c) if usable else None
             if it:
@@ -470,13 +526,30 @@ class F2Host:
         finally:
             pos.exiting = False
 
-    def _close_at_mark(self, pos: ComboPosition, reason: str, now: float) -> None:
-        """Paper only: a forced exit with a leg that has no quote closes at the last mark."""
+    def _fresh(self, pq: list, now: float) -> bool:
+        """Every leg quoted within max_quote_age_s: only then may a paper fill read the quote cache."""
+        return all(q is not None and now - q.ts <= self.f["max_quote_age_s"] for q in pq)
+
+    def _read_failed(self, now: float, what: str, ex) -> None:
+        """A quote read failed with no exit due: hold and retry each poll; one log line per outage, no error count."""
+        if what not in self._outage:
+            self._outage[what] = now
+            self._log(now, "warn", f"book F2: {what} unavailable ({str(ex)[:120]}); retried every poll, not counted "
+                                   "toward the book halt")
+
+    def _read_ok(self, now: float, what: str) -> None:
+        t0 = self._outage.pop(what, None)
+        if t0 is not None:
+            self._log(now, "info", f"book F2: {what} back after {now - t0:.0f}s")
+
+    def _close_at_mark(self, pos: ComboPosition, reason: str, now: float, note: str = NO_LEG_QUOTE) -> None:
+        """Paper only: a forced exit with a leg that has no quote, or with no fresh quotes at all (an outage),
+        closes at the last mark, flagged in the trade's exit reason."""
         n = pos.qty
         pos.realized += pos.pnl_per_share(pos.mark) * 100 * n
         pos.fees += self.fee * len(pos.legs) * n
         pos.qty = 0
-        why = f"{reason} (no quote on a leg: closed at last mark {pos.mark:.2f})"
+        why = f"{reason} ({note}: closed at last mark {pos.mark:.2f})"
         pos.fills.append({"ts": now, "side": "close", "qty": n, "px": pos.mark, "mid": None, "natural": None,
                           "limit": None, "ref_id": None, "why": why})
         self._log(now, "warn", f"book F2: {pos.label}: {why}")
@@ -518,12 +591,18 @@ class F2Host:
         if not held:
             return
         try:
-            await self.chains.quotes([c for p in held for c in p.contracts])
+            qs = await self.chains.quotes([c for p in held for c in p.contracts])     # fresh prices for the fills
         except Exception as ex:
-            self._log(now, "warn", f"book F2: quotes for flatten failed ({ex})")
+            self._log(now, "warn", f"book F2: quotes for flatten failed ({ex}); closing at the last marks")
+            qs = [None] * sum(len(p.contracts) for p in held)
+        i = 0
         for p in held:
+            pq, i = qs[i:i + len(p.contracts)], i + len(p.contracts)
             try:
-                await self._exit(p, ExitIntent(reason, urgent=True), now)
+                if self._fresh(pq, now):
+                    await self._exit(p, ExitIntent(reason, urgent=True), now)
+                elif p.status == "open" and p.qty > 0 and not p.exiting:   # never a fill at stale cached prices (M5)
+                    self._close_at_mark(p, reason, now, QUOTES_DOWN)
             except Exception as ex:
                 log.exception("flatten %s failed", p.label)
                 self._log(now, "error", f"book F2: flatten {p.label} failed: {ex}")

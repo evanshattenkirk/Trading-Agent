@@ -26,9 +26,11 @@
   const AGENT_SEAT = [96, 78];
   const HUDDLE = [[80, 84], [112, 84], [76, 98], [116, 98], [88, 102], [104, 102], [96, 106]];
 
+  const CT_FMT = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: false });
   function ctTime(ts) {
-    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts * 1000));
+    return CT_FMT.format(new Date(ts * 1000));
   }
+  const FRAME_MS = 1000 / 15;       // ~15 fps is plenty for pixel art and spares the CPU on a tab left open all day
 
   class Office {
     constructor(canvas, caption, status) {
@@ -47,7 +49,13 @@
         this.actors[k] = { key: k, x: seat[0], y: seat[1], home: seat.slice(), path: [], state: 'sit', dir: k === 'agent' ? 'U' : c.face, bubble: null, bob: Math.random() * 6 };
       }
       this.reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const loop = (now) => { this.step(Math.min(0.1, (now - this.last) / 1000)); this.last = now; this.draw(); requestAnimationFrame(loop); };
+      this.box = canvas.closest ? canvas.closest('.office') : null;
+      const loop = (now) => {
+        requestAnimationFrame(loop);
+        if (now - this.last < FRAME_MS - 2) return;
+        this.step(Math.min(0.1, (now - this.last) / 1000)); this.last = now;      // the huddle keeps moving while hidden
+        if (!document.hidden && !(this.box && this.box.classList.contains('min'))) this.draw();
+      };
       requestAnimationFrame(loop);
     }
 
@@ -171,7 +179,7 @@
 
     draw() {
       const cx = this.cx, m = this.market;
-      const hour = parseInt(ctTime(m.ts).slice(0, 2), 10), min = parseInt(ctTime(m.ts).slice(3), 10);
+      const hm = ctTime(m.ts), hour = parseInt(hm.slice(0, 2), 10), min = parseInt(hm.slice(3), 10);
       const tod = hour + min / 60;
       this.drawRoom(tod);
       this.drawWindow(tod);

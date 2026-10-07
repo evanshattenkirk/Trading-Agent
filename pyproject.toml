@@ -1,0 +1,8 @@
+# pytest configuration only. Dependencies live in requirements.txt (ranges) and requirements.lock (pinned).
+# No -q in addopts: everyone runs `pytest -q tests`, and a second -q would hide the "N passed" line.
+[tool.pytest.ini_options]
+testpaths = ["tests", "research/tests"]
+addopts = "-p no:cacheprovider --strict-markers -ra"
+markers = [
+    "slow: synthetic-day replays (tests/test_books_sim.py, tests/test_f_sim.py), about a minute; deselect with -m 'not slow'",
+]

@@ -99,6 +99,39 @@ def test_unreadable_state_file_fails_closed(tmp_path):
     assert r.st.halted and "risk state" in r.st.halt_reason
 
 
+def test_an_unreadable_state_file_is_moved_aside_before_the_halt_is_saved(tmp_path):     # review plan L8
+    (tmp_path / "risk_state.json").write_text("{not json")
+    r = manager(tmp_path)
+    (aside,) = tmp_path.glob("risk_state.json.corrupt-*")
+    assert aside.read_text() == "{not json"                          # the evidence is kept, not overwritten
+    assert r.st.halted and aside.name in r.st.halt_reason and "--clear-halt" in r.st.halt_reason
+    assert manager(tmp_path).st.halted                               # still halted after a plain restart
+    assert not manager(tmp_path, clear_halt_on_restore=True).st.halted
+
+
+def test_a_startup_check_over_a_restored_a_only_halt_stays_a_only_on_disk(tmp_path):      # review plan L8
+    r = manager(tmp_path)
+    r.halt("profit lock: gave back 50% of +$300", scope="A")
+    r2 = manager(tmp_path)                                           # restart: book A's halt is restored
+    assert r2.st.halted and not r2.account_halted()
+    r2.halt("could not read account positions at startup (401); fix the connection, then restart", sticky=False)
+    assert r2.account_halted()                                       # this run: every book waits for the connection
+    r2.on_realized(-5.0)                                             # any later save keeps only the sticky part
+    r3 = manager(tmp_path)                                           # next start re-runs the account check itself
+    assert r3.st.halted and r3.st.halt_reason.startswith("profit lock") and not r3.account_halted()
+
+
+def test_a_sticky_halt_after_a_startup_check_is_saved_with_its_own_scope(tmp_path):
+    r = manager(tmp_path)
+    r.halt("1 option position(s) already open at startup", sticky=False)
+    r.halt("daily loss limit -$400", scope="A")
+    r2 = manager(tmp_path)
+    assert r2.st.halt_reason == "daily loss limit -$400" and not r2.account_halted()
+    r2.halt("KILL switch", flatten=True)
+    r3 = manager(tmp_path)
+    assert r3.st.halt_reason == "KILL switch" and r3.account_flatten()
+
+
 def test_no_store_means_no_files(tmp_path):
     r = RiskManager(copy.deepcopy(CFG))
     r.restore(DAY)

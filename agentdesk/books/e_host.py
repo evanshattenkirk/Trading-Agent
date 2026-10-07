@@ -3,8 +3,9 @@
 Paper only: E fills through its own PaperBroker at mid -1c per leg (never worse than natural). In shadow/live the
 first price of each order also goes to review_option_order. E never touches engine.broker.
 E holds for days (spec E-Q1): open positions live in e_positions, are restored at startup, and are NOT sold at
-shutdown. The kill switch, a safety halt, an E halt and the dashboard Flatten button still sell them. E positions
-are left out of the engine's 10-second quote watchdog (watchdog_exempt); E quotes them every poll_sec itself.
+shutdown. The kill switch, a safety halt, an E halt and the dashboard Flatten button still sell them (at the last
+mark, flagged, when no fresh quotes come back); a quote outage with no exit due never halts E. E positions are left
+out of the engine's 10-second quote watchdog (watchdog_exempt); E quotes them every poll_sec itself.
 Day, CT: entries at entry_ct (11:20 on half-days) from the Earnings desk's screen; take profit / stop on the combo
 mid during regular hours; exits per earnings_iv.exit_reason. Nothing trades outside 08:30-15:00 CT.
 """
@@ -33,6 +34,7 @@ log = logging.getLogger("agentdesk.book_e")
 KEY = "E_earnings_iv"
 ENTRY_RETRY_SEC = 60        # a failed calendar read is retried inside the entry window
 MAX_EXIT_TRIES = 3          # forced-exit tries without usable quotes before closing at the last mark
+NO_LEG_QUOTE, QUOTES_DOWN = "no quote on a leg", "quotes unavailable"      # why a close went at the last mark
 LIVE_FIELDS = ("id", "book", "qty", "mark", "peak", "unrealized", "realized", "fees", "total_pnl", "pnl_pct",
                "max_loss", "status")
 
@@ -61,6 +63,7 @@ class EHost:
         self.e, self.cfg, self.chains, self.vix = engine, cfg, chains, vix
         self.c = cfg["books"][KEY]
         self.book = Book(KEY, self.c, EarningsIV(self.c))
+        self.book.max_trades = int(self.c["max_open"])     # the strip's trades/limit shows E's 3 open, as F1 does
         self.account = account or AccountRisk((cfg.get("books") or {}).get("account"))
         self.other_risk = lambda: sum(p.entry * 100 * p.qty for p, _ in self.e.open)     # A (+ others via HostGroup)
         self.books_changed = lambda now: None      # HostGroup: refresh the dashboard's book strip
@@ -78,6 +81,7 @@ class EHost:
         self._busy, self._tasks, self._flagged = False, set(), set()
         self._last_poll, self._last_emit = -1e18, -1e18
         self._last_rate_log = -1e18
+        self._outage: dict = {}             # what read is failing -> since when (one log line per outage)
         self.vix_prev, self._vix_day, self._vix_try = None, None, -1e18
         self._entry_try, self._exit_tries, self._refresh_try = -1e18, {}, -1e18
 
@@ -362,9 +366,13 @@ class EHost:
             qs, quoted = await self.chains.quotes([c for p in held for c in p.contracts]), True
         except Exception as ex:
             if not any(due.values()):
-                raise
+                if isinstance(ex, RateLimited):
+                    raise
+                return self._read_failed(now, "option quotes", ex)     # nothing due: hold, never a halt (M5)
             self._log(now, "warn", f"book E: quotes failed during a forced exit ({ex})")
             qs, quoted = [None] * sum(len(p.contracts) for p in held), False
+        else:
+            self._read_ok(now, "option quotes")
         i = 0
         for p in held:
             pq, i = qs[i:i + len(p.contracts)], i + len(p.contracts)
@@ -376,10 +384,11 @@ class EHost:
             reason = due[p.id]
             if reason:
                 tries = self._exit_tries[p.id] = self._exit_tries.get(p.id, 0) + 1
-                if quoted:          # without fresh quotes a paper fill would use stale cached prices
+                if quoted and self._fresh(pq, now):     # stale cached prices never make a paper fill
                     await self._exit(p, ExitIntent(reason, urgent=True), now)
-                if p.status == "open" and ((quoted and any(q is None for q in pq)) or tries >= MAX_EXIT_TRIES):
-                    self._close_at_mark(p, reason, now)
+                missing = quoted and any(q is None for q in pq)
+                if p.status == "open" and (missing or tries >= MAX_EXIT_TRIES):
+                    self._close_at_mark(p, reason, now, NO_LEG_QUOTE if missing else QUOTES_DOWN)
                 continue
             it = R.tp_stop(p.meta["structure"], p.entry, p.mark, self.c) if usable else None
             if it:
@@ -414,13 +423,30 @@ class EHost:
         finally:
             pos.exiting = False
 
-    def _close_at_mark(self, pos: ComboPosition, reason: str, now: float) -> None:
-        """Paper only: a forced exit with a leg that has no quote (expired, delisted) closes at the last mark."""
+    def _fresh(self, pq: list, now: float) -> bool:
+        """Every leg quoted within max_quote_age_s: only then may a paper fill read the quote cache."""
+        return all(q is not None and now - q.ts <= self.f["max_quote_age_s"] for q in pq)
+
+    def _read_failed(self, now: float, what: str, ex) -> None:
+        """A quote read failed with no exit due: hold and retry each poll; one log line per outage, no error count."""
+        if what not in self._outage:
+            self._outage[what] = now
+            self._log(now, "warn", f"book E: {what} unavailable ({str(ex)[:120]}); holding, take profit and stop "
+                                   "wait for fresh quotes (not counted toward the book halt)")
+
+    def _read_ok(self, now: float, what: str) -> None:
+        t0 = self._outage.pop(what, None)
+        if t0 is not None:
+            self._log(now, "info", f"book E: {what} back after {now - t0:.0f}s")
+
+    def _close_at_mark(self, pos: ComboPosition, reason: str, now: float, note: str = NO_LEG_QUOTE) -> None:
+        """Paper only: a forced exit with a leg that has no quote (expired, delisted), or with no fresh quotes at all
+        (an outage), closes at the last mark, flagged in the trade's exit reason."""
         n = pos.qty
         pos.realized += pos.pnl_per_share(pos.mark) * 100 * n
         pos.fees += self.fee * len(pos.legs) * n
         pos.qty = 0
-        why = f"{reason} (no quote on a leg: closed at last mark {pos.mark:.2f})"
+        why = f"{reason} ({note}: closed at last mark {pos.mark:.2f})"
         pos.fills.append({"ts": now, "side": "close", "qty": n, "px": pos.mark, "mid": None, "natural": None,
                           "limit": None, "ref_id": None, "why": why})
         self._log(now, "warn", f"book E: {pos.label}: {why}")
@@ -455,12 +481,18 @@ class EHost:
         if not held:
             return
         try:
-            await self.chains.quotes([c for p in held for c in p.contracts])       # fresh prices for the fills
+            qs = await self.chains.quotes([c for p in held for c in p.contracts])       # fresh prices for the fills
         except Exception as ex:
-            self._log(now, "warn", f"book E: quotes for flatten failed ({ex})")
+            self._log(now, "warn", f"book E: quotes for flatten failed ({ex}); closing at the last marks")
+            qs = [None] * sum(len(p.contracts) for p in held)
+        i = 0
         for p in held:
+            pq, i = qs[i:i + len(p.contracts)], i + len(p.contracts)
             try:
-                await self._exit(p, ExitIntent(reason, urgent=True), now)
+                if self._fresh(pq, now):
+                    await self._exit(p, ExitIntent(reason, urgent=True), now)
+                elif p.status == "open" and p.qty > 0 and not p.exiting:   # never a fill at stale cached prices (M5)
+                    self._close_at_mark(p, reason, now, QUOTES_DOWN)
             except Exception as ex:                  # keep going: the other positions still matter
                 log.exception("flatten %s failed", p.label)
                 self._log(now, "error", f"book E: flatten {p.label} failed: {ex}")

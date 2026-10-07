@@ -21,6 +21,7 @@ from __future__ import annotations
 import copy
 import itertools
 import json
+import logging
 import os
 import re
 import time
@@ -32,6 +33,8 @@ import yaml
 
 from .clock import CT, at_ct, session_date
 from .config import ROOT, hhmm
+
+log = logging.getLogger("agentdesk.proposals")
 
 TWEAKS = {
     "exits.stop_loss_pct": ("float", 0.10, 0.25),
@@ -146,12 +149,22 @@ class ProposalBook:
             try:
                 self.items = json.loads(path.read_text())
                 self._ids = itertools.count(max([int(i["id"]) for i in self.items] or [0]) + 1)
-            except Exception:
+            except Exception as ex:             # keep the evidence: the next save must not overwrite it
                 self.items = []
+                aside = path.with_name(f"{path.name}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}")
+                try:
+                    os.replace(path, aside)
+                except OSError as ex2:
+                    aside = f"(could not move it aside: {ex2})"
+                log.warning("could not read %s (%s); moved the corrupt file to %s and started an empty book",
+                            path, ex, aside)
 
     def save(self) -> None:
+        """Write proposals.json atomically: a crash mid-write leaves the previous file, never a partial one."""
         if self.path:
-            self.path.write_text(json.dumps(self.items, indent=1, default=str))
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(json.dumps(self.items, indent=1, default=str))
+            os.replace(tmp, self.path)
 
     def _ttl(self, scope: str) -> float | None:
         days = ((self.cfg.get("crew") or {}).get("proposal_ttl_days") or {}).get(scope)
