@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import claims
 from .archive import load_day
-from .server import LOCAL_HOSTS, SAFE_METHODS, WEB, _hostname
+from .server import LOCAL_HOSTS, SAFE_METHODS, WEB, _hostname, set_cache_headers
 
 log = logging.getLogger("agentdesk.review")
 NOTHING = {"ok": False, "error": "No saved session yet. The engine saves one from its next paper run."}
@@ -36,7 +36,9 @@ def create_review_app(sessions_dir: Path | str, allowed_hosts=()) -> FastAPI:
             return JSONResponse({"ok": False, "error": "unknown host"}, 403)
         if request.method not in SAFE_METHODS:
             return JSONResponse({"ok": False, "error": "Review mode is read-only; the engine is not running."}, 405)
-        return await call_next(request)
+        response = await call_next(request)
+        set_cache_headers(request.url.path, response)
+        return response
 
     @app.get("/")
     async def index():

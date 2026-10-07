@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 WEB = Path(__file__).parent / "web"
@@ -32,6 +32,20 @@ def _hostname(value: str | None) -> str | None:
     if not value:
         return None
     return urlsplit(value if "://" in value else f"//{value}").hostname
+
+
+def set_cache_headers(path: str, response) -> None:
+    """The page, its config and its assets are revalidated on every load: after 15:10 the same URL is the review
+    page, and a cached live config.js (or a day-old app.js) would run the wrong page against it."""
+    if path == "/config.js":
+        response.headers["Cache-Control"] = "no-store"
+    elif path == "/" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+
+
+def token_ok(given: str, token: str) -> bool:
+    """Constant-time match on bytes (header values arrive latin-1 decoded): a non-ASCII header is a 401, not a 500."""
+    return secrets.compare_digest(given.encode("latin-1"), token.encode())
 
 
 def create_app(engine, bus, token: str | None = None, allowed_hosts=()) -> FastAPI:
@@ -53,10 +67,12 @@ def create_app(engine, bus, token: str | None = None, allowed_hosts=()) -> FastA
         if request.method not in SAFE_METHODS:
             if not origin_ok(request.headers):
                 return JSONResponse({"ok": False, "error": "cross-site request refused"}, 403)
-            if not secrets.compare_digest(request.headers.get("x-agentdesk-token", ""), token):
+            if not token_ok(request.headers.get("x-agentdesk-token", ""), token):
                 return JSONResponse({"ok": False, "error": "Controls need the dashboard link printed in the terminal "
                                                            "(it carries this run's control token)."}, 401)
-        return await call_next(request)
+        response = await call_next(request)
+        set_cache_headers(request.url.path, response)
+        return response
 
     @app.get("/")
     async def index():
@@ -70,7 +86,7 @@ def create_app(engine, bus, token: str | None = None, allowed_hosts=()) -> FastA
 
     @app.get("/api/state")
     async def state():
-        return JSONResponse(json.loads(json.dumps(engine.snapshot(), default=str)))
+        return Response(json.dumps(engine.snapshot(), default=str), media_type="application/json")   # as the websocket sends it
 
     @app.get("/api/trades")
     async def trades():
