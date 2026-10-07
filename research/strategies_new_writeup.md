@@ -7,6 +7,15 @@ changes is the wrapper: 2 legs instead of 4, a worst case capped at the debit, l
 results at natural fills in every period where D is flat or negative. Everything here is Black-Scholes modeled from
 VIX, like the B/C/D tables in HANDOFF section 7, so F3 needs a real-quote replay before paper promotion.
 
+> **Update 2026-10-07: F3's PASS has no feasible in-sample.** 2,082 of its 2,263 modeled trades (all of 2005-14
+> and 2015-20, which the decision rule's first two checks use) fall before November 2022, when SPY first listed Tuesday and
+> Thursday expiries. Every Monday-Thursday entry needs a Tuesday or Thursday expiry for one of its two legs, so
+> none of those trades could have been placed (the data caveat in section 1 says so; the decision rule never
+> checked it). The only feasible modeled evidence is the 181 trades of 2025-26. The real-quote replay of
+> 2026-10-06 (`strategies_new_quotes_report.md`, which uses the actual next listed expiry) then failed the kill
+> rule below: −3.29% of the debit per trade at mid ∓ 1c (patient), t −5.40, and −7.40% at taker. Book G, built
+> from F3, is disabled in config and stays paper-only.
+
 Files:
 - `research/strategies_new_prereg.md`: rules and decision rule, committed before any result (plus addendum 1).
 - `research/strategies_new.py`: the modeled backtest. `python research/strategies_new.py` writes
@@ -30,7 +39,7 @@ HANDOFF section 11's $10k row. Bar for significance: |t| > 2.86 (the HANDOFF's m
 
 | Rank | Candidate | Rule | 2005-14 mid-1c | 2015-20 natural | 2025-26 natural | Break-even s | Corr with D |
 |---|---|---|---|---|---|---|---|
-| 1 | **F3** 0DTE/1DTE call calendar | **PASS** | +7.7%, PF 1.76, t +10.6 | +3.6%, PF 1.30, t +2.8 | +10.8%, PF 2.56, t +6.0 | 0.80 / 0.85 / 0.71 | 0.84 |
+| 1 | **F3** 0DTE/1DTE call calendar | **PASS** (no feasible in-sample; failed real quotes, see the update above) | +7.7%, PF 1.76, t +10.6 | +3.6%, PF 1.30, t +2.8 | +10.8%, PF 2.56, t +6.0 | 0.80 / 0.85 / 0.71 | 0.84 |
 | 2 | G1 turn-of-month call spread | fail (t) | +8.2%, t +0.8 (n=113) | +33.5%, t +2.4 (n=55) | +16.2%, t +0.5 (n=11) | n/a (long premium) | 0.08 |
 | 3 | F1 afternoon iron condor | fail | +2.9%, PF 1.42, t +6.7 | -2.0%, PF 0.75 | +4.5%, PF 2.09 | 0.90 / 0.93 / 0.75 | 0.23 |
 | 4 | G2 VIX-stretch call spread | fail | +13.2%, t +0.9 (n=48) | -8.4%, t -0.5 (n=33) | +49.7%, t +1.3 (n=7) | n/a (long premium) | 0.09 |
@@ -69,7 +78,8 @@ making money.
   to +19.8% (2025-26). The calendar is long vega, so ignoring IV changes slightly understates it.
 - **Capacity in $10k.** Median debit is about $1.70, so the median trade fits 1 lot under the $300 cap; 88% /
   92% / 99% of sessions fit at least 1 lot (skip the day when the debit is above $3.00). One lot uses at most
-  $300 of the $1,500 account open-risk cap. Expect roughly +$1k to +$4k a year at 1-2 lots if the model holds.
+  $300 of the $2,500 account open-risk cap ($1,500 when this was written; Evan raised it on 2026-09-29). Expect
+  roughly +$1k to +$4k a year at 1-2 lots if the model holds.
 - **How it differs from A to E.** A is directional long calls. B and D are short 4-leg flies/condors whose losses
   run to the wing. C is a directional bull put. E2 is a multi-day single-stock calendar around earnings. F3 is an
   intraday SPY calendar: short same-day gamma, hedged by next-day gamma, closed the same afternoon.

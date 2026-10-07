@@ -518,6 +518,17 @@ def _f(x, spec="+.2f"):
     return "n/a" if x is None or (isinstance(x, float) and not np.isfinite(x)) else format(x, spec)
 
 
+# Added 2026-10-07 (review M20). Kept in the generator so a re-run keeps it next to F3's PASS line.
+F3_FEASIBILITY_NOTE = [
+    "**Feasibility note (2026-10-07): this PASS rests on contracts that did not exist.** 2,082 of F3's 2,263 modeled "
+    "trades (every 2005-14 and 2015-20 row, which the rule's first two checks use) "
+    "fall before November 2022, when SPY first listed Tuesday and Thursday expiries. Every Monday-Thursday entry "
+    "needs a Tuesday or Thursday expiry for one of its two legs, so none of those trades could have been placed. "
+    "The only feasible modeled evidence is the 181 trades of 2025-26. The real-quote replay of 2026-10-06 "
+    "(`strategies_new_quotes_report.md`, actual next listed expiry) fails the kill rule: -3.29% of the debit per "
+    "trade at mid -+ 1c (patient), t -5.40; -7.40% at taker.", ""]
+
+
 def report(res: dict) -> str:
     L = ["# New strategy candidates F1-F4: modeled backtest", "",
          "Rules frozen in `research/strategies_new_prereg.md` before this ran. Returns are % of max risk per trade",
@@ -553,6 +564,8 @@ def report(res: dict) -> str:
             d = r["decision"]
             L += [f"Pre-registered decision rule: **{'PASS' if d['pass'] else 'FAIL'}** "
                   + ", ".join(f"{k} {'yes' if v else 'no'}" for k, v in d["checks"].items()), ""]
+            if name == "F3":
+                L += F3_FEASIBILITY_NOTE
         yrs = r["mid-1c"]["by_year"]
         L += ["By year (mid-1c, avg % / t): " + "; ".join(f"{y} {_f(v.get('avg'), '+.1f')}/{_f(v.get('t'), '+.1f')}"
                                                           for y, v in yrs.items() if v.get("n", 0) >= 3), ""]
