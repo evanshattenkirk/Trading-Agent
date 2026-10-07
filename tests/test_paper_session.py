@@ -18,36 +18,18 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentdesk import claims
+from shell_stubs import DATE, SLEEP, set_clock, stub
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
 CT = ZoneInfo("America/Chicago")
 SHELLS = ["bash"] + (["zsh"] if shutil.which("zsh") else [])
 
-DATE = f"""#!{sys.executable}
-import datetime, os, sys, zoneinfo
-now = float(open(os.environ["FAKE_CLOCK"]).read())
-tz = os.environ.get("TZ") or os.environ.get("FAKE_SYSTEM_TZ", "America/Chicago")
-fmt = next((a[1:] for a in sys.argv[1:] if a.startswith("+")), "%a %b %d %H:%M:%S %Z %Y")
-print(datetime.datetime.fromtimestamp(now, zoneinfo.ZoneInfo(tz)).strftime(fmt))
-"""
-SLEEP = f"""#!{sys.executable}
-import os, sys
-p = os.environ["FAKE_CLOCK"]
-now = float(open(p).read()) + float(sys.argv[1] if len(sys.argv) > 1 else 0)
-open(p, "w").write(repr(now))
-"""
 ENGINE = """#!/bin/sh
 if [ "$1" = "-c" ]; then exec "{py}" "$@"; fi
 echo "$(cat "$FAKE_CLOCK") claims=$(ls "$HOME/.agentdesk/claims" | tr '\\n' ',') $*" >> "$ENGINE_LOG"
 exit 0
 """
-
-
-def stub(d: Path, name: str, body: str) -> None:
-    f = d / name
-    f.write_text(body)
-    f.chmod(0o755)
 
 
 @pytest.fixture
@@ -76,7 +58,7 @@ def env(tmp_path):
 
 def run(env, shell, when: str, **extra):
     """Runs the script at `when` (Central time, 'YYYY-MM-DD HH:MM'); returns (result, day log, engine calls)."""
-    Path(env["env"]["FAKE_CLOCK"]).write_text(repr(datetime.fromisoformat(when).replace(tzinfo=CT).timestamp()))
+    set_clock(env["env"]["FAKE_CLOCK"], when)
     r = subprocess.run([shell, str(env["app"] / "src" / "tools" / "paper_session.sh")], capture_output=True,
                        text=True, env={**env["env"], **extra}, timeout=120)
     day = when[:10]

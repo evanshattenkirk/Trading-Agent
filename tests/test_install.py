@@ -262,6 +262,17 @@ def test_a_dirty_checkout_needs_dirty(box):
     assert (box["app"] / "DEPLOYED").read_text().splitlines()[0] == "v1-2-gabc1234-dirty"
 
 
+def test_the_quant_job_is_installed_by_default_and_no_quant_removes_it(box):
+    assert install(box).returncode == 0
+    qp = box["home"] / "Library" / "LaunchAgents" / "com.agentdesk.quant.plist"
+    pl = plistlib.loads(qp.read_bytes())
+    assert Path(pl["ProgramArguments"][1]).is_file()                       # .../paper-app/src/tools/quant_week.sh
+    assert "bootstrap" in read(box, "launchctl.log") and "com.agentdesk.quant" in read(box, "launchctl.log")
+    assert (box["home"] / ".agentdesk" / "reports").is_dir()
+    r = install(box, "--no-quant")
+    assert r.returncode == 0 and "Removed com.agentdesk.quant (--no-quant)." in r.stdout and not qp.exists()
+
+
 def test_no_load_deploys_without_launchctl(box):
     r = install(box, "--no-load")
     assert r.returncode == 0 and "Not loaded (--no-load)." in r.stdout

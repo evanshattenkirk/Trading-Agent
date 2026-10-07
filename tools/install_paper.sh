@@ -1,6 +1,8 @@
 #!/bin/bash
-# Installs (or updates) the daily paper session as a per-user LaunchAgent (com.agentdesk.paper), and the after-hours
-# review page (com.agentdesk.review: the last saved session, read-only, on the same port while the engine is off).
+# Installs (or updates) the daily paper session as a per-user LaunchAgent (com.agentdesk.paper), the after-hours
+# review page (com.agentdesk.review: the last saved session, read-only, on the same port while the engine is off)
+# and the Friday Quant job (com.agentdesk.quant, tools/quant_week.sh: SIP replay, weekly report, monthly prune;
+# --no-quant leaves it out and removes an installed one).
 #
 # Like the recorder, it deploys a pinned copy of the code and its own venv (~/.agentdesk/paper-app), because
 # macOS blocks background jobs from reading ~/Desktop and edits to the working copy shouldn't change a running
@@ -13,7 +15,7 @@
 # deploys anyway and leaves the running engine alone: it keeps its code until its next start. It refuses a checkout
 # with uncommitted changes unless --dirty, so DEPLOYED (git describe --always --dirty) names what runs.
 #
-# Needs uv. Usage: tools/install_paper.sh [--no-load] [--force] [--dirty]
+# Needs uv. Usage: tools/install_paper.sh [--no-load] [--force] [--dirty] [--no-quant]
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,13 +25,16 @@ LABEL="com.agentdesk.paper"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 REVIEW="com.agentdesk.review"
 REVIEW_PLIST="$HOME/Library/LaunchAgents/$REVIEW.plist"
-NO_LOAD=no FORCE=no DIRTY=no
+QUANT="com.agentdesk.quant"
+QUANT_PLIST="$HOME/Library/LaunchAgents/$QUANT.plist"
+NO_LOAD=no FORCE=no DIRTY=no NO_QUANT=no
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-load) NO_LOAD=yes ;;
     --force) FORCE=yes ;;
     --dirty) DIRTY=yes ;;
-    *) die "Unknown option $1. Usage: tools/install_paper.sh [--no-load] [--force] [--dirty]" ;;
+    --no-quant) NO_QUANT=yes ;;
+    *) die "Unknown option $1. Usage: tools/install_paper.sh [--no-load] [--force] [--dirty] [--no-quant]" ;;
   esac
   shift
 done
@@ -41,7 +46,7 @@ if [ "$FORCE" != yes ] && why="$(engine_running)"; then
   die "An engine is running: $why. Not deployed. Install after 15:10 CT, or run again with --force (the running engine then keeps its code until its next start)."
 fi
 
-mkdir -p "$HOME/.agentdesk/paper" "$HOME/.agentdesk/review" "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/.agentdesk/paper" "$HOME/.agentdesk/review" "$HOME/.agentdesk/reports" "$HOME/Library/LaunchAgents"
 new_release "$APP" "$REPO"
 build_venv
 run_tests
@@ -56,6 +61,7 @@ echo "Deployed $DESC to $APP (release ${REL##*/}); src, .venv and DEPLOYED there
 
 write_plist "$APP/src/tools/launchd/$LABEL.plist" "$PLIST"
 write_plist "$APP/src/tools/launchd/$REVIEW.plist" "$REVIEW_PLIST"
+[ "$NO_QUANT" = yes ] || write_plist "$APP/src/tools/launchd/$QUANT.plist" "$QUANT_PLIST"
 if [ "$NO_LOAD" = yes ]; then
   echo "Not loaded (--no-load)."
   exit 0
@@ -72,3 +78,14 @@ else
 fi
 load_job "$REVIEW" "$REVIEW_PLIST"   # REVIEW
 echo "Loaded $REVIEW: http://127.0.0.1:8765 shows the last session read-only while the engine is off; logs in ~/.agentdesk/review/"
+if [ "$NO_QUANT" = yes ]; then
+  if [ -f "$QUANT_PLIST" ]; then
+    launchctl bootout "gui/$(id -u)/$QUANT" 2>/dev/null || true
+    rm -f "$QUANT_PLIST"
+    echo "Removed $QUANT (--no-quant)."
+  fi
+else
+  load_job "$QUANT" "$QUANT_PLIST"   # QUANT
+  echo "Loaded $QUANT: Fridays 16:00 system time (keep the Mac on Central), SIP replay + weekly Quant report into"
+  echo "  ~/.agentdesk/reports/quant-<Friday>.md, tools/prune.sh on the first Friday of a month."
+fi
