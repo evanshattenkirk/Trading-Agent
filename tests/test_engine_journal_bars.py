@@ -113,3 +113,19 @@ def test_an_unfilled_scale_out_puts_the_stop_back_with_the_scale_count():
     e.quotes.q = Quote(0.80, 0.82, NOW + 1)           # -19%: above the -35% stop, so the position is still held
     run(e.manage(NOW + 1))
     assert pos.qty == 4 and e.open
+
+
+# --------------------------------------------------------------------------- D1: one fee for every book
+def test_book_a_pays_the_same_fee_per_contract_per_side_as_the_books():
+    from agentdesk.brokers.base import OrderResult
+    from agentdesk.feeds.base import Quote
+    e = engine()
+    assert e.cfg["sizing"]["fee_per_contract"] == 0.04 == e.cfg["books"]["account"]["fee_per_leg"]
+    pos = open_pos(e, qty=2)
+    e.quotes.q = Quote(1.20, 1.22, NOW)
+
+    async def fill(contract, side, qty, limit, now):
+        return OrderResult("filled", qty, 1.20, "x")
+    e.broker.submit = fill
+    run(e.exit(pos, e.open[0][1], ExitIntent(2, "test", urgent=True), NOW))
+    assert pos.fees == pytest.approx(0.08) and e.journal.trades()[0]["pnl"] == pytest.approx(40.0 - 0.08)

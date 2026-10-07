@@ -45,7 +45,7 @@ sizing:
   max_trade_dollars: 500
   max_contracts: 5
   min_contracts: 1
-  fee_per_contract: 0.03  # regulatory pass-through, approx
+  fee_per_contract: 0.04  # per contract per side: $0.02 OCC + $0.02 ORF (HANDOFF 2), as books.account.fee_per_leg
 
 orders:
   entry_limit: mid_plus   # mid_plus: mid + 35% of spread, capped at ask
