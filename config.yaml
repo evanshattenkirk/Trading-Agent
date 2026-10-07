@@ -50,8 +50,7 @@ sizing:
 orders:
   entry_limit: mid_plus   # mid_plus: mid + 35% of spread, capped at ask
   entry_spread_frac: 0.35
-  reprice_after_ms: 2500
-  max_reprices: 2
+  max_reprices: 2         # each reprice goes out at once at the touch (ask to buy, bid to sell); there is no wait
   exit_urgent: bid        # stops/flatten go out at the bid
 
 exits:

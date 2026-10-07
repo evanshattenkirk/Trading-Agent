@@ -342,3 +342,26 @@ def test_a_pre_market_start_leaves_the_live_builders_empty():
     assert all(b.cur is None and b.closed_t is None and b.since is None for b in e.tb.values())
     msg = next(x["msg"] for x in seen if x["type"] == "log" and x["msg"].startswith("Warm-up"))
     assert "gap" not in msg
+
+
+# --------------------------------------------------------------------------- orders: reprices go out at once
+def test_reprices_go_out_at_once_and_config_has_no_wait_key(monkeypatch):
+    from agentdesk.brokers.base import OrderResult
+    from test_safety import C
+    e = engine()
+    assert "reprice_after_ms" not in e.cfg["orders"]
+    sent = []
+
+    async def submit(contract, side, qty, limit, now):
+        sent.append(limit)
+        return OrderResult("filled" if len(sent) == 3 else "unfilled", qty if len(sent) == 3 else 0, limit, "x")
+    e.broker.submit = submit
+    slept = []
+    real = asyncio.sleep
+
+    async def sleep(s, *a, **k):
+        slept.append(s)
+        await real(0)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    res = run(e._work_order(C, "buy", 1, 1.00, NOW))
+    assert res.filled_qty == 1 and len(sent) == 3 and sent[1:] == [1.04, 1.04] and not slept
