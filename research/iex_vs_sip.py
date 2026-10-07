@@ -15,7 +15,9 @@ Reported per day and in total:
   - share of RTH seconds where each timeframe's MACD bull/bear state agrees with sip144
   - entry signals (filled entries plus signals risk skipped), matched by time, and whether the setup agrees
   - trades and P&L (Black-Scholes model option prices, same model for every variant, so the delta is
-    driven only by the data feed)
+    driven only by the data feed). --clock trading (default since 2026-10-07) prices on HANDOFF section 7's
+    trading-day clock; the committed iex_vs_sip_out* runs used --clock calendar (the "cheap-option model",
+    0DTE calls at about half of real), so their absolute P&L is overstated in leverage; deltas still compare.
 
 Needs Alpaca keys in the environment (ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY). Free-plan SIP history
 is allowed once it is older than 15 minutes. Read-only: no broker, no orders, PaperBroker fills only.
@@ -217,12 +219,13 @@ async def _aiter(ts, px, sz):
         yield Trade(float(a), float(b), float(c))
 
 
-async def replay(cfg, day: date, history: list[Bar], trades: tuple, tick_size: int, iv: float) -> dict:
+async def replay(cfg, day: date, history: list[Bar], trades: tuple, tick_size: int, iv: float,
+                 clock: str = "trading") -> dict:
     cfg = copy.deepcopy(cfg)
     cfg["crew"]["enabled"] = False
     cfg["strategy"]["tick_bar_effective"] = tick_size          # series keeps the "144t" name, as in live
     feed = ReplayFeed(day, history, None, _aiter(*trades))
-    quotes = ModelQuotes(feed, iv)
+    quotes = ModelQuotes(feed, iv, clock=clock)
     bus = RecBus()
     eng = Engine(cfg, feed, quotes, PaperBroker(quotes), bus, Journal(None), "backtest")
     await eng.run()
@@ -409,11 +412,12 @@ async def main(args) -> None:
         share = print_share(list(tr["iex"][0]), list(tr["sip"][0]), d)
         share["cleaning"] = cleaning
         n_eq = max(1, round(share["implied_tick"] or iex_ticks[0]))
-        runs = {"sip144": await replay(cfg, d, hist["sip"], tr["sip"], cfg["strategy"]["tick_bar_size"], args.iv)}
+        runs = {"sip144": await replay(cfg, d, hist["sip"], tr["sip"], cfg["strategy"]["tick_bar_size"], args.iv,
+                                   args.clock)}
         for k in iex_ticks:
-            runs[f"iex{k}"] = await replay(cfg, d, hist["iex"], tr["iex"], k, args.iv)
+            runs[f"iex{k}"] = await replay(cfg, d, hist["iex"], tr["iex"], k, args.iv, args.clock)
         if not args.no_diag:
-            runs["iexN"] = await replay(cfg, d, hist["iex"], tr["iex"], n_eq, args.iv)
+            runs["iexN"] = await replay(cfg, d, hist["iex"], tr["iex"], n_eq, args.iv, args.clock)
         cd = compare_day(d, runs, share)
         if "iexN" in cd["variants"]:
             cd["variants"]["iexN"]["tick"] = n_eq
@@ -432,7 +436,7 @@ async def main(args) -> None:
     total = roll_up(per_day, trades)
     total["cleaning"] = {f: {k: sum(d["print_share"]["cleaning"][f][k] for d in per_day)
                              for k in ("kept", "dropped_condition", "dropped_outlier")} for f in ("iex", "sip")}
-    total["run"] = {"days": [str(d) for d in test_days], "iv": args.iv, "iex_ticks": iex_ticks, "clean": not args.raw, "max_dev": args.max_dev,
+    total["run"] = {"days": [str(d) for d in test_days], "iv": args.iv, "clock": args.clock, "iex_ticks": iex_ticks, "clean": not args.raw, "max_dev": args.max_dev,
                     "options": "Black-Scholes model (same for every variant)", "generated": datetime.now(timezone.utc).isoformat()}
     (out / "per_day.json").write_text(json.dumps(per_day, indent=1))
     (out / "summary.json").write_text(json.dumps(total, indent=1))
@@ -456,6 +460,9 @@ def cli(argv=None):
     p.add_argument("--days", type=int, default=10)
     p.add_argument("--end", default=None, help="last session YYYY-MM-DD (default: now - 20 min)")
     p.add_argument("--iv", type=float, default=0.16)
+    p.add_argument("--clock", choices=["trading", "calendar"], default="trading",
+                   help="model option clock (backtest.ModelQuotes). The committed iex_vs_sip_out* runs predate it and "
+                        "used calendar, which prices 0DTE calls at about half of real; pass calendar to reproduce them")
     p.add_argument("--iex-ticks", default="8,5", help="comma list of prints per '144t' bar on IEX, one run each")
     p.add_argument("--raw", action="store_true", help="skip the bad-print filter (sale conditions + outliers)")
     p.add_argument("--max-dev", type=float, default=0.005, help="outlier filter: max move vs recent median")
