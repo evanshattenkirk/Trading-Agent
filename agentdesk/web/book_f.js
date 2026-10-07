@@ -1,6 +1,6 @@
 /* Book F1 (stocks in play, shares) on the dashboard: a side card with the day's scan and positions, and the Tape desk's
-   monitor showing the picks. Self-contained: it reads /api/state once and listens on its own /ws connection, so
-   app.js and office.js stay unchanged. Every F fill is paper. */
+   monitor showing the picks. It reads the messages app.js's websocket forwards (window.AgentDeskBookF.onMessage) or,
+   on the review page, the saved snapshot app.js loaded; office.js stays unchanged. Every F fill is paper. */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -90,6 +90,13 @@
     render();
   }
 
+  function onMessage(d) {          // every message on app.js's socket: the snapshot on (re)connect, then batches
+    let dirty = false;
+    if (d.type === 'batch') d.events.forEach((e) => { dirty = apply(e) || dirty; });
+    else if (d.books !== undefined) fromSnapshot(d);
+    if (dirty) render();
+  }
+
   function connect() {
     if (!/^https?:$/.test(location.protocol)) return;
     if ((window.AGENTDESK || {}).source === 'review') {           // no engine after hours: use the saved snapshot app.js loaded
@@ -97,17 +104,9 @@
       if (window.__reviewSnapshot) window.AgentDeskBookF.fromSnapshot(window.__reviewSnapshot);
       return;
     }
-    fetch('/api/state').then((r) => (r.ok ? r.json() : null)).then(fromSnapshot).catch(() => {});
-    let ws;
-    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); } catch (_) { return; }
-    let dirty = false;
-    ws.onmessage = (m) => {
-      const d = JSON.parse(m.data);
-      if (d.type === 'batch') d.events.forEach((e) => { dirty = apply(e) || dirty; });
-      else if (d.books !== undefined) fromSnapshot(d);
-      if (dirty) { dirty = false; render(); }
-    };
-    ws.onclose = () => setTimeout(connect, 3000);
+    // live: app.js forwards its websocket messages (and its reconnects and review hand-off cover this card too)
+    window.AgentDeskBookF = { fromSnapshot, onMessage };
+    if (window.__liveSnapshot) { fromSnapshot(window.__liveSnapshot); delete window.__liveSnapshot; }
   }
 
   // The Tape desk's monitor cycles through F's picks (office.js is not edited; its drawStation is wrapped).

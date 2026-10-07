@@ -116,12 +116,7 @@
   function barForTs(ts) {
     const bars = S.bars[S.tf];
     if (!bars.length) return null;
-    if (S.tf === '144t') {
-      let lo = 0, hi = bars.length - 1;
-      if (bars[hi].end < ts) return null;
-      while (lo < hi) { const mid = (lo + hi) >> 1; if (bars[mid].end >= ts) hi = mid; else lo = mid + 1; }
-      return bars[lo];
-    }
+    if (S.tf === '144t') return P.bar144(bars, ts);      // null before the first bar kept, not the first bar
     const start = Math.floor(ts / TF_SEC[S.tf]) * TF_SEC[S.tf];
     for (let i = bars.length - 1; i >= 0; i--) { if (bars[i].t === start) return bars[i]; if (bars[i].t < start) break; }
     return null;
@@ -235,7 +230,7 @@
       }
       case 'trade_closed': S.positions.delete(e.pos.id); S.closed.push({ ...e.pos, net: e.net }); S.risk = e.risk; mark('pos', 'trades', 'risk', 'header'); break;
       case 'risk': S.risk = e.risk; mark('risk', 'header'); break;
-      case 'skip': S.skips.push(e); feedPush(e.ts, 'skip', `Passed on ${e.setup} (${e.tf} cross): ${e.why}`); mark('pos'); break;
+      case 'skip': S.skips.push(e); if (S.skips.length > 50) S.skips.shift(); feedPush(e.ts, 'skip', `Passed on ${e.setup} (${e.tf} cross): ${e.why}`); mark('pos'); break;
       case 'agent': S.agent = { activity: e.activity, text: e.text, ts: e.ts }; if (office && !S.bulk) office.onAgent(e.activity, e.text); mark('office'); break;
       case 'crew':
         if (e.phase === 'done' && e.brief) { S.crew.briefs[e.desk] = e.brief; mark('crew'); }
@@ -252,6 +247,7 @@
       case 'l2': S.l2 = { book: e.book, mode: e.mode, gate_ok: e.gate_ok, gate_why: e.gate_why }; mark('l2'); break;
       case 'directive': S.crew.directive = e.directive; S.risk = e.risk || S.risk; mark('crew', 'risk'); break;
       case 'log': feedPush(e.ts, 'log', e.msg); break;
+      case 'config': S.config = { ...(S.config || {}), ...e.config }; mark('pos', 'signal'); break;   // a crew tweak changed it
       case 'books': S.books = e.books; S.account = e.account; mark('books', 'header'); break;
       case 'book_position':
         S.combos.set(e.pos.id, { ...(S.combos.get(e.pos.id) || {}), ...e.pos });
@@ -459,7 +455,7 @@
       pill.textContent = 'Flat'; pill.className = 'pill';
       const sk = S.skips[S.skips.length - 1];
       const lastT = S.closed[S.closed.length - 1];
-      body.innerHTML = `<p class="note">No open position. The engine enters on a fresh 1m or 144t MACD cross with the 15m and 5m filters above signal and RSI inside 30–70.</p>` +
+      body.innerHTML = `<p class="note">No open position. The engine enters on a fresh 1m or 144t MACD cross with the 15m and 5m filters above signal and RSI inside ${P.rsiBand(S.config?.strategy)}.</p>` +
         (sk ? `<p class="note">Last pass <b>${hm(sk.ts)}</b>: ${esc(sk.why)}</p>` : '') +
         (lastT ? `<p class="note">Last trade: <b>${esc(lastT.contract)}</b> <span class="${cls(lastT.net)}">${money(lastT.net)}</span> · ${esc(lastT.exit_reason)}</p>` : '') + extra;
       return;
@@ -470,7 +466,7 @@
     const lo = Math.min(p.stop, p.mark, p.entry) * 0.97, hi = Math.max(...tg, p.peak, p.mark) * 1.03;
     const pos = (v) => ((v - lo) / (hi - lo) * 100).toFixed(1) + '%';
     const fillL = Math.min(p.mark, p.entry), fillR = Math.max(p.mark, p.entry);
-    const ex = S.config?.exits?.[p.setup === 'SWING' ? 'swing' : 'scalp'];
+    const ex = P.exitPlan(p, S.config?.exits);          // the plan the engine uses for this position
     body.innerHTML = `
       <div class="pos-title"><span class="c">${p.qty}× ${esc(p.contract)}</span><span class="p ${cls(p.pnl_pct)}">${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%</span></div>
       <div class="ladder" aria-label="Premium ladder: stop, entry, targets, current mark">
@@ -490,7 +486,7 @@
         <div><span class="k">P&amp;L</span><span class="v ${cls(pnl)}">${money(pnl)}</span></div>
       </div>
       <p class="note">Strike ${esc(p.strike_reason)}.</p>
-      ${ex ? `<p class="note">Exit plan: <b>${ex.exit_on_cross_back}</b> cross-back · scale ${ex.scale_outs.map((s) => `${Math.round(s.fraction * 100)}% at +${Math.round(s.at * 100)}%`).join(', ')} · runner trails ${Math.round(ex.runner_trail_pct * 100)}% off peak · time stop ${ex.time_stop_min}m${p.ripping ? ' · <b>runner holding for the 5m cross</b>' : ''}</p>` : ''}${extra}`;
+      ${ex ? `<p class="note">Exit plan: ${esc(P.exitPlanText(ex))}${p.ripping ? ' · <b>runner holding for the 5m cross</b>' : ''}</p>` : ''}${extra}`;
   }
 
   function renderRisk() {
@@ -629,12 +625,14 @@
       closes: S.bars['1m'].slice(-60).map((b) => b.c), pos: p ? `${lbl} ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : null,
       posPct: pct, halted: !!S.risk?.halted, imb: S.l2?.book?.imbalance ?? null,
     });
-    $('office-status').textContent = office.current || office.queue.length ? 'IN A HUDDLE' : (ACT_LABEL[S.agent.activity] || String(S.agent.activity || '').toUpperCase());
+    const st = office.current || office.queue.length ? 'IN A HUDDLE' : (ACT_LABEL[S.agent.activity] || String(S.agent.activity || '').toUpperCase());
+    const el = $('office-status');
+    if (el.textContent !== st) el.textContent = st;      // no DOM write per frame
   }
 
-  let lastPanels = 0;
+  let lastPanels = 0, lastOffice = 0;
   function render(now) {
-    renderOffice();
+    if (now - lastOffice >= 64) { lastOffice = now; renderOffice(); }       // the office draws at ~15 fps
     if (now - lastPanels < 120 && !dirty.has('all') && !dirty.has('chart')) return;
     lastPanels = now;
     const all = dirty.has('all');
@@ -658,10 +656,23 @@
     const open = () => {
       const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
       ws.onopen = () => { banner(null); backoff = 1000; };
-      ws.onmessage = (m) => { apply(JSON.parse(m.data)); };
-      ws.onclose = () => { banner(`<b>Disconnected from the engine.</b> Retrying in ${Math.round(backoff / 1000)}s…`); setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
+      ws.onmessage = (m) => { const d = JSON.parse(m.data); toBookF(d); apply(d); };
+      ws.onclose = async () => {
+        // after 15:10 the review server answers on this port: become the review page instead of retrying all night
+        if (await reviewServing()) { location.reload(); return; }
+        banner(`<b>Disconnected from the engine.</b> Retrying in ${Math.round(backoff / 1000)}s…`); setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2);
+      };
     };
     open();
+  }
+  async function reviewServing() {
+    try { const r = await fetch('/config.js', { cache: 'no-store' }); return r.ok && P.isReviewConfig(await r.text()); }
+    catch (e) { return false; }           // nothing listening yet (engine stopping, review not up)
+  }
+  function toBookF(d) {          // book_f.js's card shares this socket
+    const f = window.AgentDeskBookF;
+    if (f && f.onMessage) { try { f.onMessage(d); } catch (err) { console.warn('book F card update failed', err); } }
+    else if (d.type === 'snapshot') window.__liveSnapshot = d;        // book_f.js reads it once mounted
   }
 
   class Replay {
@@ -711,6 +722,7 @@
     let r;
     try { r = await fetch('/api/review' + (day ? '?day=' + encodeURIComponent(day) : ''), { cache: 'no-store' }); }
     catch (e) { banner('<b>Could not reach the review server.</b>'); return; }
+    if (!r.ok && day) { banner(`<b>The ${esc(dayName(day))} session could not be read.</b> Pick another day above.`); return; }
     if (!r.ok) {
       banner('<b>The engine is off</b> and no session has been saved yet. The live view starts at 08:10 CT on the next trading day; after that, this page shows the day read-only.');
       return;

@@ -26,7 +26,40 @@
   const openLabel = (ts, day) => (ts == null ? '' : ctDay(ts) === day ? ctHm(ts)
     : `${new Date(ts * 1000).toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short' })} ${ctHm(ts)}`);
 
-  const api = { riskTotals, liveBlackouts, onChart, openLabel };
+  // The 144t bar a fill at `ts` belongs to: the first bar that ends at or after it. None when the fill is older than
+  // the first bar kept (the 4000-bar window rolls past the morning) or newer than the last, so no marker lands on a
+  // wrong bar.
+  function bar144(bars, ts) {
+    if (!bars || !bars.length) return null;
+    let lo = 0, hi = bars.length - 1;
+    if (bars[hi].end < ts || ts < bars[0].t) return null;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (bars[mid].end >= ts) hi = mid; else lo = mid + 1; }
+    return bars[lo];
+  }
+
+  // Book A's exit plan: the one the engine built for this position (a next-trade tweak gives it its own), else today's
+  // config (a saved session from before positions carried their plan).
+  function exitPlan(pos, exits) {
+    if (pos && pos.plan) return pos.plan;
+    const x = exits && exits[pos && pos.setup === 'SWING' ? 'swing' : 'scalp'];
+    return x ? { stop_pct: exits.stop_loss_pct, trail_pct: x.runner_trail_pct, exit_on_cross_back: x.exit_on_cross_back,
+      scale_outs: x.scale_outs || [], time_stop_min: x.time_stop_min } : null;
+  }
+  const pct = (x) => Math.round(x * 100);
+  const exitPlanText = (pl) => [
+    pl.stop_pct != null ? `stop −${pct(pl.stop_pct)}%` : null,
+    pl.exit_on_cross_back ? `${pl.exit_on_cross_back} cross-back` : null,
+    (pl.scale_outs || []).length ? 'scale ' + pl.scale_outs.map((s) => `${pct(s.fraction)}% at +${pct(s.at)}%`).join(', ') : null,
+    pl.trail_pct != null ? `runner trails ${pct(pl.trail_pct)}% off peak` : null,
+    pl.time_stop_min != null ? `time stop ${pl.time_stop_min}m` : null,
+  ].filter(Boolean).join(' · ');
+
+  const rsiBand = (strategy) => { const r = (strategy && strategy.rsi) || {}; return `${r.lower ?? 30}–${r.upper ?? 70}`; };
+
+  // The after-hours review server's /config.js (python -m agentdesk review); the engine's says source 'ws'.
+  const isReviewConfig = (text) => /source:\s*['"]review['"]/.test(text || '');
+
+  const api = { riskTotals, liveBlackouts, onChart, openLabel, bar144, exitPlan, exitPlanText, rsiBand, isReviewConfig };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AgentPanel = api;
 })(this);

@@ -94,6 +94,14 @@ class Position:
         return self.realized + self.unrealized - self.fees
 
     def to_dict(self) -> dict:
+        pl = getattr(self, "exit_plan", None)       # the ExitPlan managing this position (a trade tweak gives it its own)
+        p = pl.p if pl is not None else {}          # .get only: this display field must never break a journal write
+        plan = None if pl is None else {
+            "stop_pct": pl.stop_pct, "trail_pct": p.get("runner_trail_pct"), "exit_on_cross_back": p.get("exit_on_cross_back"),
+            "scale_outs": [{"at": s.get("at"), "fraction": s.get("fraction")} for s in p.get("scale_outs") or []],
+            "time_stop_min": p.get("time_stop_min"), "time_stop_min_gain": p.get("time_stop_min_gain"),
+            "breakeven": p.get("breakeven_after_first_scale", True), "ripping_hold": bool(p.get("ripping_hold")),
+        }
         return {
             "id": self.id, "contract": self.contract.label, "occ": self.contract.occ, "setup": self.setup,
             "qty": self.qty, "qty_initial": self.qty_initial, "entry": round(self.entry, 2),
@@ -103,7 +111,7 @@ class Position:
             "total_pnl": round(self.total_pnl, 2), "scales_done": self.scales_done, "ripping": self.ripping,
             "opened_ts": self.opened_ts, "closed_ts": self.closed_ts, "status": self.status,
             "exit_reason": self.exit_reason, "strike_reason": self.strike_reason, "fills": self.fills,
-            "entry_reasons": self.entry_reasons, "l2": self.l2,
+            "entry_reasons": self.entry_reasons, "l2": self.l2, "plan": plan,
         }
 
 
@@ -113,6 +121,7 @@ class ExitPlan:
         self.p = ecfg["swing" if pos.setup == "SWING" else "scalp"]
         self.pos = pos
         pos.stop = round(pos.entry * (1 - self.stop_pct), 2)
+        pos.exit_plan = self                         # Position.to_dict shows the dashboard this plan's parameters
 
     @property
     def exit_tf(self) -> str:

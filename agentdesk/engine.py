@@ -630,6 +630,8 @@ class Engine:
                 set_path(self.cfg, k, v)
             write_override(item["params"])
         self.bus.emit("log", now, level="info", msg=f"crew tweak ({item['scope']}): {item['title']} {item['params']}")
+        if item["scope"] in ("day", "standing"):      # the page's exit-plan and RSI text read this config
+            self.bus.emit("config", now, config={k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")})
 
     def decide_proposal(self, pid: str, approve: bool) -> dict | None:
         now = self.feed.now()
