@@ -45,7 +45,7 @@ All books run side by side on one paper account: $10,000 balance, $2,500 cap on 
 | **E** | Pre-earnings IV run-up: ATM straddle at T−3, call calendar at T−10, always sold before the report | Paper; holds positions across days | No quote backtest yet |
 | **F1** | Stocks in play: opening-range breakout on high relative volume, long shares, now across all liquid US stocks with a stop at the opening-range low | Paper | The large-cap version fails its 2016–2026 replication (PF 0.66, t −10.5, `research/strategy_f_intraday.md`); the v2 rules are pre-registered (`research/strategy_f1_prereg.md`) and wait for the broad-universe backtest |
 | **F2** | Single-name debit spreads: call spreads on F1-style breakouts, put spreads fading high-volume up days; held up to 3 days | Paper | Puts rest on the one significant effect in F's research (high-volume up days reverse next day, t −3.9); calls are the weaker-evidence leg. No option history yet (`research/strategy_f2_prereg.md`) |
-| **G** | 0DTE/1DTE SPY ATM call calendar at 09:00 CT | **Off** since 2026-10-06 (`enabled: false`; code and tests kept) | Passed on modeled prices, then **failed its real-quote kill rule**: −3.29% of the debit a trade at mid −1¢ (t −5.40, PF 0.76, 1,882 trades), every year 2022–2026 negative (`research/strategies_new_quotes_report.md`) |
+| **G** | 0DTE/1DTE SPY ATM call calendar at 09:00 CT | **Disabled in config** (`enabled: false`, PR #48, 2026-10-06; code and tests kept) | Passed on modeled prices, then **failed its real-quote kill rule**: −3.29% of the debit a trade at mid −1¢ (t −5.40, PF 0.76, 1,882 trades), every year 2022–2026 negative (`research/strategies_new_quotes_report.md`) |
 
 A bearish-puts mirror of C is built but disabled until a pre-registered filter passes out of sample.
 
@@ -59,7 +59,7 @@ Each study fixed its rules and its pass bar before the run, and none were change
 | Book A, baseline and variants (no RSI cap, puts, 15m-only filter, slower exits, wider stop, strike offsets) | 1-minute bars 2005–2020; real quotes and SIP ticks 2020–2026 | Fail. Baseline −$24 a day on real quotes; best variant −$14 a day. The 2020–26 holdout is now spent, so new A ideas can only be judged on new paper days |
 | Books B and D | Real quotes 2016–2026 | No edge after costs. The variance premium is real (opening straddle priced 1.07× the realized move), but only a hold to settlement keeps it, and the rules don't allow that |
 | Book F (stocks in play) original spec | Alpaca SIP 1-minute, 2016–2026 | Fail: PF 0.66, t −10.5, every year negative. F1 v2 and F2 are pre-registered, results pending |
-| Book G (call calendar) | Real quotes 2016–2026 | Fail (above); switched off |
+| Book G (call calendar) | Real quotes 2016–2026 | Fail (above); disabled in config |
 | H1–H3: SPY overnight hold, overnight after a down day, RSI(2) dip | 2005–2020 | Fail out of sample (t −0.51 / +0.06 / −0.33) |
 | H4: overnight 1DTE SPY iron fly | Real quotes 2016–2026 | Fail: −$5.08 a lot at mid −1¢ out of sample (t −3.23), every year negative (`h4_overnight_fly.md`) |
 | V1: short VIX futures carry (SVXY at −0.5× while VIX/VIX3M < 1) | CBOE VX settlements, 2009–2026 | Fail: out-of-sample t +1.09 against a bar of 2.33, max drawdown −65% (`vix_carry.md`) |
@@ -202,7 +202,7 @@ Robinhood's intraday history for past 0DTE contracts comes back gap-filled, so i
 
 ## Paper option books B, C, D and G
 
-Books B (iron fly), C (ORB bull-put), D (iron condor) and G (call calendar, switched off since 2026-10-06) run next to book A in every mode, always on paper: fills are simulated at mid minus 1¢ per leg (never worse than the natural price) and each fill logs both. In shadow mode the first price of each order also goes to `review_option_order`; nothing is ever placed. Settings live under `books:` in `config.yaml` (`paper_only: true` is required).
+Books B (iron fly), C (ORB bull-put), D (iron condor) and G (call calendar, disabled in config on 2026-10-06) run next to book A in every mode, always on paper: fills are simulated at mid minus 1¢ per leg (never worse than the natural price) and each fill logs both. In shadow mode the first price of each order also goes to `review_option_order`; nothing is ever placed. Settings live under `books:` in `config.yaml` (`paper_only: true` is required).
 
 - Account: $10,000 paper balance, $2,500 cap on the sum of open max losses (book A's open debit counts), $300 max loss per B/C/D position, C sized from a $400 budget (the lower wins).
 - Each book has its own trades, P&L and halt. A book that keeps erroring halts and flattens itself; the kill switch, safety halts and the 14:40 CT flatten cover every book.
