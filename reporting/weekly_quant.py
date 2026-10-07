@@ -194,7 +194,28 @@ def max_month_share(trades: list):
 def _connect(path) -> sqlite3.Connection:
     db = sqlite3.connect(f"file:{Path(path).expanduser()}?mode=ro", uri=True, timeout=30)
     db.row_factory = sqlite3.Row
+    _with_archives(db, path)
     return db
+
+
+def _with_archives(db, path) -> None:
+    """Quotes tools/prune_journal.py moved to <journal dir>/archive/quotes-YYYY.db stay in the report: a temp view
+    named option_quotes (SQLite looks in temp before main) adds them to the journal's own rows."""
+    files = sorted((Path(path).expanduser().parent / "archive").glob("quotes-*.db"))[-9:]   # SQLite attaches <= 10
+    cols = [r[1] for r in db.execute("PRAGMA main.table_info(option_quotes)")] if files else []
+    if not cols:
+        return
+    names = ", ".join(cols)
+    parts = [f"SELECT {names} FROM main.option_quotes"]
+    for i, f in enumerate(files):
+        try:
+            db.execute(f"ATTACH DATABASE ? AS qa{i}", (f"file:{f}?mode=ro",))
+        except sqlite3.Error:
+            continue
+        if set(cols) <= {r[1] for r in db.execute(f"PRAGMA qa{i}.table_info(option_quotes)")}:
+            parts.append(f"SELECT {names} FROM qa{i}.option_quotes")
+    if len(parts) > 1:
+        db.execute("CREATE TEMP VIEW option_quotes AS " + " UNION ALL ".join(parts))
 
 
 def _loads(s):
