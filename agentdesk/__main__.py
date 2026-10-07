@@ -370,7 +370,7 @@ def main() -> None:
     bt.add_argument("--ticks", action="store_true", help="download trades to build real 144t bars (slow, heavy)")
     bt.add_argument("--options", choices=["model", "alpaca"], default="model")
     bt.add_argument("--source", choices=["alpaca", "robinhood"], default="alpaca", help="where SPY 1m bars come from")
-    bt.add_argument("--iv", type=float, default=0.16, help="model IV when --options model")
+    bt.add_argument("--iv", type=float, default=0.16, help="model IV when --options model: VIX-style (0.16 = VIX 16), trading-day clock")
     bt.add_argument("--csv", default=None, help="use a local 1m CSV (t,o,h,l,c,v) instead of downloading")
     bt.add_argument("--sim-days", type=int, default=0, help="run on N synthetic days (plumbing check only)")
     bt.add_argument("--out", default="backtest")
