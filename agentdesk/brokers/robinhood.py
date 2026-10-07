@@ -225,8 +225,10 @@ class CallBudget:
     """One Robinhood account's call budget for this process. Robinhood throttles near 240 calls a minute per account
     (recorder probe, 2026-09-28) and the standalone quote recorder shares that account, so the engine keeps to
     `per_min` (and `per_s` in bursts). A RATE_LIMITED answer pauses every call for FIRST_PAUSE_S, doubling up to
-    MAX_PAUSE_S while it repeats; a success resets it. The cap stays under the 10 s quote watchdog, so a throttle
-    alone can't trip a safety halt. Order calls (live only) never wait, but they count."""
+    MAX_PAUSE_S while it repeats; a success resets it. One pause stays under the 10 s quote watchdog, but pauses in a
+    row add up (2+4+8 s), so the engine's watchdog doesn't count the time holding() is true (a pause, or this
+    minute's budget used up) toward a quote's age: a throttle alone can't trip a safety halt, an outage still does.
+    Order calls (live only) never wait, but they count."""
 
     FIRST_PAUSE_S = 2.0
     MAX_PAUSE_S = 8.0
@@ -291,6 +293,14 @@ class CallBudget:
 
     def ok(self) -> None:
         self.pause_s = self.FIRST_PAUSE_S
+
+    def holding(self) -> bool:
+        """True while no call can go out: a RATE_LIMITED pause, or this minute's budget is used up."""
+        now = self.clock()
+        if self.paused_until > now:
+            return True
+        self._prune(now)
+        return len(self.recent) >= self.per_min
 
 
 class RobinhoodMCP:

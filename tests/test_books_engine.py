@@ -63,7 +63,10 @@ def test_watchdog_trips_on_a_stale_combo():
     async def go():
         e._watchdog(pos.last_quote_ts + 11)
     asyncio.run(go())
-    assert e.risk.st.halted and "no fresh quote" in e.risk.st.halt_reason and e.books.account.flatten
+    assert e.risk.st.halted and "no fresh quote" in e.risk.st.halt_reason
+    assert e.books.books[0].halted and not e.books.account.halted     # A + the 0DTE books, not the account (D3)
+    step(e, fq, feed, pos.last_quote_ts + 12)
+    assert not e.books.positions()
 
 
 def test_live_mode_needs_exactly_one_promoted_book():
