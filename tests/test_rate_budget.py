@@ -141,7 +141,9 @@ def test_recorder_keeps_its_own_pacing():
     from agentdesk import recorder
     cfg = load_config()
     rc = recorder.recorder_cfg(cfg, recorder.settings(cfg))
-    assert CallBudget.from_cfg(rc["robinhood"]) is None
+    b = CallBudget.from_cfg(rc["robinhood"])
+    assert b is not None and b.per_min == 100                          # its own cap, not the engine's 120 (I7)
+    assert CallBudget.from_cfg(recorder.recorder_cfg(cfg, recorder.settings(cfg), capped=False)["robinhood"]) is None
 
 
 # ------------------------------------------------------------------ fetch_quotes + BookHost batching
