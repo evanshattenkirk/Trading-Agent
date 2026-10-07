@@ -987,6 +987,9 @@ class Crew:
         if vix and vix > 28:
             b["size_multiplier"] = min(float(b.get("size_multiplier") or 1.0), 0.75)
             b["headline"] = f"VIX {vix:.1f} is above 28: cutting size to 75%."
+        elif not vix and "size_multiplier" in prev:     # can't re-check the VIX rule: a cut stays until VIX reads < 28
+            b["size_multiplier"] = prev["size_multiplier"]
+            b["headline"] = f"VIX n/a: keeping my last vote ({prev['size_multiplier'] * 100:.0f}%)."
         return b
 
     # ------------------------------------------------------------ weekly economic calendar
