@@ -365,3 +365,25 @@ def test_reprices_go_out_at_once_and_config_has_no_wait_key(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", sleep)
     res = run(e._work_order(C, "buy", 1, 1.00, NOW))
     assert res.filled_qty == 1 and len(sent) == 3 and sent[1:] == [1.04, 1.04] and not slept
+
+
+# --------------------------------------------------------------------------- I6: no httpx line per Robinhood call
+def test_run_quiets_the_http_and_mcp_loggers(monkeypatch):
+    import argparse
+    from agentdesk import __main__ as cli
+
+    class Stop(Exception):
+        pass
+
+    def stop(*a, **k):
+        raise Stop
+    monkeypatch.setattr(cli, "load_config", stop)
+    names = ("httpx", "httpcore", "mcp")
+    before = {n: logging.getLogger(n).level for n in names}
+    try:
+        with pytest.raises(Stop):
+            cli.cmd_run(argparse.Namespace(config=None, mode="paper"))
+        assert all(logging.getLogger(n).level == logging.WARNING for n in names)
+    finally:
+        for n, lvl in before.items():
+            logging.getLogger(n).setLevel(lvl)

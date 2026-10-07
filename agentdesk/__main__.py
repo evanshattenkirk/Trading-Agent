@@ -151,6 +151,8 @@ def cmd_run(args) -> None:
     from . import lifecycle
     from .server import LOCAL_HOSTS, create_app, resolve_token
 
+    for noisy in ("httpx", "httpcore", "mcp"):     # else the day log gets an INFO line per Robinhood call
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     cfg = load_config(args.config)
     mode = args.mode or cfg["mode"]
     with dashboard_claim(cfg):
