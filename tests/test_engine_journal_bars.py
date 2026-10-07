@@ -168,3 +168,44 @@ def test_a_wide_spread_otm_still_steps_toward_atm():
     e, _ = _enter(1, WideAt(661.0))
     assert e.quotes.asked == [661.0, 660.0]
     assert e.open and e.open[0][0].contract.strike == 660.0
+
+
+# --------------------------------------------------------------------------- 144t: regular hours only
+def ct_ts(d, hh, mm, ss=0.0):
+    from agentdesk.clock import at_ct
+    return at_ct(d, time(hh, mm)) + ss
+
+
+MON, FRI = date(2026, 9, 28), date(2026, 9, 25)
+
+
+def test_pre_market_prints_never_reach_the_144t_series():
+    from agentdesk.bars import Trade
+    e = engine()
+    for i in range(30):
+        run(e._on_trade(Trade(ct_ts(MON, 8, 0, i), 660.0 + i / 100, 100)))
+    assert e.tick.cur is None and e.tick.count == 0 and not e.bars[e.tick_tf]
+    run(e._on_trade(Trade(ct_ts(MON, 8, 30, 1), 660.5, 100)))
+    assert e.tick.cur is not None and e.tick.cur.n == 1
+
+
+def test_late_prints_are_logged_each_minute_at_debug_and_summed_up_at_info(caplog):
+    from agentdesk.bars import Trade
+    e = engine()
+    e.day = MON
+    run(e._on_trade(Trade(ct_ts(MON, 9, 0, 5), 660.0, 100)))
+    run(e._on_second(ct_ts(MON, 9, 1, 0.2)))                          # the heartbeat closes the 09:00 bar
+    run(e._on_trade(Trade(ct_ts(MON, 9, 0, 59.9), 660.1, 100)))       # its last print arrives after that
+    assert e.tb["1m"].late == 1
+    with caplog.at_level(logging.DEBUG, logger="agentdesk.engine"):
+        run(e._on_second(ct_ts(MON, 9, 2, 0.2)))
+        assert "late prints" in caplog.text and "'1m': 1" in caplog.text
+        caplog.clear()
+        run(e._on_second(ct_ts(MON, 9, 2, 30)))                       # once a minute, not every second
+        assert "late prints" not in caplog.text
+    with caplog.at_level(logging.INFO, logger="agentdesk.engine"):
+        run(e._on_second(ct_ts(MON, 15, 5, 0.5)))
+        assert [r for r in caplog.records if r.levelno == logging.INFO and "late prints" in r.getMessage()]
+        caplog.clear()
+        e.stop()                                                      # the shutdown summary
+        assert "late prints" in caplog.text

@@ -49,6 +49,8 @@ class Engine:
         self.crew = None
         self.agent = {"activity": "offline", "text": "", "ts": 0.0}
         self._last_sec = 0
+        self._late_minute = None    # last minute the late-print count was logged (debug), and the day of its info summary
+        self._late_day = None
         self._last_manage = 0.0
         self._last_tick_emit = 0.0
         self._last_pos_emit = 0.0
@@ -109,6 +111,7 @@ class Engine:
 
     def stop(self) -> None:
         self._stopped = True
+        log.info("late prints dropped from time bars: %s", self.late_prints())
 
     async def _warmup(self) -> None:
         hist = await self.feed.history_1m(self.cfg["data"]["history_days"])
@@ -174,9 +177,9 @@ class Engine:
                 c = self.tb[tf].on_trade(tr)
                 if c:
                     closed.append(c)
-        c = self.tick.on_trade(tr)
-        if c:
-            closed.append(c)
+            c = self.tick.on_trade(tr)              # regular-hours prints only, as the time bars
+            if c:
+                closed.append(c)
         for b in closed:
             await self._on_bar(b)
         if is_rth(now):
@@ -195,6 +198,7 @@ class Engine:
             c = self.tb[tf].flush(now)
             if c:
                 await self._on_bar(c)
+        self._log_late(now)
         if self.crew:
             await self.crew.on_clock(now)
         if self.simbook is not None and self.l2 and self.l2.enabled and is_rth(now) and self.price:
@@ -209,6 +213,23 @@ class Engine:
         if self.books:
             await self.books.run(self.books.on_second(now), self.inline)
         self._watchdog(now)
+
+    def _log_late(self, now: float) -> None:
+        """Prints dropped from the 1m/5m/15m bars because the heartbeat had already closed their bar (feed latency
+        plus clock skew): at debug once a minute, at info once after 15:05 CT and at shutdown."""
+        minute = int(now // 60)
+        if minute == self._late_minute:
+            return
+        self._late_minute = minute
+        late = self.late_prints()
+        if any(late.values()):
+            log.debug("late prints dropped from time bars so far: %s", late)
+        if self._late_day != self.day and ct_time(now) >= time(15, 5):
+            self._late_day = self.day
+            log.info("late prints dropped from time bars today: %s", late)
+
+    def late_prints(self) -> dict:
+        return {tf: b.late for tf, b in self.tb.items()}
 
     def _new_day(self, d, now: float) -> None:
         from .proposals import set_path
