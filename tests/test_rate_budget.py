@@ -240,6 +240,37 @@ def test_a_throttle_never_counts_toward_a_book_halt():
     assert len(logs) == 1 and logs[0]["level"] == "warn"                 # one line per episode, not one per call
 
 
+def test_a_failed_batched_prefetch_logs_one_warn_line_per_episode(monkeypatch):   # review 2026-10-06 I8
+    from agentdesk.books import host as host_mod
+    q, host = host_with_two_open_books()
+    real = host_mod.fetch_quotes
+    down = [True]
+
+    async def flaky(quotes, cs):
+        if down[0] and len(cs) == 6:                  # only the host's batched call (4 fly + 2 calendar legs) fails
+            raise RuntimeError("get_option_quotes: 502 Bad Gateway")
+        return await real(quotes, cs)
+    monkeypatch.setattr(host_mod, "fetch_quotes", flaky)
+
+    def warns():
+        return [d for d in host.e.bus.of("log") if "batched" in d["msg"]]
+    for i in range(1, 6):
+        q.cache.clear()
+        q.now = ct_ts(9, 1, i)
+        run(host.on_second(ct_ts(9, 1, i)))
+    assert len(warns()) == 1 and warns()[0]["level"] == "warn" and "502" in warns()[0]["msg"]
+    down[0] = False
+    q.now = ct_ts(9, 1, 6)
+    run(host.on_second(ct_ts(9, 1, 6)))
+    down[0] = True
+    for i in range(10, 13):                           # a new outage two minutes later: one more line
+        q.cache.clear()
+        q.now = ct_ts(9, 3, i)
+        run(host.on_second(ct_ts(9, 3, i)))
+    assert len(warns()) == 2
+    assert not any(b.halted for b in host.books)      # each book still got its quotes on its own
+
+
 @pytest.mark.parametrize("which", ["E", "F"])
 def test_books_e_and_f_skip_a_throttled_round_without_counting_it(which):
     if which == "E":
