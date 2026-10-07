@@ -50,6 +50,8 @@ caffeinate -i -w $$ &
 if [ "$(now_ct)" -lt 0755 ]; then
   log "started at $(now_ct) CT; waiting for 08:10 CT"
   while [ "$(now_ct)" -lt 0810 ]; do sleep 30; done
+  cd -P "$APP/src" 2>/dev/null || { log "no deployment at $APP/src; run tools/install_paper.sh"; exit 1; }
+  PY="$(cd -P "$APP/.venv" 2>/dev/null && pwd -P)/bin/python"      # an install made during the wait counts
 fi
 
 others="$(live_claims "$CLAIMS" | tr '\n' ' ')"
