@@ -26,6 +26,31 @@ MAX_BARS = {"144t": 4000, "1m": 400, "5m": 200, "15m": 120}
 WATCHDOG = {"quote_stale_sec": 10, "max_consecutive_errors": 3, "reconcile_sec": 30}
 
 
+class ThrottleCredit:
+    """The stale-quote watchdog's clock (H2): seconds in which the Robinhood call budget held every call (a
+    RATE_LIMITED pause, or this minute's budget used up) don't count toward a position's quote age, so back-to-back
+    throttles (2+4+8 s) can't trip a safety halt, while an outage with no throttle still trips it after
+    quote_stale_sec. Sampled once a second by the watchdog."""
+
+    def __init__(self):
+        self.last: float | None = None
+        self.held = 0.0                 # budget-held seconds so far
+        self.seen: dict[int, tuple[float, float]] = {}     # id(position) -> (its last_quote_ts, held at that time)
+
+    def tick(self, now: float, budget, positions) -> None:
+        prev, self.last = self.last, now
+        if budget is not None and prev is not None and budget.holding():
+            self.held += min(max(now - prev, 0.0), 2.0)
+        ids = {id(p) for p in positions}
+        self.seen = {k: v for k, v in self.seen.items() if k in ids}
+
+    def age(self, pos, now: float) -> float:
+        s = self.seen.get(id(pos))
+        if s is None or s[0] != pos.last_quote_ts:
+            s = self.seen[id(pos)] = (pos.last_quote_ts, self.held)
+        return now - pos.last_quote_ts - (self.held - s[1])
+
+
 class Engine:
     def __init__(self, cfg, feed, quotes, broker, bus, journal, mode: str = "sim"):
         self.cfg, self.feed, self.quotes, self.broker, self.bus, self.journal = cfg, feed, quotes, broker, bus, journal
@@ -315,7 +340,7 @@ class Engine:
             self._errors = max(self._streaks.values(), default=0)
         except asyncio.CancelledError:
             raise
-        except RateLimited as ex:           # Robinhood is pacing the account: skip this round; stale quotes still trip the watchdog
+        except RateLimited as ex:           # Robinhood is pacing the account: skip this round; the watchdog doesn't count the pause
             now = self.feed.now()
             if now - self._last_rate_log >= 60:
                 self._last_rate_log = now
@@ -330,16 +355,31 @@ class Engine:
                 self._trip(f"{self._errors} broker/API errors in a row (last: {what}: {ex})", now)
 
     # ------------------------------------------------------------------ safety watchdog
-    def _trip(self, reason: str, now: float) -> None:
-        """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions."""
-        first = not self.risk.account_flatten()
-        self.risk.halt(f"SAFETY: {reason}", flatten=True)
-        if self.books:
-            self.books.halt_all(f"SAFETY: {reason}", flatten=True)
+    def _trip(self, reason: str, now: float, stale=None) -> None:
+        """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions.
+        A stale quote (`stale`: that position) halts and flattens book A and the 0DTE SPY books B/C/D/G, plus the
+        book holding that position if it is another one (F1); E, F1 and F2 otherwise keep running (Evan approved D3,
+        2026-10-07). Every other cause (broker errors, a position mismatch, an ambiguous order) is account-wide."""
+        msg = f"SAFETY: {reason}"
+        if stale is None:
+            first = not self.risk.account_flatten()
+            self.risk.halt(msg, flatten=True)
+            if self.books:
+                self.books.halt_all(msg, flatten=True)
+            what = "Flattening"
+        else:
+            st = self.risk.st
+            first = not (self.risk.account_flatten()
+                         or (st.halted and st.flatten_all and (st.halt_reason or "").startswith("SAFETY")))
+            self.risk.halt(msg, flatten=True, scope="A")
+            books = self._stale_books(stale)
+            for book in books:
+                book.halt(msg)
+            what = f"Flattening book {', '.join(['A'] + [getattr(b, 'letter', '?') for b in books])} (the other books keep running)"
         if not first:
             return
         log.error("SAFETY HALT: %s", reason)
-        self.bus.emit("log", now, level="error", msg=f"SAFETY HALT: {reason}. Flattening; check open positions and orders in the Robinhood app.")
+        self.bus.emit("log", now, level="error", msg=f"SAFETY HALT: {reason}. {what}; check open positions and orders in the Robinhood app.")
         self.set_agent(now, "alarm", f"SAFETY HALT: {reason}. Flattening. Check the Robinhood app.")
         self.bus.emit("risk", now, risk=self.risk.to_dict())
         asyncio.ensure_future(self._cancel_all_quietly())
@@ -350,17 +390,30 @@ class Engine:
         except Exception as ex:
             log.warning("cancel_all failed: %s", ex)
 
+    def _stale_books(self, pos) -> list:
+        """The books a stale quote on `pos` halts besides A: B/C/D/G, and the book holding `pos` if it is another."""
+        out = list(getattr(getattr(self.books, "bookhost", self.books), "books", None) or [])
+        for h in getattr(self.books, "extras", ()):           # F1 (E and F2 positions are watchdog-exempt)
+            if any(p is pos for p in h.positions()):
+                out.append(h.book)
+        return out
+
     def _watchdog(self, now: float) -> None:
         stale = self.wd["quote_stale_sec"]
         held = [p for p, _ in self.open] + [p for p in (self.books.positions() if self.books else [])
                                             if not getattr(p, "watchdog_exempt", False)]   # book E checks its own multi-day positions
+        if held:                                # time the Robinhood call budget held every call doesn't count (H2)
+            credit = getattr(self, "_throttle", None) or ThrottleCredit()
+            self._throttle = credit
+            rh = getattr(self, "l2_rh", None) or getattr(getattr(self, "quotes", None), "rh", None)
+            credit.tick(now, getattr(rh, "budget", None), held)
         for pos in held:
             if getattr(pos, "_exiting", False) or getattr(pos, "exiting", False):
                 continue                        # a sell is in flight; its own order checks and timeouts guard it
-            age = now - pos.last_quote_ts
+            age = self._throttle.age(pos, now)
             if age > stale:
                 label = getattr(pos, "label", None) or pos.contract.label
-                self._trip(f"no fresh quote for {label} in {age:.0f}s, stop can't be checked", now)
+                self._trip(f"no fresh quote for {label} in {age:.0f}s, stop can't be checked", now, stale=pos)
                 break
         rs = self.wd["reconcile_sec"]
         if self.broker.live and rs and now - self._last_reconcile >= rs and not self._busy.locked() \
@@ -515,6 +568,7 @@ class Engine:
                 return
             pos = Position(contract, es.setup, res.filled_qty, res.avg_price, now,
                            strike_reason=f"{choice.offset:+d}: {choice.reason}", entry_reasons=es.reasons, l2=l2_note)
+            pos.last_quote_ts = max(pos.last_quote_ts, self.feed.now())   # a slow entry can't trip the watchdog (M9)
             pos.mark, pos.bid, pos.ask = q.mark, q.bid, q.ask
             pos.crew = crew_fx
             pos.fees += self.cfg["sizing"]["fee_per_contract"] * res.filled_qty

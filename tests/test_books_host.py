@@ -106,7 +106,7 @@ def test_engine_safety_trip_flattens_books_but_a_daily_loss_halt_does_not():
     eng.risk.halt("daily loss limit -$400")                 # book A's own halt
     tick(host, fq, ct_ts(8, 46))
     assert host.positions()
-    eng.risk.halt("SAFETY: stale quote", flatten=True)      # what Engine._trip / kill set
+    eng.risk.halt("SAFETY: 3 broker/API errors in a row", flatten=True)    # what Engine._trip / kill set
     tick(host, fq, ct_ts(8, 47))
     assert not host.positions()
 

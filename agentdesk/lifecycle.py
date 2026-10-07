@@ -2,8 +2,10 @@
 
 Shutdown sells what is open first (Evan, 2026-09-28: "sell them, dont leave them open"): book A and every paper
 book are flattened through engine.flatten("shutdown") while the engine, quotes and broker are still running, with
-`flatten_timeout` to finish. Then it stops the engine loop, closes the dashboard (open websockets included), closes
-the broker/data sessions with a timeout each, and exits. Whatever is still open after the timeout is logged. A
+`flatten_timeout` to finish, and runs the optional `after_flatten` step (the review snapshot). Then it stops the
+engine loop, closes the dashboard (open websockets included), cancels the background pollers (book hooks, L2,
+crew) so none is mid-call when its session goes, closes the broker/data sessions with a timeout each, and exits.
+Whatever is still open after the timeout is logged. A
 second Ctrl-C or SIGTERM, or shutdown taking longer than `hard_exit_sec`, exits the process immediately.
 If the engine task dies with an error, the same shutdown runs and serve() raises EngineCrashed, so `run` exits with
 status 1 instead of leaving a dashboard up with nothing trading; the after-hours review page then takes the port.
@@ -47,8 +49,9 @@ def _hard_exit(code: int, why: str) -> None:
 
 async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, grace: float = 3.0,
                 close_timeout: float = 3.0, hard_exit_sec: float | None = 25.0,
-                flatten_timeout: float = 8.0) -> threading.Timer | None:
+                flatten_timeout: float = 8.0, after_flatten=None) -> threading.Timer | None:
     """Serve until `stop` is set (by SIGINT/SIGTERM when handlers can be installed), then shut down.
+    `after_flatten` (optional, sync or async) runs right after the shutdown flatten, before anything closes.
     Returns the armed hard-exit timer so the caller can cancel it once asyncio.run() has returned."""
     loop = asyncio.get_running_loop()
     stop = stop or asyncio.Event()
@@ -83,7 +86,7 @@ async def serve(engine, server, closers=(), stop: asyncio.Event | None = None, g
             timer = threading.Timer(hard_exit_sec, _hard_exit, (1, f"shutdown took longer than {hard_exit_sec:g}s"))
             timer.daemon = True
             timer.start()
-        await shutdown(engine, server, srv, eng, closers, grace, close_timeout, before, flatten_timeout)
+        await shutdown(engine, server, srv, eng, closers, grace, close_timeout, before, flatten_timeout, after_flatten)
         for sig in installed:
             loop.remove_signal_handler(sig)
     if crash is not None:
@@ -103,8 +106,15 @@ def _report_engine_exit(t: asyncio.Task) -> None:
 
 
 async def shutdown(engine, server, srv: asyncio.Task, eng: asyncio.Task, closers, grace: float,
-                   close_timeout: float, keep=frozenset(), flatten_timeout: float = 8.0) -> None:
+                   close_timeout: float, keep=frozenset(), flatten_timeout: float = 8.0, after_flatten=None) -> None:
     await _sell_open_positions(engine, flatten_timeout)
+    if after_flatten is not None:          # e.g. save the review snapshot now, while closing can still hang
+        try:
+            res = after_flatten()
+            if asyncio.iscoroutine(res):
+                await asyncio.wait_for(res, close_timeout)
+        except Exception as ex:
+            log.warning("after-flatten step failed: %r", ex)
     engine.stop()
     server.should_exit = True
     eng.cancel()
@@ -113,6 +123,10 @@ async def shutdown(engine, server, srv: asyncio.Task, eng: asyncio.Task, closers
         server.force_exit = True
         await asyncio.wait({srv}, timeout=1.0)
         srv.cancel()
+    # background pollers the engine started (book hooks, _guard tasks, L2 book, crew) stop BEFORE the sessions they
+    # call close under them (a call cut off by the close was the ClosedResourceError traceback of 2026-10-05). The
+    # sessions' own tasks are left to their close().
+    await _cancel_rest(set(keep) | _owned(closers), close_timeout, spare_transports=True)
     for close in closers:
         try:
             await asyncio.wait_for(close(), close_timeout)
@@ -120,13 +134,37 @@ async def shutdown(engine, server, srv: asyncio.Task, eng: asyncio.Task, closers
             log.warning("%s did not finish within %gs; skipped", _name(close), close_timeout)
         except Exception as ex:
             log.warning("%s failed: %r", _name(close), ex)
-    # background pollers (L2 book, quote recorder, crew) the engine started
-    rest = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and t not in keep and not t.done()]
+    await _cancel_rest(keep, 1.0)          # whatever the closers left behind
+    log.info("shutdown complete")
+
+
+TRANSPORT_MODULES = ("mcp.", "anyio.", "httpx", "httpcore")     # MCP/HTTP clients' own task-group tasks
+
+
+def _transport_task(t: asyncio.Task) -> bool:
+    """A task inside an MCP/HTTP client's own task group (anyio names those by module.function): the session's
+    owner winds it down when the session closes, so shutdown must not cancel it from outside first."""
+    frame = getattr(t.get_coro(), "cr_frame", None)
+    mod = frame.f_globals.get("__name__", "") if frame is not None else ""
+    return mod.startswith(TRANSPORT_MODULES) or t.get_name().startswith(TRANSPORT_MODULES)
+
+
+def _owned(closers) -> set:
+    out = set()
+    for close in closers:
+        owned = getattr(getattr(close, "__self__", None), "owned_tasks", None)
+        if owned is not None:
+            out.update(owned())
+    return out
+
+
+async def _cancel_rest(keep, timeout: float, spare_transports: bool = False) -> None:
+    rest = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and t not in keep and not t.done()
+            and not (spare_transports and _transport_task(t))]
     for t in rest:
         t.cancel()
     if rest:
-        await asyncio.wait(rest, timeout=close_timeout)
-    log.info("shutdown complete")
+        await asyncio.wait(rest, timeout=timeout)
 
 
 def _held(engine) -> list[str]:

@@ -135,6 +135,12 @@ async def run_session(engine, bus, server, cfg, mode: str, host: str, port: int,
     archive = attach(cfg, mode, bus)
     saver = asyncio.create_task(archive.run(engine, float(review_cfg(cfg)["snapshot_every_sec"])),
                                 name="session-archive") if archive else None
+    rh = getattr(engine, "l2_rh", None)
+    if rh is not None:                # a Robinhood browser sign-in also shows on the dashboard, not only in the log
+        from time import time as _now
+        rh.on_sign_in = lambda msg: bus.emit("log", _now(), level="warn", msg=msg)
+    if archive:                       # saved right after the shutdown flatten too, before the sessions close
+        serve_kw.setdefault("after_flatten", lambda: archive.save(engine))
     try:
         return await lifecycle.serve(engine, server, getattr(engine, "closers", ()), **serve_kw)
     finally:

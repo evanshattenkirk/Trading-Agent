@@ -7,6 +7,8 @@ Runs apart from the engine (launchd keeps it alive), so an engine crash or a cod
 - Uses its own Robinhood OAuth grant (~/.agentdesk/recorder, redirect port 8767), so its token refreshes can't
   invalidate the engine's grant in ~/.agentdesk/rh_oauth.json.
 - Read-only by construction: MeteredRobinhoodMCP refuses every tool outside READ_ONLY_TOOLS.
+- Keeps to its own call budget (recorder.call_budget, 100/min) so engine (120) + recorder stay under the ~240/min
+  account ceiling; `--probe` is uncapped on purpose.
 - Meters every Robinhood call (tool, latency, outcome) into journal.rh_calls for the rate-budget report.
 """
 from __future__ import annotations
@@ -35,7 +37,8 @@ DAYS_LOG = RECORDER_DIR / "days.jsonl"
 READ_ONLY_TOOLS = frozenset({"get_accounts", "get_earnings_calendar", "get_equity_quotes", "get_option_chains",
                              "get_option_instruments", "get_option_quotes"})
 DEFAULTS = {"start_ct": "08:25", "end_ct": "15:05", "every_sec": 10, "width": 10,
-            "token_dir": "~/.agentdesk/recorder", "redirect_port": 8767, "alert_after_sec": 300}
+            "token_dir": "~/.agentdesk/recorder", "redirect_port": 8767, "alert_after_sec": 300,
+            "call_budget": {"per_min": 100, "per_s": 5}}      # the quote and IV loops; never the probe
 
 RH_CALLS = """CREATE TABLE IF NOT EXISTS rh_calls (
   ts REAL, tool TEXT, ms REAL, ok INTEGER, kind TEXT, err TEXT, tag TEXT
@@ -139,10 +142,14 @@ async def spot_price(rh, symbol: str) -> float | None:
     return None
 
 
-def recorder_cfg(cfg, s: dict):
+def recorder_cfg(cfg, s: dict, capped: bool = True):
+    """The recorder's Robinhood client config: its own token and redirect port, and its own call budget
+    (`recorder.call_budget`, 100/min by default) instead of the engine's; capped=False (the rate probe) has none."""
     c = copy.deepcopy(dict(cfg))
     c["robinhood"] = {**c["robinhood"], "token_dir": s["token_dir"], "redirect_port": int(s["redirect_port"])}
-    c["robinhood"].pop("call_budget", None)      # the engine's budget; the recorder paces itself (and the probe must not be capped)
+    c["robinhood"].pop("call_budget", None)      # the engine's budget
+    if capped and s.get("call_budget"):
+        c["robinhood"]["call_budget"] = dict(s["call_budget"])     # insurance: engine 120 + recorder 100 < ~240/min
     return c
 
 
@@ -292,8 +299,9 @@ class RecorderDaemon:
                 log.info("recording window open for %s", self.day)
             try:
                 n = await self.tick(now)
-                if n or not is_rth(now) or (self.rec and self.rec.chain_day and not self.rec.chain):
-                    self.last_ok = time.time()          # recorded, pre-open, or no 0DTE expiry today (holiday)
+                if n or not is_rth(now) or (self.rec and self.rec.chain_day and not self.rec.chain
+                                            and self.holiday(now)):
+                    self.last_ok = time.time()          # recorded, pre-open, or a configured holiday (no 0DTE expiry)
                 self.fails, backoff = 0, 5.0
                 self.maybe_alert(now)                   # polls that keep coming back empty alert like failed ones
                 if once:
@@ -314,6 +322,12 @@ class RecorderDaemon:
                 self.maybe_alert(now)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 120.0)
+
+    def holiday(self, now: float) -> bool:
+        """An empty 0DTE chain is expected only on a `calendar.holidays` day; on any other day it is a listing
+        problem (schema change, empty page) and must still raise the stale-data alert."""
+        from .desks import holidays
+        return session_date(now) in holidays(self.cfg)
 
     def maybe_alert(self, now: float) -> None:
         if is_rth(now) and now - self.last_ok > float(self.s["alert_after_sec"]) and now - self.last_alert > 1800:
@@ -430,7 +444,7 @@ async def probe(cfg, rates=(1, 2, 4, 8), step_sec: float = 20.0, max_workers: in
     throttled response or 3 errors in a step. Run it outside the recording window."""
     s = settings(cfg)
     meter = CallMeter(expand(cfg["journal_path"]), tag="probe")
-    rcfg = recorder_cfg(cfg, s)
+    rcfg = recorder_cfg(cfg, s, capped=False)      # the probe looks for the throttle point: no budget
     first = MeteredRobinhoodMCP(rcfg, meter)
     await first.start()                     # any token refresh happens here, before the other sessions read the file
     sessions = [first]
