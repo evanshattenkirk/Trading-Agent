@@ -260,6 +260,7 @@ class BookHost:
         st = self.e.risk.st
         before = self.cfg["risk"]["event_blackout"]["before_min"] * 60
         events = [(b.start + before, b.name) for b in st.blackouts if session_date(b.start + before) == d]
+        events = sorted(events + [(t, n) for t, n in st.passed_events if session_date(t) == d])  # + prints already out
         return MarketContext(now=now, day=d, spot=self.e.price, vwap=self.e.vwap.value, events=events,
                              vix_prev=self.vix_prev if self._vix_day == d else None, vix1d_flag=self._vix1d_flag(d),
                              size_mult=self.e.risk.book_mult(book.letter), open=list(book.open))

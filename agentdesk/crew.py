@@ -417,15 +417,13 @@ class Crew:
         votes = self._votes()
         mults = self.book_mults()
         self.e.risk.set_book_mults(mults)
-        have = {b.name for b in self.e.risk.st.blackouts}
         for k, b in self.briefs.items():
             if b.get("day") not in (None, str(self.day)):
                 continue
             for ev in b.get("events", []) or []:
-                if ev.get("impact") == "high" and ev.get("time_ct") and ev.get("name") not in have:
-                    try:
+                if ev.get("impact") == "high" and ev.get("time_ct"):
+                    try:                            # risk.add_blackout's one-per-event-window rule is the only de-dup
                         self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
-                        have.add(ev["name"])
                         self._event_src.setdefault(ev["name"], k)
                     except Exception:
                         pass
@@ -981,11 +979,9 @@ class Crew:
         self._calendar = cal
         if not cal:
             return
-        have = {b.name for b in self.e.risk.st.blackouts}
         for ev in self._calendar_today(d):
-            if ev["impact"] == "high" and ev["name"] not in have:
+            if ev["impact"] == "high":              # one blackout per event window (risk.add_blackout), not per name
                 self.e.risk.add_blackout(at_ct(d, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
-                have.add(ev["name"])
                 self._event_src.setdefault(ev["name"], "calendar")
 
     def _calendar_today(self, d) -> list[dict]:

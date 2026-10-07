@@ -45,6 +45,8 @@ class RiskState:
     size_mult: float = 1.0          # book A's crew multiplier
     book_mults: dict = field(default_factory=dict)      # crew multiplier per book letter (A..G), <= 1.0; missing = 1.0
     blackouts: list[Blackout] = field(default_factory=list)
+    passed_events: list[tuple] = field(default_factory=list)    # (event_ts, name): high-impact events today whose
+                                                                # blackout had ended when a desk heard of them
 
 
 class RiskStore:
@@ -87,7 +89,8 @@ class RiskManager:
 
     def reset_day(self, day: str | None = None) -> None:
         keep = [b for b in self.st.blackouts if day is None or str(session_date(b.end)) >= day]   # yesterday's are done
-        self.st = RiskState(blackouts=keep)
+        past = [ev for ev in self.st.passed_events if day is None or str(session_date(ev[0])) >= day]
+        self.st = RiskState(blackouts=keep, passed_events=past)
         if day is not None:
             self.day = day
         self._save()
@@ -256,15 +259,34 @@ class RiskManager:
         self.st.paused = on
         self._save()
 
-    def add_blackout(self, event_ts: float, name: str, added_ts: float | None = None) -> None:
+    def add_blackout(self, event_ts: float, name: str, added_ts: float | None = None, flatten: bool = True) -> bool:
         """One blackout per event time: a desk's reworded line for an event already covered adds nothing, and an
-        event whose window ended before the desk heard of it (a midday brief recapping the 07:30 print) is history."""
+        event whose window ended before the desk heard of it (the 07:30 print heard of at 08:25) blocks nothing but
+        is kept in `passed_events`, so book B's day-skip still sees it. flatten=False: the blackout blocks entries
+        but never flattens (an event only a desk's brief reports); the same event from the weekly calendar or config
+        later gives it its flatten time. True when a new blackout was added."""
         eb = self.r["event_blackout"]
         fl = self.r.get("flatten_before_high_impact_min")
         start, end = event_ts - eb["before_min"] * 60, event_ts + eb["after_min"] * 60
-        if (added_ts is not None and end <= added_ts) or any(b.start == start and b.end == end for b in self.st.blackouts):
-            return
-        self.st.blackouts.append(Blackout(start, end, name, event_ts - fl * 60 if fl is not None else None, added_ts))
+        flatten_at = event_ts - fl * 60 if fl is not None and flatten else None
+        for b in self.st.blackouts:
+            if b.start == start and b.end == end:
+                if b.flatten_at is None and flatten_at is not None:
+                    b.flatten_at = flatten_at
+                return False
+        if added_ts is not None and end <= added_ts:
+            self.note_passed_event(event_ts, name)
+            return False
+        self.st.blackouts.append(Blackout(start, end, name, flatten_at, added_ts))
+        return True
+
+    def note_passed_event(self, event_ts: float, name: str) -> None:
+        """A high-impact event today that has already happened: no entry block, no flatten, not on the dashboard's
+        blackouts; book B's skip ("high-impact event before 14:00 CT") reads it (books/host.py _ctx)."""
+        before = self.r["event_blackout"]["before_min"] * 60
+        if not any(t == event_ts for t, _ in self.st.passed_events) and not any(b.start + before == event_ts
+                                                                                for b in self.st.blackouts):
+            self.st.passed_events.append((event_ts, name))
 
     def set_size_mult(self, m: float) -> None:
         lo = self.cfg["crew"]["min_size_multiplier"]
