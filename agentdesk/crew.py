@@ -94,6 +94,10 @@ PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-sonnet-5-5": (2.0, 10.0), "cla
           "claude-opus-5-5": (4.0, 20.0)}
 WEB_SEARCH_USD = 0.01           # $10 per 1,000 searches
 CITE_TAG = re.compile(r"</?cite\b[^>]*>")     # web-search citation markup the model leaves around quoted facts
+# A desk's web-search brief is untrusted text: at most this many of its events a day become blackouts (or passed
+# events for book B), only times still ahead block entries, and none of them flattens (Evan, decision D4,
+# 2026-10-07); a flatten time comes only from the weekly calendar or crew.events in config.
+MAX_BRIEF_EVENTS = 4
 
 
 def price_of(model: str | None) -> tuple[float, float]:
@@ -160,6 +164,7 @@ class Crew:
         self.vix = None                                     # VIX source for the Vol desk (Robinhood or the sim)
         self._calendar: dict | None = None                  # this week's saved economic calendar
         self._event_src: dict[str, str] = {}                # blackout name -> desk that sourced it
+        self._brief_events: dict[str, set] = {}             # desk -> event times its briefs added today (the cap)
         self._logged: set = set()                           # crew_log block keys already written today
         self._cal_check = None
         self.directive = {"size_mult": 1.0, "blackouts": [], "summary": "", "votes": {}}
@@ -181,6 +186,7 @@ class Crew:
             self.day, self.ran = d, set()
             self._drop_prep()
             self._logged, self._cal_check, self.cache_usage = set(), None, self._new_usage()
+            self._brief_events = {}
             self.briefs, self.conviction = {}, {"mult": 1.0, "checks": [], "ts": 0}     # yesterday's reads are done
             self._load_config_events(now)
             st = self.e.risk.st
@@ -420,13 +426,25 @@ class Crew:
         for k, b in self.briefs.items():
             if b.get("day") not in (None, str(self.day)):
                 continue
+            taken = self._brief_events.setdefault(k, set())
             for ev in b.get("events", []) or []:
                 if ev.get("impact") == "high" and ev.get("time_ct"):
-                    try:                            # risk.add_blackout's one-per-event-window rule is the only de-dup
-                        self.e.risk.add_blackout(at_ct(self.day, hhmm(ev["time_ct"])), ev["name"], added_ts=now)
-                        self._event_src.setdefault(ev["name"], k)
-                    except Exception:
-                        pass
+                    try:
+                        ts = at_ct(self.day, hhmm(str(ev["time_ct"])))
+                    except (TypeError, ValueError):
+                        continue
+                    if ts not in taken and len(taken) >= MAX_BRIEF_EVENTS:
+                        if ("brief-cap", k) not in self._logged:
+                            self._logged.add(("brief-cap", k))
+                            self.e.bus.emit("log", now, level="warn", msg=f"{DESKS[k].name if k in DESKS else k} desk: more"
+                                            f" than {MAX_BRIEF_EVENTS} events in today's briefs; ignoring {ev['name']} and later ones")
+                        continue
+                    taken.add(ts)
+                    if ts > now:                    # risk.add_blackout's one-per-event-window rule is the only de-dup
+                        self.e.risk.add_blackout(ts, ev["name"], added_ts=now, flatten=False)
+                    else:                           # already out: book B's day-skip still sees it; it blocks nothing
+                        self.e.risk.note_passed_event(ts, ev["name"])
+                    self._event_src.setdefault(ev["name"], k)
             if b.get("cooldown_minutes") and b.get("slot") == "loss-review" and abs(b.get("ts", 0) - now) < 1:
                 self.e.risk.extend_cooldown(now, float(b["cooldown_minutes"]))
         self._check_calendar(now)
@@ -506,7 +524,7 @@ class Crew:
         return gone
 
     async def _handle_proposal(self, desk: str, p: dict, now: float) -> None:
-        item = self.book.submit(desk, p, now, events=self.known_events(now))
+        item = self.book.submit(desk, _clean_pitch(p), now, events=self.known_events(now))
         if not item:
             return
         self.e.bus.emit("proposal", now, item=item)
@@ -558,9 +576,10 @@ class Crew:
         b["confidence"] = max(0.0, min(1.0, _num(b.get("confidence"), 0.0)))
         notes = b.get("notes")
         b["notes"] = [CITE_TAG.sub("", str(n)) for n in (notes if isinstance(notes, list) else [notes] if notes else [])]
-        b["events"] = [ev for ev in b.get("events") or [] if _good_event(ev)] if isinstance(b.get("events"), list) else []
+        b["events"] = ([{**ev, "name": CITE_TAG.sub("", str(ev["name"]))} for ev in b.get("events") or [] if _good_event(ev)]
+                       if isinstance(b.get("events"), list) else [])
         props = b.get("proposals")
-        b["proposals"] = [x for x in props if isinstance(x, dict)] if isinstance(props, list) else []
+        b["proposals"] = [_clean_pitch(x) for x in props if isinstance(x, dict)] if isinstance(props, list) else []
         b["size_multiplier"] = self._clamp(b.get("size_multiplier", 1.0), key)
         b["cooldown_minutes"] = max(0, min(30, int(_num(b.get("cooldown_minutes"), 0))))
         if key in RESTRICT_ONLY + INFO_ONLY:    # inform (or cut) only: no pitches, no blackouts
@@ -1063,6 +1082,12 @@ def _num(v, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return x if math.isfinite(x) else default
+
+
+def _clean_pitch(p: dict) -> dict:
+    """A pitch without web-search citation markup in its text (the dashboard card, and the 12-hour re-pitch check
+    compares titles)."""
+    return {**p, **{k: CITE_TAG.sub("", p[k]) for k in ("title", "rationale", "evidence", "spec") if isinstance(p.get(k), str)}}
 
 
 def _good_event(ev) -> bool:
