@@ -7,7 +7,8 @@ import time
 from ..feeds.base import Quote
 
 
-async def fetch_quotes(quotes, contracts) -> list:
+async def fetch_quotes(quotes, contracts, clock=None) -> list:
+    clock = clock or time.time      # injectable for tests; looked up per call so a patched time.time still applies
     rh = getattr(quotes, "rh", None)
     if rh is None or len(contracts) < 2:
         return [await quotes.quote(c) for c in contracts]
@@ -17,7 +18,7 @@ async def fetch_quotes(quotes, contracts) -> list:
         return [await quotes.quote(c) for c in contracts]
     cache = getattr(quotes, "cache", None)
     max_age = getattr(quotes, "max_age", 0) if cache is not None else 0
-    now, by = time.time(), {}
+    now, by = clock(), {}
     for i in ids:                   # a quote fetched this instant (the host's batched tick) is reused, not re-asked
         q = cache.get(i) if max_age else None
         if q is not None and now - q.ts < max_age:
@@ -26,7 +27,7 @@ async def fetch_quotes(quotes, contracts) -> list:
     if not need:
         return [by[i] for i in ids]
     data = await rh.call("get_option_quotes", {"instrument_ids": need})
-    now = time.time()
+    now = clock()
     for item in dict_items(data):
         q = item.get("quote") if isinstance(item.get("quote"), dict) else item   # results[].quote on Robinhood
         oid = str(item.get("instrument_id") or q.get("instrument_id") or find_key(item, ["instrument_id", "id"]) or "")
