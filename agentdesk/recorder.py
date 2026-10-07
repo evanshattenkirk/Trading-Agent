@@ -24,7 +24,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .brokers.robinhood import OptionQuoteRecorder, RobinhoodMCP, dict_items
+from .brokers.base import SignInRequired
+from .brokers.robinhood import RECORDER_SIGN_IN_CMD, OptionQuoteRecorder, RobinhoodMCP, dict_items
 from .clock import CT, is_rth, session_date
 from .config import expand, hhmm
 from .iv_recorder import settings as iv_settings
@@ -112,8 +113,9 @@ class CallMeter:
 class MeteredRobinhoodMCP(RobinhoodMCP):
     """RobinhoodMCP limited to read-only tools, timing every call into a CallMeter."""
 
-    def __init__(self, cfg, meter: CallMeter):
-        super().__init__(cfg)
+    def __init__(self, cfg, meter: CallMeter, interactive: bool = False):
+        super().__init__(cfg, interactive=interactive, sign_in_cmd=RECORDER_SIGN_IN_CMD,
+                         after="; the recorder picks the new sign-in up by itself")
         self.meter = meter
 
     async def call(self, tool: str, args: dict, tag: str | None = None):
@@ -173,8 +175,10 @@ class IVClient:
 
 
 class RecorderDaemon:
-    def __init__(self, cfg):
+    def __init__(self, cfg, interactive: bool = False):
         self.cfg = cfg
+        self.interactive = interactive      # record-quotes --once, run by hand: may open one sign-in page
+        self._told_sign_in = False
         self.s = settings(cfg)
         self.symbol = cfg.get("symbol", "SPY")
         self.db_path = expand(cfg["journal_path"])
@@ -200,7 +204,7 @@ class RecorderDaemon:
         async with self._conn:          # the quote loop and the IV loop share one session (one OAuth grant)
             if self.rh is not None:
                 return
-            rh = MeteredRobinhoodMCP(self.rh_cfg, self.meter)
+            rh = MeteredRobinhoodMCP(self.rh_cfg, self.meter, interactive=self.interactive)
             await rh.start()
             self.rh = rh
             self.rec = OptionQuoteRecorder(rh, self.journal, every=float(self.s["every_sec"]), width=int(self.s["width"]),
@@ -303,6 +307,7 @@ class RecorderDaemon:
                                             and self.holiday(now)):
                     self.last_ok = time.time()          # recorded, pre-open, or a configured holiday (no 0DTE expiry)
                 self.fails, backoff = 0, 5.0
+                self._told_sign_in = False
                 self.maybe_alert(now)                   # polls that keep coming back empty alert like failed ones
                 if once:
                     log.info("one poll: %d rows", n)
@@ -313,6 +318,9 @@ class RecorderDaemon:
             except Exception as ex:
                 self.fails += 1
                 log.warning("poll failed (%d in a row): %s", self.fails, str(ex)[:300])
+                if isinstance(ex, SignInRequired) and not self._told_sign_in:
+                    self._told_sign_in = True           # one notification; never a browser page
+                    notify(str(ex))
                 self.meter.flush()
                 if once:
                     await self.disconnect()

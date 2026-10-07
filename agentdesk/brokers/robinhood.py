@@ -1,6 +1,8 @@
 """Robinhood Trading MCP client (https://agent.robinhood.com/mcp/trading).
 
-- OAuth 2.1 + PKCE via the MCP SDK; tokens cached at ~/.agentdesk/rh_oauth.json (0600).
+- OAuth 2.1 + PKCE via the MCP SDK; tokens cached at ~/.agentdesk/rh_oauth.json (0600). A saved token is refreshed
+  at connect once it has under a day left. Only rh-inspect and record-quotes --once may open a browser sign-in (one
+  page per process); every other run fails closed with one "sign-in expired: run <cmd>" line (2026-10-07).
 - Arguments follow the server's published tool schemas (verified 2026-09-27): account_number,
   legs[{option_id, side, position_effect, ratio_quantity}], quantity/price as strings,
   type 'limit', time_in_force 'gfd', ref_id idempotency key on place_option_order.
@@ -13,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import math
@@ -27,7 +30,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ..feeds.base import Quote, QuoteSource
-from .base import Broker, OrderResult, OrderStateError, RateLimited
+from .base import Broker, OrderResult, OrderStateError, RateLimited, SignInRequired
 
 TERMINAL = ("filled", "cancelled", "canceled", "rejected", "failed", "voided")
 from .paper import PaperBroker
@@ -121,6 +124,37 @@ class FileTokenStorage:
     async def set_tokens(self, tokens) -> None:
         d = self._read()
         d["tokens"] = tokens.model_dump(mode="json")
+        d["saved_at"] = time.time()                 # expires_in counts from here; the SDK only keeps it in memory
+        self._write(d)
+
+    def expires_at(self) -> float | None:
+        """When the saved access token expires: saved_at + expires_in. A file written before saved_at existed is
+        dated by its mtime. None when there is no token or it gives no lifetime."""
+        try:
+            d = self._read()
+        except (OSError, ValueError):
+            return None
+        life = (d.get("tokens") or {}).get("expires_in")
+        if not life:
+            return None
+        t0 = d.get("saved_at")
+        if t0 is None:
+            try:
+                t0 = self.path.stat().st_mtime
+            except OSError:
+                return None
+        return float(t0) + float(life)
+
+    def metadata(self) -> dict | None:
+        """The authorization server's metadata (token endpoint) from the last sign-in, for a refresh after a restart."""
+        try:
+            return self._read().get("oauth_metadata")
+        except (OSError, ValueError):
+            return None
+
+    def set_metadata(self, meta: dict) -> None:
+        d = self._read()
+        d["oauth_metadata"] = meta
         self._write(d)
 
     async def get_client_info(self):
@@ -204,6 +238,70 @@ CONNECT_TIMEOUT_S = 60.0          # covers a token refresh
 SIGN_IN_WAIT_S = _Callback.WAIT_S + 30.0     # once a browser sign-in started: the callback's wait plus margin
 SIGN_IN_MSG = "Robinhood needs a sign-in: open the URL printed above (or in the log)"
 TIMEOUTS_BEFORE_RECONNECT = 2
+REFRESH_AHEAD_S = 86400.0         # refresh a saved token with under a day left, so the 08:10 CT start renews it
+# What Evan runs to sign in again (Mac paths; HANDOFF section 8). The engine's token, then the recorder's.
+ENGINE_SIGN_IN_CMD = "cd ~/Trading-Agent && .venv/bin/python -m agentdesk rh-inspect"
+RECORDER_SIGN_IN_CMD = ("cd ~/.agentdesk/recorder-app/src && ../.venv/bin/python -m agentdesk --config config.yaml "
+                        "record-quotes --once")
+
+
+def _ct(ts: float) -> str:
+    from datetime import datetime
+    from ..clock import CT
+    return datetime.fromtimestamp(ts, CT).strftime("%a %b %d %H:%M CT")
+
+
+@functools.lru_cache(maxsize=None)
+def _provider_class():
+    from mcp.client.auth import OAuthClientProvider
+    from mcp.shared.auth import OAuthMetadata
+
+    class Provider(OAuthClientProvider):
+        """The MCP SDK (1.x) keeps a token's expiry only in memory and, on a 401, goes straight to a browser sign-in.
+        So after each daily restart it sent the saved token until it expired, then opened a sign-in page: the
+        refresh_token grant never ran (2026-10-07). This provider dates the saved token (saved_at + expires_in, less
+        REFRESH_AHEAD_S) and keeps the token endpoint from the sign-in, so the SDK refreshes at connect instead. A
+        refused refresh keeps a still-valid token (and warns with its deadline); on an expired one an unattended run
+        fails closed here, before the SDK's browser flow."""
+        owner = None                        # the RobinhoodMCP using this provider
+
+        async def _initialize(self) -> None:
+            await super()._initialize()
+            st = self.context.storage
+            exp = st.expires_at()
+            if self.context.current_tokens is not None and exp is not None:
+                self.context.token_expiry_time = exp - REFRESH_AHEAD_S
+            meta = st.metadata()
+            if meta and self.context.oauth_metadata is None:
+                try:
+                    self.context.oauth_metadata = OAuthMetadata.model_validate(meta)
+                except ValueError:
+                    log.warning("Robinhood: the saved OAuth metadata is unreadable; ignoring it")
+
+        async def _handle_token_response(self, response) -> None:
+            await super()._handle_token_response(response)
+            if self.context.oauth_metadata is not None:
+                self.context.storage.set_metadata(self.context.oauth_metadata.model_dump(mode="json"))
+
+        async def _handle_refresh_response(self, response) -> bool:
+            old, old_exp = self.context.current_tokens, self.context.storage.expires_at()
+            if await super()._handle_refresh_response(response):
+                exp = self.context.storage.expires_at()
+                log.info("Robinhood sign-in renewed with the refresh token%s", f"; good until {_ct(exp)}" if exp else "")
+                return True
+            owner = self.owner
+            if old is not None and old_exp is not None and time.time() < old_exp - 60:
+                self.context.current_tokens = old           # still good: keep using it, and don't retry every call
+                self.context.token_expiry_time = old_exp - 60
+                if owner is not None:
+                    owner._refresh_refused(response.status_code, old_exp)
+                return True
+            if owner is not None and not owner.interactive:
+                owner._mark_signed_out()
+                raise SignInRequired(owner.sign_in_msg)
+            return False
+
+    return Provider
 
 
 def is_dead_session(ex: BaseException) -> bool:
@@ -305,8 +403,11 @@ class CallBudget:
 
 class RobinhoodMCP:
     RECONNECT_GAP_S = 5.0                 # at most one reconnect try per this many seconds
+    _refused: dict[str, float | None] = {}  # token file -> its mtime when Robinhood refused it (this process)
+    _browser_opened = False                 # interactive commands open one sign-in page per process
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, interactive: bool = False, sign_in_cmd: str = ENGINE_SIGN_IN_CMD,
+                 after: str = ", then restart the engine"):
         self.cfg = cfg["robinhood"]
         self.url = self.cfg["mcp_url"]
         self.stack: AsyncExitStack | None = None
@@ -327,8 +428,18 @@ class RobinhoodMCP:
         self._start_lock = asyncio.Lock()
         self._accounts_loaded = False
         self._cb: _Callback | None = None
+        self._provider = None
         self._sign_in_at: float | None = None       # when the current connect attempt started a browser sign-in
         self.on_sign_in = None                      # optional callable(msg): the engine puts the line on the dashboard
+        # Unattended runs (the launchd engine, the recorder daemon) never open a browser (2026-10-07: an expired token
+        # opened ~67 sign-in tabs, one per reconnect). Only rh-inspect and record-quotes --once are interactive.
+        self.interactive = bool(interactive)
+        self.sign_in_cmd = sign_in_cmd
+        self.sign_in_msg = f"Robinhood sign-in expired: run `{sign_in_cmd}` in Terminal{after}"
+        self.on_signed_out = None                   # callable(msg), once per client: the engine halts
+        self.on_token_warning = None                # callable(msg): a refused refresh, while the token still works
+        self._told = False
+        self._refresh_warning: str | None = None
 
     def _session_down(self) -> bool:
         owner = self._owner
@@ -338,6 +449,7 @@ class RobinhoodMCP:
         """Connects once (OAuth, session, account). Calling it again is cheap and safe: a dropped session is reopened
         through the same locked reconnect path every call uses (_ensure_session), so there is never a second owner
         task and RECONNECT_GAP_S holds."""
+        self._check_signed_out()
         if self._accounts_loaded and not self._session_down():
             return
         async with self._start_lock:
@@ -355,32 +467,126 @@ class RobinhoodMCP:
 
     def _transport(self):
         from mcp import ClientSession
-        from mcp.client.auth import OAuthClientProvider
         from mcp.client.streamable_http import streamablehttp_client
         from mcp.shared.auth import OAuthClientMetadata
 
         port = self.cfg["redirect_port"]
+        if self._cb is not None:
+            self._cb.close()
         self._cb = _Callback(port)
-        provider = OAuthClientProvider(
+        provider = _provider_class()(
             server_url=self.url,
             client_metadata=OAuthClientMetadata(
                 client_name="AgentDesk", redirect_uris=[f"http://localhost:{port}/callback"],
                 grant_types=["authorization_code", "refresh_token"], response_types=["code"],
                 token_endpoint_auth_method="none"),
-            storage=FileTokenStorage(Path(os.path.expanduser(self.cfg["token_dir"])) / "rh_oauth.json"),
-            redirect_handler=self._redirect, callback_handler=self._cb.wait)
+            storage=FileTokenStorage(self._token_file()),
+            redirect_handler=self._redirect, callback_handler=self._wait_callback)
+        provider.owner = self
+        self._provider = provider
         # The MCP client's anyio task groups must be entered and exited by the same task, so one task owns the
         # session for its whole life. Closing it from anywhere else (shutdown, a finished engine) is then safe,
         # and a dropped connection can't cancel whichever task happened to open it.
         return (lambda: streamablehttp_client(self.url, auth=provider, timeout=30), ClientSession)
 
     async def _redirect(self, url: str) -> None:
-        """The OAuth redirect handler: the saved token was refused, so a browser sign-in is needed."""
+        """The OAuth redirect handler: the saved token was refused, so a sign-in is needed. Unattended, that fails
+        closed (no browser, no callback server). Interactive, the URL is printed and the browser opens once."""
+        if not self.interactive:
+            self._mark_signed_out()
+            raise SignInRequired(self.sign_in_msg)
+        if self._cb is None:
+            self._cb = _Callback(self.cfg["redirect_port"])
         await self._cb.start()
         print(f"\nOpen this URL to authorize AgentDesk with Robinhood (desktop browser):\n{url}\n", flush=True)
         log.info("Robinhood sign-in URL: %s", url)
         self._sign_in_started()
-        webbrowser.open(url)
+        if not RobinhoodMCP._browser_opened:
+            RobinhoodMCP._browser_opened = True
+            webbrowser.open(url)
+
+    async def _wait_callback(self):
+        return await self._cb.wait()
+
+    # ------------------------------------------------------------------ sign-in state
+    def _token_file(self) -> Path:
+        return Path(os.path.expanduser(self.cfg["token_dir"])) / "rh_oauth.json"
+
+    def _token_mtime(self) -> float | None:
+        try:
+            return self._token_file().stat().st_mtime
+        except OSError:
+            return None
+
+    def _is_refused(self) -> bool:
+        return str(self._token_file()) in RobinhoodMCP._refused
+
+    def _mark_signed_out(self) -> None:
+        """Robinhood refused the saved sign-in: one ERROR line per process and token file, then every call fails fast
+        until a new sign-in rewrites the token file."""
+        key = str(self._token_file())
+        if key not in RobinhoodMCP._refused:
+            log.error(self.sign_in_msg)
+        RobinhoodMCP._refused[key] = self._token_mtime()
+        self._tell()
+
+    def _tell(self) -> None:
+        if self._told:
+            return
+        self._told = True
+        if self.on_signed_out is not None:
+            try:
+                self.on_signed_out(self.sign_in_msg)
+            except Exception:
+                log.exception("on_signed_out failed")
+
+    def signed_out(self) -> str | None:
+        """The sign-in-expired line while the saved token is the one Robinhood refused; None once a new sign-in
+        (rh-inspect, record-quotes --once) rewrote the token file, and the next connect uses it."""
+        key = str(self._token_file())
+        if key not in RobinhoodMCP._refused:
+            return None
+        if self._token_mtime() == RobinhoodMCP._refused[key]:
+            return self.sign_in_msg
+        del RobinhoodMCP._refused[key]
+        log.warning("Robinhood: a new sign-in was saved; connecting with it")
+        self._told = False
+        if self._connect is not None:
+            self._connect, self._dead = self._transport(), True
+        return None
+
+    def _check_signed_out(self) -> None:
+        msg = self.signed_out()
+        if msg:
+            self._tell()
+            raise SignInRequired(msg)
+
+    def _refresh_refused(self, status: int, expires: float) -> None:
+        if self._refresh_warning is not None:
+            return
+        self._refresh_warning = (f"Robinhood token refresh failed (HTTP {status}); the sign-in ends {_ct(expires)}: "
+                                 f"run `{self.sign_in_cmd}` in Terminal before then")
+        log.warning(self._refresh_warning)
+        if self.on_token_warning is not None:
+            try:
+                self.on_token_warning(self._refresh_warning)
+            except Exception:
+                log.exception("on_token_warning failed")
+
+    def sign_in_status(self) -> tuple[bool, str]:
+        """For the Ops desk: red when signed out, when a refresh was refused, or when the token has under a day left
+        (the connect should have renewed it); green with the deadline otherwise."""
+        out = self.signed_out()
+        if out:
+            return False, out
+        if self._refresh_warning:
+            return False, self._refresh_warning
+        exp = FileTokenStorage(self._token_file()).expires_at()
+        if exp is None:
+            return True, "signed in (token lifetime unknown)"
+        if exp - time.time() < REFRESH_AHEAD_S:
+            return False, f"the sign-in ends {_ct(exp)} and did not renew: run `{self.sign_in_cmd}` in Terminal before then"
+        return True, f"signed in until {_ct(exp)}"
 
     def _sign_in_started(self) -> None:
         """From here _open waits for the browser callback (SIGN_IN_WAIT_S), not just CONNECT_TIMEOUT_S."""
@@ -404,13 +610,15 @@ class RobinhoodMCP:
         self._owner = owner = asyncio.create_task(self._own_session(transport, session_cls, ready), name="robinhood-mcp")
         try:
             await self._wait_ready(ready)
-        except BaseException:
+        except BaseException as ex:
             if not ready.done():
                 ready.cancel()                      # nobody reads it now
             if not owner.done():
                 owner.cancel()                      # an abandoned attempt must not keep a sign-in (and its port) open
             if self._cb is not None:
                 self._cb.close()
+            if self._is_refused() and isinstance(ex, Exception) and not isinstance(ex, SignInRequired):
+                raise SignInRequired(self.sign_in_msg) from ex      # however the SDK's task group wrapped it
             raise
         finally:
             self._sign_in_at = None
@@ -421,6 +629,8 @@ class RobinhoodMCP:
         waiting for the callback (SIGN_IN_WAIT_S from then), so Evan can finish signing in."""
         t0 = time.monotonic()
         while not ready.done():
+            if self._is_refused():                  # the SDK may swallow the refusal and wait; don't wait with it
+                raise SignInRequired(self.sign_in_msg)
             limit = t0 + CONNECT_TIMEOUT_S
             if self._sign_in_at is not None:
                 limit = max(limit, self._sign_in_at + SIGN_IN_WAIT_S)
@@ -436,6 +646,7 @@ class RobinhoodMCP:
         in a row timed out). Runs under the call lock, so only one reconnect happens at a time."""
         if self._closed:
             raise RuntimeError("Robinhood MCP is closed")
+        self._check_signed_out()
         owner = self._owner
         if self._connect is None or not (self._dead or owner is None or owner.done()):
             return
@@ -449,6 +660,9 @@ class RobinhoodMCP:
         log.warning("Robinhood MCP session dropped; reconnecting")
         try:
             await self._open()
+        except SignInRequired:
+            self._dead = True
+            raise
         except Exception as ex:
             self._dead = True
             raise ConnectionError(f"Robinhood MCP reconnect failed: {ex!r}") from ex
@@ -495,6 +709,7 @@ class RobinhoodMCP:
     async def call(self, tool: str, args: dict):
         if self._closed:
             raise RuntimeError(f"{tool}: Robinhood MCP is closed")
+        self._check_signed_out()
         if tool not in self.tools:
             raise SchemaError(f"tool {tool} not offered by the server (have: {sorted(self.tools)})")
         args = fit_args(tool, self.tools[tool], args)
@@ -504,6 +719,11 @@ class RobinhoodMCP:
             except Exception as ex:
                 if self._closed:                    # close() began while this call was in flight: no retry
                     raise RuntimeError(f"{tool}: Robinhood MCP is closed") from None
+                if isinstance(ex, SignInRequired):
+                    raise
+                if self._is_refused():              # the sign-in was refused under this call
+                    self._tell()
+                    raise SignInRequired(self.sign_in_msg) from ex
                 if is_rate_limited(ex):
                     self._throttled()
                     raise RateLimited(f"{tool} error: {ex}") from ex
@@ -920,7 +1140,7 @@ async def inspect_main(cfg, out: str) -> None:
     from ..clock import CT
     from ..exits import Contract
 
-    rh = RobinhoodMCP(cfg)
+    rh = RobinhoodMCP(cfg, interactive=True)            # run by hand: the one command that may open a sign-in page
     await rh.start()
     Path(out).write_text(json.dumps(rh.tools, indent=2))
     print(f"\nConnected. {len(rh.tools)} tools. Schemas written to {out}")

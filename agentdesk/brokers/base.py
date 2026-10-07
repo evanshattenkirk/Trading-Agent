@@ -15,6 +15,11 @@ class RateLimited(RuntimeError):
     """Robinhood answered RATE_LIMITED / HTTP 429. Transient: the caller skips this round, it is not a broken book."""
 
 
+class SignInRequired(ConnectionError):
+    """Robinhood refused the saved sign-in and only Evan can sign in again (an unattended run never opens a browser).
+    The message is the one line to act on: which command to run."""
+
+
 @dataclass
 class OrderResult:
     status: str                 # filled | partial | unfilled | rejected
