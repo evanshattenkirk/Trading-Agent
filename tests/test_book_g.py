@@ -21,8 +21,9 @@ def ctx(now, day=MON, spot=765.3):
     return MarketContext(now=now, day=day, spot=spot, vwap=spot)
 
 
-def test_config_is_paper_only_one_lot_with_the_frozen_rules():
-    assert C["enabled"] is True and C["paper_only"] is True and C["lots"] == 1
+def test_config_is_off_paper_only_one_lot_with_the_frozen_rules():
+    # Evan turned G off on 2026-10-06 after its real-quote replay failed (research/strategies_new_quotes_report.md).
+    assert C["enabled"] is False and C["paper_only"] is True and C["lots"] == 1
     assert (C["entry_ct"], C["close_ct"], C["take_profit_pct"], C["stop_pct"], C["max_debit"]) == \
         ("09:00", "14:25", 0.25, 0.35, 3.00)
 
@@ -144,6 +145,7 @@ def test_host_takes_profit_and_journals_book_g():
 def test_build_books_passes_the_holiday_calendar():
     cfg = load_config()
     cfg["calendar"]["holidays"] = ["2026-11-26"]
+    cfg["books"]["G_call_calendar"]["enabled"] = True
     (g,) = [b for b in build_books(cfg) if b.key == "G_call_calendar"]
     assert date(2026, 11, 26) in g.strategy.holidays
 
@@ -158,3 +160,7 @@ def test_sim_quotes_price_a_later_expiry_higher():
     a = asyncio.run(q.quote(Contract("SPY", TODAY, k, "call")))
     b = asyncio.run(q.quote(Contract("SPY", TOMORROW, k, "call")))
     assert b.bid > a.ask
+
+
+def test_build_books_leaves_g_out_while_it_is_off():
+    assert "G_call_calendar" not in [b.key for b in build_books(load_config())]

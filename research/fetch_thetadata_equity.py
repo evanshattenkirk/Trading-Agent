@@ -115,14 +115,16 @@ def _transient(e: Exception) -> bool:
         grpc.StatusCode.INTERNAL, grpc.StatusCode.UNKNOWN, grpc.StatusCode.ABORTED}
 
 
-def fetch_session(client, symbol: str, expiry: dt.date, day: dt.date, retries: int = 6, sleep=time.sleep):
-    """1-minute quotes 09:30-16:00 ET, all strikes, both rights, for one expiry on one session. None if no data."""
+def fetch_session(client, symbol: str, expiry: dt.date, day: dt.date, retries: int = 6, sleep=time.sleep,
+                  start_time: str = "09:30:00", end_time: str = "16:00:00"):
+    """1-minute quotes (09:30-16:00 ET unless given), all strikes, both rights, for one expiry on one session. None
+    if no data."""
     delay = 5.0
     for attempt in range(1, retries + 1):
         try:
             return client.option_history_quote(symbol=symbol, expiration=expiry, date=day, interval="1m",
-                                               strike="*", right="both", start_time="09:30:00",
-                                               end_time="16:00:00")
+                                               strike="*", right="both", start_time=start_time,
+                                               end_time=end_time)
         except Exception as e:  # noqa: BLE001 - classified below
             if _no_data(e):
                 return None
