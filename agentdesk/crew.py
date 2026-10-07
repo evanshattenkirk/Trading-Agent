@@ -534,6 +534,47 @@ class Crew:
                 continue
         return out
 
+    def restore_tweaks(self, now: float) -> list[dict]:
+        """Engine start (review M10): today's tweaks the record says are in force ("applied", or "approved" by Evan)
+        are applied again through the same checks (proposals.validate, then engine.apply_tweak), so a mid-day restart
+        doesn't run config.yaml values while the cards and the crew log say otherwise. A day tweak that no longer
+        passes its bounds, and a next-trade tweak (the record can't tell whether an entry used it before the
+        restart), are marked expired with the reason instead. Never raises: a bad record must not stop the engine."""
+        from .proposals import validate
+        gone = []
+        try:
+            self.expire_proposals(now)
+            today = session_date(now)
+            for i in self.book.items:
+                try:
+                    if i.get("status") not in ("applied", "approved") or i.get("scope") not in ("day", "trade") \
+                            or session_date(float(i.get("ts") or 0)) != today:
+                        continue
+                    if i["scope"] == "trade":
+                        why = "engine restarted: a next-trade tweak isn't re-applied (an entry may have used it)"
+                    else:
+                        bad = [msg for k, v in (i.get("params") or {}).items()
+                               for ok, msg, _ in [validate(self.e.cfg, k, v)] if not ok]
+                        if i.get("params") and not bad:
+                            self.e.apply_tweak(i, now)
+                            self.e.bus.emit("log", now, level="info",
+                                            msg=f"crew tweak re-applied after the restart: {i.get('title', '')}")
+                            continue
+                        why = "engine restarted: " + ("; ".join(bad) if bad else "no parameters to apply")
+                except Exception as ex:
+                    why = f"engine restarted: could not re-apply it ({ex})"
+                i.update(status="expired", expired_why=why, decided_ts=now)
+                gone.append(i)
+                self.e.bus.emit("proposal", now, item=i)
+                self.e.bus.emit("log", now, level="warn",
+                                msg=f"crew tweak not re-applied after the restart: {i.get('title', '')} ({why})")
+            if gone:
+                self.book.save()
+        except Exception as ex:
+            log.exception("crew: restoring today's tweaks failed")
+            self.e.bus.emit("log", now, level="warn", msg=f"crew: could not restore today's tweaks ({ex})")
+        return gone
+
     def expire_proposals(self, now: float) -> list[dict]:
         """Clear suggestions whose reason has passed (proposals.py) and tell the dashboard."""
         self._last_expire = now

@@ -81,6 +81,8 @@ class Engine:
         restored = self.risk.restore(str(self.day))      # a restart keeps today's P&L, counts, cooldown and halts
         if restored:
             self.bus.emit("log", self.feed.now(), level="warn" if self.risk.st.halted else "info", msg=restored)
+        if self.crew is not None:                   # today's crew tweaks: applied again, or marked expired (M10)
+            self.crew.restore_tweaks(self.feed.now())
         try:
             stale = await self.broker.open_positions()
         except Exception as ex:
