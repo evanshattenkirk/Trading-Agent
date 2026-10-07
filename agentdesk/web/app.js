@@ -157,6 +157,7 @@
     S.conviction = sn.crew?.conviction?.checks?.length ? sn.crew.conviction : null;
     S.proposals = new Map((sn.crew?.proposals || []).map((p) => [p.id, p]));
     S.l2 = sn.l2 && sn.l2.book ? { book: sn.l2.book, mode: sn.l2.mode } : (sn.l2 ? { book: null, mode: sn.l2.mode } : null);
+    S.recorder = sn.recorder || null;
     const bk = sn.books;
     S.books = bk ? bk.books.map(({ open, closed, ...x }) => x) : [];
     S.account = bk?.account || null;
@@ -245,6 +246,7 @@
       case 'conviction': S.conviction = { mult: e.mult, checks: e.checks, setup: e.setup, ts: e.ts }; mark('risk'); break;
       case 'proposal': S.proposals.set(e.item.id, e.item); feedPush(e.ts, 'crew', `Proposal (${e.item.scope}, ${e.item.status}): ${e.item.title}`); mark('props'); break;
       case 'l2': S.l2 = { book: e.book, mode: e.mode, gate_ok: e.gate_ok, gate_why: e.gate_why }; mark('l2'); break;
+      case 'recorder': S.recorder = { state: e.state, age: e.age }; mark('header'); break;
       case 'directive': S.crew.directive = e.directive; S.risk = e.risk || S.risk; mark('crew', 'risk'); break;
       case 'log': feedPush(e.ts, 'log', e.msg); break;
       case 'config': S.config = { ...(S.config || {}), ...e.config }; mark('pos', 'signal'); break;   // a crew tweak changed it
@@ -349,6 +351,9 @@
   function renderHeader() {
     $('mode').textContent = CFG.source === 'replay' ? 'DEMO REPLAY' : CFG.source === 'review' ? `REVIEW · ${S.mode.toUpperCase()}` : S.mode.toUpperCase();
     $('mode').className = 'pill mode ' + (CFG.source === 'ws' ? S.mode : CFG.source);
+    const rec = P.recorderPill(S.recorder, CFG.source), recEl = $('rec');
+    recEl.hidden = !rec;
+    if (rec) { recEl.textContent = rec.text; recEl.className = rec.cls; recEl.title = rec.title; }
     $('s-px').textContent = px(S.price);
     const chg = S.price && S.prevClose ? S.price - S.prevClose : null;
     $('s-chg').textContent = chg == null ? '' : `${chg >= 0 ? '+' : '−'}${Math.abs(chg).toFixed(2)} (${(chg / S.prevClose * 100).toFixed(2)}%)`;

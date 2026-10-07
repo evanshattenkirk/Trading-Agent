@@ -81,3 +81,19 @@ test('the review server is recognised from its config.js', () => {
   assert.strictEqual(P.isReviewConfig("window.AGENTDESK = { source: 'ws' };\n"), false);
   assert.strictEqual(P.isReviewConfig(''), false);
 });
+
+test('the recorder pill: ok, down, engine, idle; hidden without a state or on the review page', () => {
+  assert.deepStrictEqual(P.recorderPill({ state: 'ok', age: 8 }, 'ws'),
+    { text: 'REC', cls: 'pill good', title: 'Quote recorder writing; last quotes 8 s ago' });
+  const down = P.recorderPill({ state: 'down', age: 420 }, 'ws');
+  assert.strictEqual(down.text, 'REC DOWN');
+  assert.strictEqual(down.cls, 'pill bad');
+  assert.match(down.title, /last quotes 7 min ago/);
+  assert.match(down.title, /recorder\.log/);
+  assert.match(P.recorderPill({ state: 'down', age: null }, 'ws').title, /no quotes written yet/);
+  assert.strictEqual(P.recorderPill({ state: 'engine', age: 900 }, 'ws').cls, 'pill warn');
+  assert.strictEqual(P.recorderPill({ state: 'idle', age: 70000 }, 'ws').cls, 'pill');
+  assert.strictEqual(P.recorderPill(null, 'ws'), null);
+  assert.strictEqual(P.recorderPill({ state: 'ok', age: 3 }, 'review'), null);     // a saved state isn't live
+  assert.strictEqual(P.recorderPill({ state: 'what', age: 3 }, 'ws'), null);
+});

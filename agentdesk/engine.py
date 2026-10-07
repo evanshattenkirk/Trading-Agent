@@ -10,6 +10,7 @@ import logging
 import time as _time
 from collections import deque
 from datetime import time
+from pathlib import Path
 
 from .bars import Bar, TickBarBuilder, TimeBarBuilder, Trade, VWAP
 from .brokers.base import OrderResult, OrderStateError, RateLimited
@@ -24,6 +25,8 @@ from .strikes import choose_strike
 log = logging.getLogger("agentdesk.engine")
 MAX_BARS = {"144t": 4000, "1m": 400, "5m": 200, "15m": 120}
 WATCHDOG = {"quote_stale_sec": 10, "max_consecutive_errors": 3, "reconcile_sec": 30}
+RECORDER_HEARTBEAT = Path("~/.agentdesk/recorder/heartbeat").expanduser()   # recorder.HEARTBEAT, touched per quote write
+RECORDER_STALE_SEC = 120        # the standalone recorder writes every 10 s in market hours
 
 
 class ThrottleCredit:
@@ -86,6 +89,10 @@ class Engine:
         self.closers: list = []     # async close() callables run on shutdown (data feed, Robinhood session)
         self.simbook = None         # SimBook in the simulator
         self._last_l2_emit = 0.0
+        self._recorder_task = None  # the engine's own quote recorder, when config turns it on
+        self._rec: dict | None = None           # recorder_status() as last checked, for the snapshot
+        self._rec_checked = -1e18
+        self._rec_sent = -1e18
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
         self.trade_tweaks: dict = {}
         self._last_tape = (0.0, None)
@@ -272,6 +279,53 @@ class Engine:
         if self.books:
             await self.books.run(self.books.on_second(now), self.inline)
         self._watchdog(now)
+        self._check_recorder(now)
+
+    def recorder_status(self, now: float) -> dict | None:
+        """Are today's 0DTE quotes landing (review I8)? From the standalone recorder's heartbeat file: "ok" while it
+        is under RECORDER_STALE_SEC old, "engine" while the engine's own recorder runs instead, "down" in market
+        hours otherwise (from two minutes after the open), "idle" outside them, on holidays and after an early
+        close. None in the simulator. `age` is the heartbeat's age in seconds (None before the first write)."""
+        if getattr(self.feed, "is_sim", False):
+            return None
+        try:
+            age = max(0, round(now - RECORDER_HEARTBEAT.stat().st_mtime))
+        except OSError:
+            age = None
+        cal = self.cfg.get("calendar") or {}
+        day, t = str(session_date(now)), ct_time(now)
+        closed = (not is_rth(now) or t < time(8, 32) or day in {str(d) for d in cal.get("holidays") or []}
+                  or (day in {str(d) for d in cal.get("early_close") or []} and t >= time(12, 0)))
+        if age is not None and age < RECORDER_STALE_SEC:
+            state = "ok"
+        elif closed:
+            state = "idle"
+        elif self._recorder_task is not None:
+            state = "engine"
+        else:
+            state = "down"
+        return {"state": state, "age": age}
+
+    def _check_recorder(self, now: float) -> None:
+        """Every 15 s: keeps recorder_status() for the snapshot and sends a 'recorder' event when the state changes,
+        and once a minute anyway so the dashboard's age stays current (a warning in the feed when quotes stop
+        landing in market hours)."""
+        if now - self._rec_checked < 15:
+            return
+        self._rec_checked = now
+        rec, prev = self.recorder_status(now), self._rec
+        self._rec = rec
+        changed = rec is not None and (prev or {}).get("state") != rec["state"]
+        if rec is None or not changed and now - self._rec_sent < 60:
+            return
+        self._rec_sent = now
+        if changed and rec["state"] == "down":
+            why = "no quotes written yet today" if rec["age"] is None else f"last quotes written {rec['age'] // 60} min ago"
+            msg = (f"The 0DTE quote recorder isn't writing ({why}). Check ~/.agentdesk/recorder/recorder.log; "
+                   "Robinhood may need a sign-in.")
+            log.warning(msg)
+            self.bus.emit("log", now, level="warn", msg=msg)
+        self.bus.emit("recorder", now, **rec)
 
     def _log_late(self, now: float) -> None:
         """Prints dropped from the 1m/5m/15m bars because the heartbeat had already closed their bar (feed latency
@@ -855,4 +909,5 @@ class Engine:
                    if self.l2 else None),
             "config": {k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")},
             "books": self.books.snapshot() if self.books else None,
+            "recorder": self._rec,
         }

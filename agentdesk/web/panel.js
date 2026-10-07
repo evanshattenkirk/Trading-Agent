@@ -59,7 +59,22 @@
   // The after-hours review server's /config.js (python -m agentdesk review); the engine's says source 'ws'.
   const isReviewConfig = (text) => /source:\s*['"]review['"]/.test(text || '');
 
-  const api = { riskTotals, liveBlackouts, onChart, openLabel, bar144, exitPlan, exitPlanText, rsiBand, isReviewConfig };
+  // The 0DTE quote recorder's health (review I8) from the engine's snapshot and 'recorder' events. Hidden (null)
+  // without a state, in the simulator and on the review page, where a saved state would read as live.
+  const REC = {
+    ok: ['REC', 'pill good', 'Quote recorder writing'],
+    engine: ['REC', 'pill warn', "The engine's own recorder is writing (the standalone recorder isn't)"],
+    down: ['REC DOWN', 'pill bad', 'No 0DTE quotes recorded in market hours. Check ~/.agentdesk/recorder/recorder.log; Robinhood may need a sign-in'],
+    idle: ['REC', 'pill', 'Market closed'],
+  };
+  function recorderPill(r, source) {
+    const m = r && source === 'ws' ? REC[r.state] : null;
+    if (!m) return null;
+    const ago = r.age == null ? 'no quotes written yet' : `last quotes ${r.age < 120 ? r.age + ' s' : Math.floor(r.age / 60) + ' min'} ago`;
+    return { text: m[0], cls: m[1], title: `${m[2]}; ${ago}` };
+  }
+
+  const api = { riskTotals, liveBlackouts, onChart, openLabel, bar144, exitPlan, exitPlanText, rsiBand, isReviewConfig, recorderPill };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AgentPanel = api;
 })(this);
