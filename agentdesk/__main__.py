@@ -110,6 +110,8 @@ def build(cfg, mode: str, speed: float, seed: int, sim_day: str | None = None):
                          build_f2(engine, cfg, rh=rh, mode=mode, provider=provider, fhost=fhost))
     engine.books = group if group.enabled else None
     engine.closers = [feed.close] + ([rh.close] if rh is not None else [])     # run on shutdown, each with a timeout
+    if rh is not None:                         # an expired sign-in halts the engine; it never opens a browser
+        rh.on_signed_out = engine.robinhood_signed_out
     return engine, bus
 
 
@@ -139,6 +141,7 @@ async def run_session(engine, bus, server, cfg, mode: str, host: str, port: int,
     if rh is not None:                # a Robinhood browser sign-in also shows on the dashboard, not only in the log
         from time import time as _now
         rh.on_sign_in = lambda msg: bus.emit("log", _now(), level="warn", msg=msg)
+        rh.on_token_warning = lambda msg: bus.emit("log", _now(), level="warn", msg=msg)
     if archive:                       # saved right after the shutdown flatten too, before the sessions close
         serve_kw.setdefault("after_flatten", lambda: archive.save(engine))
     try:
@@ -271,7 +274,7 @@ def cmd_record_quotes(args) -> None:
     logging.getLogger().addHandler(fh)
     for noisy in ("httpx", "httpcore", "mcp"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    asyncio.run(recorder.RecorderDaemon(cfg).run(once=args.once))
+    asyncio.run(recorder.RecorderDaemon(cfg, interactive=args.once).run(once=args.once))   # --once is run by hand
 
 
 def cmd_f_report(args) -> None:

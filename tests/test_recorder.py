@@ -143,7 +143,7 @@ def test_quote_and_iv_loops_share_one_robinhood_session(tmp_path, monkeypatch): 
     started = []
 
     class FakeMCP:
-        def __init__(self, cfg, meter):
+        def __init__(self, cfg, meter, interactive=False):
             self.meter = meter
 
         async def start(self):

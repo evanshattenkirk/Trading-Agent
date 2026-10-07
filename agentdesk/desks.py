@@ -60,7 +60,12 @@ def ops_checks(crew, slot: str) -> list[dict]:
         add("Signal history warm", not cold, ", ".join(cold) or f"15m/5m have {need}+ bars")
     add("SPY price", e.price is not None, f"{e.price}" if e.price is not None else "no print yet")
     if not sim:
-        add("Robinhood", getattr(e, "l2_rh", None) is not None, "option quotes, Level 2, calendar")
+        rh = getattr(e, "l2_rh", None)
+        status = getattr(rh, "sign_in_status", None)
+        if rh is None or status is None:
+            add("Robinhood", rh is not None, "option quotes, Level 2, calendar")
+        else:                                   # signed out, a refused refresh, or under a day left (2026-10-07)
+            add("Robinhood", *status())
         add("Recorder", *_recorder_check(crew))
     return out
 

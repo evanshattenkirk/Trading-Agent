@@ -13,7 +13,7 @@ from datetime import time
 from pathlib import Path
 
 from .bars import Bar, TickBarBuilder, TimeBarBuilder, Trade, VWAP
-from .brokers.base import OrderResult, OrderStateError, RateLimited
+from .brokers.base import OrderResult, OrderStateError, RateLimited, SignInRequired
 from .clock import at_ct, ct, ct_time, hm, is_rth, session_date
 from .exits import Contract, ExitIntent, ExitPlan, Position
 from .feeds.base import Heartbeat
@@ -106,11 +106,16 @@ class Engine:
         self._last_reconcile = 0.0
         self._mismatches = 0
         self.books = None           # BookHost for paper books B/C/D (books/host.py); None when none is enabled
+        self.rh_signed_out: str | None = None      # Robinhood refused the saved sign-in (the line to act on)
+        self._booted = False        # past the startup checks: a sign-out from here on halts at once
 
     # ------------------------------------------------------------------ lifecycle
     async def run(self) -> None:
-        await self.broker.start()
-        await self.quotes.start()
+        try:
+            await self.broker.start()
+            await self.quotes.start()
+        except SignInRequired as ex:                # no browser sign-in when unattended: start halted, say what to run
+            self.robinhood_signed_out(str(ex))
         await self._warmup()
         restored = self.risk.restore(str(self.day))      # a restart keeps today's P&L, counts, cooldown and halts
         if restored:
@@ -127,6 +132,8 @@ class Engine:
             self.risk.halt(f"{len(stale)} option position(s) already open in the account at startup; close them in the app, then restart",
                            sticky=False)
             self.bus.emit("log", self.feed.now(), level="warn", msg=self.risk.st.halt_reason)
+        self._apply_startup_sign_in(self.feed.now())
+        self._booted = True
         if self.books:
             if self.risk.account_halted():          # book A's own halts (loss limit, profit lock) stay on A
                 self.books.halt_all(self.risk.st.halt_reason)
@@ -394,6 +401,9 @@ class Engine:
             self._errors = max(self._streaks.values(), default=0)
         except asyncio.CancelledError:
             raise
+        except SignInRequired as ex:        # already halted, and said once: not a broker error per poll
+            if self.rh_signed_out is None:
+                self.robinhood_signed_out(str(ex))
         except RateLimited as ex:           # Robinhood is pacing the account: skip this round; the watchdog doesn't count the pause
             now = self.feed.now()
             if now - self._last_rate_log >= 60:
@@ -408,8 +418,30 @@ class Engine:
             if self._errors >= self.wd["max_consecutive_errors"]:
                 self._trip(f"{self._errors} broker/API errors in a row (last: {what}: {ex})", now)
 
+    # ------------------------------------------------------------------ Robinhood sign-in
+    def robinhood_signed_out(self, msg: str) -> None:
+        """Robinhood refused the saved sign-in, and an unattended engine never opens a browser for it (2026-10-07: an
+        expired token opened ~67 sign-in tabs). Every book depends on Robinhood quotes, so this halts account-wide and,
+        mid-session, sells what is open like a safety halt. The halt isn't sticky: a restart after signing in starts
+        clean. Before the startup checks it waits for _apply_startup_sign_in (restore() would overwrite it)."""
+        first = self.rh_signed_out is None
+        self.rh_signed_out = msg
+        if self._booted and first:
+            self._trip(msg, self.feed.now(), sticky=False)
+
+    def _apply_startup_sign_in(self, now: float) -> None:
+        """Signed out at startup: halt every book, but sell nothing (the 0DTE books hold nothing yet; E and F2 keep
+        their multi-day positions for a restart after signing in)."""
+        if self.rh_signed_out is None:
+            return
+        self.risk.halt(self.rh_signed_out, sticky=False)
+        log.error("HALTED at startup: %s", self.rh_signed_out)
+        self.bus.emit("log", now, level="error", msg=f"HALTED: {self.rh_signed_out}")
+        self.set_agent(now, "alarm", self.rh_signed_out)
+        self.bus.emit("risk", now, risk=self.risk.to_dict())
+
     # ------------------------------------------------------------------ safety watchdog
-    def _trip(self, reason: str, now: float, stale=None) -> None:
+    def _trip(self, reason: str, now: float, stale=None, sticky: bool = True) -> None:
         """Stop trading and flatten. Used when the engine can no longer trust what it knows about its positions.
         A stale quote (`stale`: that position) halts and flattens book A and the 0DTE SPY books B/C/D/G, plus the
         book holding that position if it is another one (F1); E, F1 and F2 otherwise keep running (Evan approved D3,
@@ -417,7 +449,7 @@ class Engine:
         msg = f"SAFETY: {reason}"
         if stale is None:
             first = not self.risk.account_flatten()
-            self.risk.halt(msg, flatten=True)
+            self.risk.halt(msg, flatten=True, sticky=sticky)
             if self.books:
                 self.books.halt_all(msg, flatten=True)
             what = "Flattening"
