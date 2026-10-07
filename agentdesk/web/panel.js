@@ -48,10 +48,10 @@
   const pct = (x) => Math.round(x * 100);
   const exitPlanText = (pl) => [
     pl.stop_pct != null ? `stop −${pct(pl.stop_pct)}%` : null,
-    `${pl.exit_on_cross_back} cross-back`,
+    pl.exit_on_cross_back ? `${pl.exit_on_cross_back} cross-back` : null,
     (pl.scale_outs || []).length ? 'scale ' + pl.scale_outs.map((s) => `${pct(s.fraction)}% at +${pct(s.at)}%`).join(', ') : null,
-    `runner trails ${pct(pl.trail_pct)}% off peak`,
-    `time stop ${pl.time_stop_min}m`,
+    pl.trail_pct != null ? `runner trails ${pct(pl.trail_pct)}% off peak` : null,
+    pl.time_stop_min != null ? `time stop ${pl.time_stop_min}m` : null,
   ].filter(Boolean).join(' · ');
 
   const rsiBand = (strategy) => { const r = (strategy && strategy.rsi) || {}; return `${r.lower ?? 30}–${r.upper ?? 70}`; };

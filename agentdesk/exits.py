@@ -95,11 +95,12 @@ class Position:
 
     def to_dict(self) -> dict:
         pl = getattr(self, "exit_plan", None)       # the ExitPlan managing this position (a trade tweak gives it its own)
+        p = pl.p if pl is not None else {}          # .get only: this display field must never break a journal write
         plan = None if pl is None else {
-            "stop_pct": pl.stop_pct, "trail_pct": pl.p["runner_trail_pct"], "exit_on_cross_back": pl.p["exit_on_cross_back"],
-            "scale_outs": [{"at": s["at"], "fraction": s["fraction"]} for s in pl.p["scale_outs"]],
-            "time_stop_min": pl.p["time_stop_min"], "time_stop_min_gain": pl.p["time_stop_min_gain"],
-            "breakeven": pl.p.get("breakeven_after_first_scale", True), "ripping_hold": bool(pl.p.get("ripping_hold")),
+            "stop_pct": pl.stop_pct, "trail_pct": p.get("runner_trail_pct"), "exit_on_cross_back": p.get("exit_on_cross_back"),
+            "scale_outs": [{"at": s.get("at"), "fraction": s.get("fraction")} for s in p.get("scale_outs") or []],
+            "time_stop_min": p.get("time_stop_min"), "time_stop_min_gain": p.get("time_stop_min_gain"),
+            "breakeven": p.get("breakeven_after_first_scale", True), "ripping_hold": bool(p.get("ripping_hold")),
         }
         return {
             "id": self.id, "contract": self.contract.label, "occ": self.contract.occ, "setup": self.setup,

@@ -42,6 +42,15 @@ def test_next_trade_tweak_shows_on_that_position_only():
     assert e.cfg["exits"]["swing"]["runner_trail_pct"] != 0.12
 
 
+def test_a_sparse_exits_config_never_breaks_the_payload():
+    """to_dict also feeds the journal's trade row; a display field must not raise."""
+    e = engine()
+    pos = Position(C, "SWING", 1, 1.00, e.feed.t)
+    ExitPlan({"stop_loss_pct": 0.35, "swing": {"scale_outs": [{"at": 0.25, "fraction": 0.5}]}}, pos)
+    plan = pos.to_dict()["plan"]
+    assert plan["stop_pct"] == 0.35 and plan["trail_pct"] is None and plan["scale_outs"] == [{"at": 0.25, "fraction": 0.5}]
+
+
 def test_scalp_plan_and_a_position_without_one():
     e = engine()
     pos = Position(C, "SCALP", 1, 1.00, e.feed.t)

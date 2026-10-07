@@ -67,6 +67,7 @@ test('the exit plan comes from the position, then from the config', () => {
     'stop −35% · 1m cross-back · scale 50% at +25%, 25% at +50% · runner trails 25% off peak · time stop 20m');
   assert.strictEqual(P.exitPlan({ setup: 'SCALP' }, EXITS).exit_on_cross_back, '144t');
   assert.strictEqual(P.exitPlan({ setup: 'SWING' }, null), null);
+  assert.strictEqual(P.exitPlanText({ stop_pct: 0.35, trail_pct: null, scale_outs: [] }), 'stop −35%');   // missing parts left out
 });
 
 test('the RSI band comes from the config', () => {
