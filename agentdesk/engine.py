@@ -686,6 +686,8 @@ class Engine:
                 log.error("trade not journaled after a retry (%s): %s", ex, pos.to_dict())
                 self.bus.emit("log", now, level="error",
                               msg=f"trade {pos.contract.label} not journaled ({ex}); the day log has the full trade")
+
+    # ------------------------------------------------------------------ crew proposals
     def apply_tweak(self, item: dict, now: float) -> None:
         from .proposals import get_path, set_path, write_override
         import copy as _copy
