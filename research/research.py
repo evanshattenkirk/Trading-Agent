@@ -34,8 +34,8 @@ EXTRA_CLOSURES = {date(2007, 1, 2), date(2012, 10, 29), date(2012, 10, 30)}
 
 
 def prior_session_close(days, C):
-    """prevC per session: the previous row's last close only when that row is the prior NYSE session; NaN when the
-    data lacks that session (a dropped half day or gap), instead of an older close."""
+    """prevC per session: the last close of the prior NYSE session's row; NaN when the data lacks that session (a
+    dropped half day or gap), instead of an older close. A row on an NYSE holiday (the CFD can trade then) is skipped."""
     here = str(__import__("pathlib").Path(__file__).resolve().parent)
     if here not in sys.path:
         sys.path.append(here)
@@ -43,13 +43,14 @@ def prior_session_close(days, C):
     if not len(days):
         return np.array([])
     closed = nyse_calendar.holidays_between(days[0].year - 1, days[-1].year + 1) | EXTRA_CLOSURES
+    row = {d: i for i, d in enumerate(days)}
     out = np.full(len(days), np.nan)
     for i in range(1, len(days)):
         p = days[i] - timedelta(days=1)
         while p.weekday() >= 5 or p in closed:
             p -= timedelta(days=1)
-        if days[i - 1] == p:
-            out[i] = C[i - 1, -1]
+        if p in row:
+            out[i] = C[row[p], -1]
     return out
 
 def bp(x): return x * 1e4

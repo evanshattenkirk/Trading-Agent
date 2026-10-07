@@ -55,6 +55,12 @@ def test_prev_close_comes_from_the_prior_nyse_session():
     assert np.isnan(prev[3])                                          # Thursday's close is unknown, not Wednesday's
 
 
+def test_a_row_on_an_nyse_holiday_is_not_the_next_sessions_prev_close():
+    thu, gf, mon = date(2014, 4, 17), date(2014, 4, 18), date(2014, 4, 21)    # the CFD can trade on Good Friday
+    prev = R.prior_session_close([thu, gf, mon], np.array([[1.0, 5.0], [2.0, 6.0], [3.0, 7.0]]))
+    assert prev[2] == 5.0                                             # Thursday's close, the prior NYSE session
+
+
 def test_prev_close_knows_the_special_closures():
     fri, wed = date(2012, 10, 26), date(2012, 10, 31)                 # closed 29-30 Oct 2012 (Hurricane Sandy)
     prev = R.prior_session_close([fri, wed], np.array([[1.0, 5.0], [2.0, 6.0]]))
