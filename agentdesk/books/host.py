@@ -3,7 +3,7 @@
 The engine calls on_bar / on_second / kill / flatten / halt_all; book A's own path is untouched. Every fill here is
 paper (PaperBroker.submit_combo); in shadow/live the first price of each order also goes to review_option_order.
 One book's error halts and flattens that book only. A stale combo quote is caught by the engine's watchdog, which
-halts everything, as for book A.
+halts and flattens book A and the 0DTE books B/C/D/G (F1 only when the stale position is its own; E and F2 keep running).
 """
 from __future__ import annotations
 
@@ -395,7 +395,7 @@ class BookHost:
             cq = await self._quote(pos.legs, pos.contracts, now, opening=False)
             forced = self._forced(book, pos, now)
             if cq.problem and not forced:
-                continue            # the engine watchdog halts everything if this lasts quote_stale_sec
+                continue            # the engine watchdog halts A and B/C/D/G if this lasts quote_stale_sec
             if not cq.problem:
                 pos.last_quote_ts = now
                 pos.mark = round(cq.mid(pos.credit), 3)
