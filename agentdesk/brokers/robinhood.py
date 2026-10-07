@@ -92,8 +92,26 @@ class FileTokenStorage:
         return json.loads(self.path.read_text()) if self.path.exists() else {}
 
     def _write(self, d: dict) -> None:
-        self.path.write_text(json.dumps(d))
-        os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
+        """Atomic and private from the first byte: a temp file created 0600 next to the token file, then renamed
+        over it, so a crash never leaves half a token file and the tokens are never readable by others."""
+        tmp = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+        try:
+            os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)      # a leftover temp file keeps its old mode otherwise
+            with os.fdopen(fd, "w") as f:
+                fd = None
+                f.write(json.dumps(d))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.path)
+        except BaseException:
+            if fd is not None:
+                os.close(fd)
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     async def get_tokens(self):
         from mcp.shared.auth import OAuthToken
@@ -117,16 +135,29 @@ class FileTokenStorage:
 
 
 class _Callback:
-    """One-shot localhost HTTP server that captures ?code=&state= from the OAuth redirect."""
+    """One-shot localhost HTTP server that captures ?code=&state= from the OAuth redirect. The port is bound once:
+    start() while this server is still listening keeps it (the SDK's redirect handler runs on every attempt), and
+    another client in this process can't bind the same port while a sign-in is still waiting on it."""
+
+    WAIT_S = 300.0
+    _listening: dict[int, "_Callback"] = {}
 
     def __init__(self, port: int):
         self.port = port
         self.fut: asyncio.Future | None = None
         self.server = None
+        self._loop = None
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
-        self.fut = loop.create_future()
+        other = _Callback._listening.get(self.port)
+        if other is not None and other is not self and other.server is not None and other._loop is loop:
+            raise RuntimeError(f"a Robinhood sign-in is already waiting for the browser on port {self.port}; "
+                               "finish it there (or wait for it to time out)")
+        if self.fut is None or self.fut.done():
+            self.fut = loop.create_future()
+        if self.server is not None:
+            return                                  # still listening from the last attempt
 
         async def handle(reader, writer):
             line = (await reader.readline()).decode()
@@ -142,14 +173,22 @@ class _Callback:
                 self.fut.set_result((qs["code"][0], qs.get("state", [None])[0]))
 
         self.server = await asyncio.start_server(handle, "127.0.0.1", self.port)
+        self._loop = loop
+        _Callback._listening[self.port] = self
 
     async def wait(self):
         await self.start() if self.server is None else None
         try:
-            return await asyncio.wait_for(self.fut, timeout=300)
+            return await asyncio.wait_for(self.fut, timeout=self.WAIT_S)
         finally:
+            self.close()
+
+    def close(self) -> None:
+        if self.server is not None:
             self.server.close()
             self.server = None
+        if _Callback._listening.get(self.port) is self:
+            del _Callback._listening[self.port]
 
 
 _HTTP_429 = re.compile(r"(?<![\w.-])429(?![\w.-])")       # not inside an instrument id or a price like 1.429
@@ -161,7 +200,9 @@ def is_rate_limited(err) -> bool:
 
 
 ORDER_TOOLS = ("place_option_order", "cancel_option_order", "get_option_orders")
-CONNECT_TIMEOUT_S = 60.0          # covers a token refresh; a fresh browser sign-in needs a restart anyway
+CONNECT_TIMEOUT_S = 60.0          # covers a token refresh
+SIGN_IN_WAIT_S = _Callback.WAIT_S + 30.0     # once a browser sign-in started: the callback's wait plus margin
+SIGN_IN_MSG = "Robinhood needs a sign-in: open the URL printed above (or in the log)"
 TIMEOUTS_BEFORE_RECONNECT = 2
 
 
@@ -273,23 +314,43 @@ class RobinhoodMCP:
         self._closing = asyncio.Event()
         self._closed = self._dead = False
         self._timeouts, self._last_connect = 0, -1e18
+        self._start_lock = asyncio.Lock()
+        self._accounts_loaded = False
+        self._cb: _Callback | None = None
+        self._sign_in_at: float | None = None       # when the current connect attempt started a browser sign-in
+        self.on_sign_in = None                      # optional callable(msg): the engine puts the line on the dashboard
+
+    def _session_down(self) -> bool:
+        owner = self._owner
+        return self._connect is None or self._dead or owner is None or owner.done()
 
     async def start(self) -> None:
-        if self._started:
+        """Connects once (OAuth, session, account). Calling it again is cheap and safe: a dropped session is reopened
+        through the same locked reconnect path every call uses (_ensure_session), so there is never a second owner
+        task and RECONNECT_GAP_S holds."""
+        if self._accounts_loaded and not self._session_down():
             return
+        async with self._start_lock:
+            if self._connect is None:
+                self._connect = self._transport()
+                async with self._lock:
+                    await self._open()
+                log.info("Robinhood MCP connected: %d tools", len(self.tools))
+            elif self._session_down():
+                async with self._lock:
+                    await self._ensure_session()
+            if not self._accounts_loaded:
+                await self._load_accounts()
+                self._accounts_loaded = True
+
+    def _transport(self):
         from mcp import ClientSession
         from mcp.client.auth import OAuthClientProvider
         from mcp.client.streamable_http import streamablehttp_client
         from mcp.shared.auth import OAuthClientMetadata
 
         port = self.cfg["redirect_port"]
-        cb = _Callback(port)
-
-        async def redirect(url: str) -> None:
-            await cb.start()
-            print(f"\nOpen this URL to authorize AgentDesk with Robinhood (desktop browser):\n{url}\n")
-            webbrowser.open(url)
-
+        self._cb = _Callback(port)
         provider = OAuthClientProvider(
             server_url=self.url,
             client_metadata=OAuthClientMetadata(
@@ -297,23 +358,68 @@ class RobinhoodMCP:
                 grant_types=["authorization_code", "refresh_token"], response_types=["code"],
                 token_endpoint_auth_method="none"),
             storage=FileTokenStorage(Path(os.path.expanduser(self.cfg["token_dir"])) / "rh_oauth.json"),
-            redirect_handler=redirect, callback_handler=cb.wait)
+            redirect_handler=self._redirect, callback_handler=self._cb.wait)
         # The MCP client's anyio task groups must be entered and exited by the same task, so one task owns the
         # session for its whole life. Closing it from anywhere else (shutdown, a finished engine) is then safe,
         # and a dropped connection can't cancel whichever task happened to open it.
-        self._connect = (lambda: streamablehttp_client(self.url, auth=provider, timeout=30), ClientSession)
-        await self._open()
-        log.info("Robinhood MCP connected: %d tools", len(self.tools))
-        await self._load_accounts()
+        return (lambda: streamablehttp_client(self.url, auth=provider, timeout=30), ClientSession)
+
+    async def _redirect(self, url: str) -> None:
+        """The OAuth redirect handler: the saved token was refused, so a browser sign-in is needed."""
+        await self._cb.start()
+        print(f"\nOpen this URL to authorize AgentDesk with Robinhood (desktop browser):\n{url}\n", flush=True)
+        log.info("Robinhood sign-in URL: %s", url)
+        self._sign_in_started()
+        webbrowser.open(url)
+
+    def _sign_in_started(self) -> None:
+        """From here _open waits for the browser callback (SIGN_IN_WAIT_S), not just CONNECT_TIMEOUT_S."""
+        first = self._sign_in_at is None
+        self._sign_in_at = time.monotonic()
+        if not first:
+            return
+        log.warning(SIGN_IN_MSG)
+        if self.on_sign_in is not None:
+            try:
+                self.on_sign_in(SIGN_IN_MSG)
+            except Exception:
+                log.debug("on_sign_in failed", exc_info=True)
 
     async def _open(self) -> None:
         transport, session_cls = self._connect
         self._last_connect = time.monotonic()
         ready = asyncio.get_running_loop().create_future()
         self._closing = asyncio.Event()
-        self._owner = asyncio.create_task(self._own_session(transport, session_cls, ready), name="robinhood-mcp")
-        await asyncio.wait_for(asyncio.shield(ready), CONNECT_TIMEOUT_S)
+        self._sign_in_at = None
+        self._owner = owner = asyncio.create_task(self._own_session(transport, session_cls, ready), name="robinhood-mcp")
+        try:
+            await self._wait_ready(ready)
+        except BaseException:
+            if not ready.done():
+                ready.cancel()                      # nobody reads it now
+            if not owner.done():
+                owner.cancel()                      # an abandoned attempt must not keep a sign-in (and its port) open
+            if self._cb is not None:
+                self._cb.close()
+            raise
+        finally:
+            self._sign_in_at = None
         self._started, self._dead, self._timeouts = True, False, 0
+
+    async def _wait_ready(self, ready: asyncio.Future) -> None:
+        """CONNECT_TIMEOUT_S covers a token refresh. Once the redirect handler started a browser sign-in, keep
+        waiting for the callback (SIGN_IN_WAIT_S from then), so Evan can finish signing in."""
+        t0 = time.monotonic()
+        while not ready.done():
+            limit = t0 + CONNECT_TIMEOUT_S
+            if self._sign_in_at is not None:
+                limit = max(limit, self._sign_in_at + SIGN_IN_WAIT_S)
+            left = limit - time.monotonic()
+            if left <= 0:
+                what = "the browser sign-in was not completed" if self._sign_in_at is not None else "no session"
+                raise TimeoutError(f"Robinhood MCP: {what} after {time.monotonic() - t0:.0f}s")
+            await asyncio.wait({ready}, timeout=min(left, 0.5))
+        ready.result()
 
     async def _ensure_session(self) -> None:
         """Reconnects when the session ended or looks dead (a connection error, or TIMEOUTS_BEFORE_RECONNECT calls
@@ -360,20 +466,25 @@ class RobinhoodMCP:
             if self._owner is None or self._owner is asyncio.current_task():     # not a replaced, older session
                 self.stack, self._started = None, False
 
+    def owned_tasks(self) -> list:
+        """The session's owner task: shutdown leaves it to close() instead of cancelling it with the pollers."""
+        return [self._owner] if self._owner is not None else []
+
     async def close(self, timeout: float = 3.0) -> None:
-        self._closed = True
+        self._closed = True                         # from here every call fails fast (call())
         owner = self._owner
         if owner is None or owner.done():
             return
         self._closing.set()
-        try:
-            await asyncio.wait_for(asyncio.shield(owner), timeout)
-        except asyncio.TimeoutError:
+        await asyncio.wait({owner}, timeout=timeout)    # never raises, even if the owner ended cancelled
+        if not owner.done():
             log.warning("Robinhood MCP session did not close within %.0fs; cancelling it", timeout)
             owner.cancel()
             await asyncio.wait({owner}, timeout=1.0)
 
     async def call(self, tool: str, args: dict):
+        if self._closed:
+            raise RuntimeError(f"{tool}: Robinhood MCP is closed")
         if tool not in self.tools:
             raise SchemaError(f"tool {tool} not offered by the server (have: {sorted(self.tools)})")
         args = fit_args(tool, self.tools[tool], args)
@@ -381,6 +492,8 @@ class RobinhoodMCP:
             try:
                 res = await self._send(tool, args)
             except Exception as ex:
+                if self._closed:                    # close() began while this call was in flight: no retry
+                    raise RuntimeError(f"{tool}: Robinhood MCP is closed") from None
                 if is_rate_limited(ex):
                     self._throttled()
                     raise RateLimited(f"{tool} error: {ex}") from ex
