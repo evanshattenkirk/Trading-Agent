@@ -44,14 +44,15 @@ class TimeBarBuilder:
         self.cur: Bar | None = None
         self.closed_t: float | None = None     # start of the last period closed; it is final
         self.late = 0                          # prints ignored because their period had already closed
+        self.since: float | None = None        # prints before this are in the warm-up history already (mid-day restart)
 
     def _start(self, ts: float) -> float:
         return float(int(ts // self.sec) * self.sec)
 
     def on_trade(self, tr: Trade) -> Bar | None:
         start = self._start(tr.ts)
-        if self.closed_t is not None and start <= self.closed_t:    # a late print never reopens or bleeds forward
-            self.late += 1
+        if (self.closed_t is not None and start <= self.closed_t) or (self.since is not None and tr.ts < self.since):
+            self.late += 1                     # a late print never reopens or bleeds forward
             return None
         closed = None
         if self.cur is not None and start > self.cur.t:

@@ -114,9 +114,11 @@ class Engine:
         log.info("late prints dropped from time bars: %s", self.late_prints())
 
     async def _warmup(self) -> None:
-        hist = await self.feed.history_1m(self.cfg["data"]["history_days"])
+        now = self.feed.now()
+        hist = [b for b in await self.feed.history_1m(self.cfg["data"]["history_days"])
+                if b.t + 60 <= now]            # a REST bar for the minute still running is partial; live prints build it
         agg = {tf: TimeBarBuilder(tf) for tf in ("5m", "15m")}
-        today = session_date(self.feed.now())
+        today = session_date(now)
         last_day, dh, dl, dc = None, None, None, None
         n_today = 0
         for b in hist:
@@ -133,12 +135,7 @@ class Engine:
                 self.levels.on_1m(b)
                 self.vwap.add((b.h + b.l + b.c) / 3, b.v)
                 for x in closed:
-                    if x.tf == "5m":
-                        self.levels.on_5m(x)
-                    st = self.sig.tf[x.tf]
-                    self.bars[x.tf].append({"tf": x.tf, "t": x.t, "end": x.end, "o": x.o, "h": x.h, "l": x.l, "c": x.c,
-                                            "v": x.v, "macd": st.last.macd if st.last else None,
-                                            "sig": st.last.signal if st.last else None, "rsi": st.rsi_val})
+                    self._warm_bar(x)
                 self.price = b.c
                 continue
             if last_day is not None and d != last_day:
@@ -150,12 +147,46 @@ class Engine:
         if dc is not None:
             self.levels.set_prior_day(dh, dl, dc)
             self.price = self.price or dc
-        for bld in agg.values():               # partial 5m/15m from history must not bleed into live bars
-            bld.cur = None
+        gap = self._continue_today(hist, agg, today, now)
         self.day = today
-        self.bus.emit("log", self.feed.now(), level="info",
+        self.bus.emit("log", self.feed.now(), level="warn" if gap and gap > 120 else "info",
                       msg=f"Warm-up: {len(hist)} 1m bars from {self.feed.name} ({n_today} from today); prior day H/L/C "
-                          f"{dh and round(dh, 2)}/{dl and round(dl, 2)}/{dc and round(dc, 2)}")
+                          f"{dh and round(dh, 2)}/{dl and round(dl, 2)}/{dc and round(dc, 2)}"
+                          + (f"; gap {gap:.0f} s between the history and now (prints in it are missing)"
+                             if gap is not None else ""))
+
+    def _warm_bar(self, x: Bar) -> None:
+        """A closed bar of today's history: levels and the chart (its MACD/RSI are already updated)."""
+        if x.tf == "5m":
+            self.levels.on_5m(x)
+        st = self.sig.tf[x.tf]
+        self.bars[x.tf].append({"tf": x.tf, "t": x.t, "end": x.end, "o": x.o, "h": x.h, "l": x.l, "c": x.c,
+                                "v": x.v, "macd": st.last.macd if st.last else None,
+                                "sig": st.last.signal if st.last else None, "rsi": st.rsi_val})
+
+    def _continue_today(self, hist: list[Bar], agg: dict, today, now: float) -> float | None:
+        """Started mid-session: the live builders carry on from today's history, so a minute the history covers never
+        opens a second 1m bar and the 5m/15m period in progress keeps its first minutes instead of restarting
+        part-way. A period that ended before now is closed here if the history covers all of it, else dropped: a
+        partial period never reaches the MACD/RSI. Returns the gap (s) the history leaves before now."""
+        if not hist or session_date(hist[-1].t) != today:
+            return None                        # pre-market start: yesterday's open 5m/15m period must not bleed in
+        covered = min(getattr(self.feed, "history_end", None) or now, now // 60 * 60)
+        self.tb["1m"].closed_t = hist[-1].t
+        for tf, bld in agg.items():
+            cur = bld.cur
+            if cur is not None and cur.t + bld.sec <= now:
+                x = bld._close()
+                if x.t + bld.sec <= covered:
+                    self.sig.on_bar_close(x)
+                    self._warm_bar(x)
+                else:
+                    log.warning("warm-up: dropped the partial %s bar %s (the history stops at %s)", tf, hm(x.t), hm(covered))
+                cur = None
+            self.tb[tf].closed_t, self.tb[tf].cur = bld.closed_t, cur
+        for bld in self.tb.values():
+            bld.since = covered                # a print from before the history's end is in it already
+        return max(0.0, now - covered)
 
     # ------------------------------------------------------------------ feed handling
     async def on_item(self, item) -> None:

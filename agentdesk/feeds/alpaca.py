@@ -21,6 +21,7 @@ from .prints import PrintFilter
 
 log = logging.getLogger("agentdesk.alpaca")
 DATA = "https://data.alpaca.markets"
+SIP_LAG = timedelta(minutes=16)     # the free plan refuses SIP history newer than 15 minutes; IEX history has no lag
 
 
 def _headers() -> dict:
@@ -83,11 +84,21 @@ class AlpacaFeed(Feed):
         self.feed = cfg["data"]["alpaca"]["feed"]
         self.q: asyncio.Queue = asyncio.Queue(maxsize=200000)
         self.prints = PrintFilter(enabled=cfg["data"]["alpaca"].get("clean_prints", True))
+        self.history_end: float | None = None      # where the warm-up history stops (the engine measures the gap)
 
     async def history_1m(self, days: int) -> list[Bar]:
-        end = datetime.now(timezone.utc) - timedelta(minutes=16)     # free plan: SIP history must be >15 min old
-        start = end - timedelta(days=days + 4)
-        bars = await fetch_bars_1m(self.symbol, start, end, self.feed)
+        now = datetime.now(timezone.utc)
+        end = now - SIP_LAG if self.feed == "sip" else now
+        try:
+            bars = await fetch_bars_1m(self.symbol, end - timedelta(days=days + 4), end, self.feed)
+        except httpx.HTTPStatusError as ex:
+            if end != now or ex.response.status_code not in (403, 422):
+                raise
+            log.warning("alpaca %s history up to now refused (%s %s); using the 16-minute lag", self.feed,
+                        ex.response.status_code, ex.response.text[:200])
+            end = now - SIP_LAG
+            bars = await fetch_bars_1m(self.symbol, end - timedelta(days=days + 4), end, self.feed)
+        self.history_end = end.timestamp()
         keep = set(sorted({session_date(b.t) for b in bars})[-(days + 1):])     # N prior days + today so far
         return [b for b in bars if session_date(b.t) in keep]
 

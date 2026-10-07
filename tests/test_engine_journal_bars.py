@@ -209,3 +209,136 @@ def test_late_prints_are_logged_each_minute_at_debug_and_summed_up_at_info(caplo
         caplog.clear()
         e.stop()                                                      # the shutdown summary
         assert "late prints" in caplog.text
+
+
+# --------------------------------------------------------------------------- M11: a mid-day restart
+def bar1m(t, o, c, v=1000.0):
+    from agentdesk.bars import Bar
+    return Bar("1m", t, o, max(o, c) + 0.05, min(o, c) - 0.05, c, v, 10, t + 60)
+
+
+def history(days_ago_close=True, today_until=(10, 2)):
+    """Friday 08:30-14:59 and Monday 08:30 up to `today_until` (that minute partial, as a live REST call returns it)."""
+    out, px = [], 650.0
+    for d, end in ((FRI, (15, 0)), (MON, today_until)):
+        t, stop = ct_ts(d, 8, 30), ct_ts(d, *end)
+        while t <= stop:
+            o = px
+            px = round(px + (0.07 if int(t // 60) % 7 < 4 else -0.05), 2)
+            out.append(bar1m(t, o, px))
+            t += 60
+        if d == FRI and not days_ago_close:
+            out = out[:-1]
+    return [b for b in out if b.t < ct_ts(MON, 15, 0) and not (b.t >= ct_ts(FRI, 15, 0) and b.t < ct_ts(MON, 0, 0))]
+
+
+class RestartFeed:
+    is_sim = False
+    name = "test"
+
+    def __init__(self, now, hist):
+        self.t, self.hist = now, hist
+
+    def now(self):
+        return self.t
+
+    async def history_1m(self, days):
+        return list(self.hist)
+
+
+def restarted(now, hist):
+    e = engine()
+    e.feed = RestartFeed(now, hist)
+    e.sig.evaluate = lambda *a: None                  # bars only; no entries in these tests
+    fed = []
+    real = e.sig.on_bar_close
+
+    def rec(b):
+        fed.append(b)
+        return real(b)
+    e.sig.on_bar_close = rec
+    seen = taps(e)
+    run(e._warmup())
+    return e, fed, seen
+
+
+def live(e, ts, px):
+    from agentdesk.bars import Trade
+    e.feed.t = ts
+    run(e.on_item(Trade(ts, px, 100)))
+
+
+def beat(e, ts):
+    from agentdesk.feeds.base import Heartbeat
+    e.feed.t = ts
+    run(e.on_item(Heartbeat(ts)))
+
+
+def starts(fed, tf):
+    return [b.t for b in fed if b.tf == tf and b.t >= ct_ts(MON, 0, 0)]
+
+
+def test_mid_day_restart_continues_todays_5m_and_15m_periods_without_a_hole_or_a_partial_bar():
+    now = ct_ts(MON, 10, 2, 20)
+    hist = history(today_until=(10, 2))
+    e, fed, seen = restarted(now, hist)
+    h = {b.t: b for b in hist}
+    assert starts(fed, "1m")[-1] == ct_ts(MON, 10, 1)            # the partial 10:02 REST bar is not used
+    assert starts(fed, "5m")[-1] == ct_ts(MON, 9, 55)
+    assert starts(fed, "15m")[-1] == ct_ts(MON, 9, 45)
+    assert e.tb["5m"].cur.t == ct_ts(MON, 10, 0) and e.tb["15m"].cur.t == ct_ts(MON, 10, 0)
+    live(e, ct_ts(MON, 10, 1, 30), 999.0)                         # a late print for a minute the history covers
+    assert e.tb["1m"].late == 1 and e.tb["1m"].cur is None
+    live(e, ct_ts(MON, 10, 2, 30), 660.0)
+    live(e, ct_ts(MON, 10, 4, 50), 661.0)
+    beat(e, ct_ts(MON, 10, 5, 0.5))
+    b5 = [b for b in fed if b.tf == "5m"][-1]
+    assert b5.t == ct_ts(MON, 10, 0)
+    assert b5.o == h[ct_ts(MON, 10, 0)].o                         # the whole period, not 10:02:30-10:05
+    assert b5.h == max(h[ct_ts(MON, 10, 0)].h, h[ct_ts(MON, 10, 1)].h, 661.0) and b5.c == 661.0
+    assert b5.v == h[ct_ts(MON, 10, 0)].v + h[ct_ts(MON, 10, 1)].v + 200
+    s5 = starts(fed, "5m")
+    assert all(b - a == 300 for a, b in zip(s5, s5[1:]))           # every 5m period once, in order
+    assert [x for x in e.bars["5m"] if x["t"] == ct_ts(MON, 10, 0)]   # and on the chart
+    s1 = starts(fed, "1m")
+    assert len(s1) == len(set(s1))
+    msg = next(x["msg"] for x in seen if x["type"] == "log" and x["msg"].startswith("Warm-up"))
+    assert "20 s" in msg                                          # the warm-up gap: 10:02:00 to 10:02:20
+
+
+def test_a_period_the_history_left_open_but_already_ended_is_closed_in_the_warm_up():
+    now = ct_ts(MON, 10, 7, 10)
+    hist = [b for b in history(today_until=(10, 7)) if b.t != ct_ts(MON, 10, 4)]   # IEX had no print at 10:04
+    e, fed, _ = restarted(now, hist)
+    assert starts(fed, "5m")[-1] == ct_ts(MON, 10, 0)             # closed with the bars it had, once
+    assert e.tb["5m"].cur.t == ct_ts(MON, 10, 5)
+    beat(e, ct_ts(MON, 10, 10, 0.5))
+    assert starts(fed, "5m")[-2:] == [ct_ts(MON, 10, 0), ct_ts(MON, 10, 5)]
+
+
+def test_with_the_sip_lag_a_period_the_history_only_started_is_dropped_not_fed(caplog):
+    now = ct_ts(MON, 10, 2, 20)
+    hist = [b for b in history(today_until=(10, 2)) if b.t < ct_ts(MON, 9, 46)]   # SIP history stops 16 min back
+    feed = RestartFeed(now, hist)
+    feed.history_end = ct_ts(MON, 9, 46, 20)
+    e = engine()
+    e.feed = feed
+    fed = []
+    real = e.sig.on_bar_close
+    e.sig.on_bar_close = lambda b: (fed.append(b), real(b))[1]
+    seen = taps(e)
+    run(e._warmup())
+    assert starts(fed, "5m")[-1] == ct_ts(MON, 9, 40)           # 09:45 had one minute of five: never reaches the MACD
+    assert starts(fed, "15m")[-1] == ct_ts(MON, 9, 30)
+    assert e.tb["5m"].cur is None and e.tb["15m"].cur is None
+    assert "partial 5m" in caplog.text and "partial 15m" in caplog.text
+    log_ev = next(x for x in seen if x["type"] == "log" and x["msg"].startswith("Warm-up"))
+    assert log_ev["level"] == "warn" and "gap 960 s" in log_ev["msg"]
+
+
+def test_a_pre_market_start_leaves_the_live_builders_empty():
+    hist = history(days_ago_close=False, today_until=(8, 0))      # Friday's last minute missing: its 5m period stays open
+    e, _, seen = restarted(ct_ts(MON, 8, 10), [b for b in hist if b.t < ct_ts(MON, 0, 0)])
+    assert all(b.cur is None and b.closed_t is None and b.since is None for b in e.tb.values())
+    msg = next(x["msg"] for x in seen if x["type"] == "log" and x["msg"].startswith("Warm-up"))
+    assert "gap" not in msg
