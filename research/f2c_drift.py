@@ -44,6 +44,15 @@ def f2_universe() -> set[str]:
     return {s.upper() for s in load_config()["books"]["F2_debit_spreads"]["universe"]}
 
 
+def f2_universe_for_day(today: date, data: dict, names: set[str], cfg: dict) -> dict[str, dict]:
+    """F2's names that pass the section 3 floors (price, ATR14, 20-day dollar volume) on prior data only. Unlike F's
+    universe there is no top-130 S&P cap and no S&P membership test (prereg: "F2's 34 names only"), so names such as
+    SHOP, or an F2 name outside the day's top 130, can be candidates."""
+    names = set(names)
+    return R.universe_for_day(today, data, names, [], {**cfg, "universe": {**cfg["universe"],
+                                                                           "top_sp500_by_dollar_vol": len(names)}})
+
+
 def f2_picks(rows: list, names: set[str], cfg: dict, top: int = TOP_C) -> list:
     """F2-C's arming rule on one day's scan rows: F2's names, green first candle, RVOL5 >= rvol5_min, top by RVOL5."""
     mine = [r for r in rows if r.symbol in names]
@@ -155,7 +164,8 @@ def backtest(store, data, sp500, extras, dates: list[date], cfg, names: set[str]
     for d in dates:
         orb = store.read_bars(store.or_path(d)) if store.or_path(d).exists() else {}
         if len(hist) >= 14 and orb and store.day_path(d).exists():
-            uni = R.universe_for_day(d, data, sp500, extras, cfg)
+            uni = (f2_universe_for_day(d, data, names, cfg) if names is not None
+                   else R.universe_for_day(d, data, sp500, extras, cfg))
             res = R.scan_day(uni, orb, hist[-14:], cfg)
             picks = f2_picks(res.rows, names, cfg) if names is not None else res.picks
             bars = store.read_bars(store.day_path(d))
@@ -184,6 +194,9 @@ def report(store, data, sp500, extras, dates: list[date], out_dir: Path, names: 
            "names": sorted(names), "c_hold": hold, "c_orlow": orlow, "verdict": verdict(hold["full"], hold["pass"]),
            "sensitivity": {},
            "caveats": ["Survivorship bias: today's S&P 500 list is used for every year.",
+                       "The universe is F2's names with the section 3 floors (2026-10-07; before that it was F's "
+                       "S&P-130 universe filtered to F2's names). Names the shares cache never pulled have no bars "
+                       "and can't be candidates.",
                        "The cache holds each candidate's day only, so this measures the same-day drift; F2-C holds up "
                        "to 3 days, which only the option replay (research/f2_real_quotes.py) covers.",
                        "Shares only: no option prices, so option costs, skew and IV are not tested here.",
@@ -249,12 +262,17 @@ def main() -> None:
         raise SystemExit(f"No cache at {store.root}: run research/strategy_f_intraday.py --pull-only first.")
     sp500 = R.load_constituents(store)
     extras = list(F.AI_LIST)
-    symbols = sorted(sp500 | set(extras) | {"SPY"})
+    names = f2_universe()
+    symbols = sorted(sp500 | set(extras) | names | {"SPY"})
     data = {s: store.read_daily(s) for s in symbols if store.daily_path(s).exists()}
     dates = [b["d"] for b in data.get("SPY", []) if start <= b["d"] <= end]
     if not dates:
         raise SystemExit("No SPY daily bars cached; run research/strategy_f_intraday.py --pull-only first.")
-    res = report(store, data, sp500, extras, dates, ROOT / "research", f2_universe())
+    missing = sorted(n for n in names if n not in data)
+    if missing:
+        print(f"warning: no cached daily bars for F2 names {missing}; they can't be candidates. Pull them with "
+              "research/strategy_f_intraday.py --pull-only to cover all of F2's names.", flush=True)
+    res = report(store, data, sp500, extras, dates, ROOT / "research", names)
     print((ROOT / "research" / "f2c_drift.md").read_text())
     print(f"verdict: {res['verdict']}")
 

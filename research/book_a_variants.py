@@ -182,6 +182,8 @@ def load_sessions():
 def prior_vix(vix_close, vdays, day: date) -> float | None:
     import bisect
     i = bisect.bisect_left(vdays, day) - 1
+    if i >= 0 and (day - vdays[i]).days > 5:     # warn only: the committed tables must reproduce (see README)
+        print(f"warning: prior VIX close for {day} is from {vdays[i]}, {(day - vdays[i]).days} days old", flush=True)
     return vix_close[vdays[i]] if i >= 0 else None
 
 

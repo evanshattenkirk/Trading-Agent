@@ -63,3 +63,59 @@ def test_summary_verdict_and_pass_bar():
 def test_f2_universe_comes_from_config():
     names = D.f2_universe()
     assert {"NVDA", "AMD", "AAPL"} <= names and len(names) >= 30
+
+
+# ------------------------------------------------------------------ L20: F2's 34 names, not F's S&P-130 universe
+def _days(n, start=D0):
+    out, d = [], start
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def _daily(n, px=100.0, rng=2.0, vol=5_000_000):
+    return [{"d": d, "o": px, "h": px + rng / 2, "l": px - rng / 2, "c": px, "v": vol} for d in _days(n)]
+
+
+def test_f2_universe_for_day_is_f2s_names_with_the_section_3_floors_and_no_sp500_cap():
+    today = _days(25)[-1]
+    data = {"SHOP": _daily(25),                       # an F2 name that is not in the S&P 500 list
+            "NVDA": _daily(25),
+            "COIN": _daily(25, px=8, vol=50_000_000),  # an F2 name under the $10 price floor
+            "PLTR": _daily(25, vol=500_000),           # an F2 name under the $100M/day dollar-volume floor
+            "XOM": _daily(25, rng=0.2),                # an F2 name under the ATR floor
+            "BIG": _daily(25, vol=50_000_000)}         # a liquid name that is not one of F2's
+    uni = D.f2_universe_for_day(today, data, {"SHOP", "NVDA", "COIN", "PLTR", "XOM", "UBER"}, CFG)
+    assert set(uni) == {"SHOP", "NVDA"}
+    assert uni["SHOP"]["atr"] == pytest.approx(2.0)
+
+
+class _Store:
+    """Every day has opening-range bars, so each date after 14 days of history is scanned."""
+    def or_path(self, d):
+        return Path(__file__)
+
+    day_path = or_path
+
+    def read_bars(self, p):
+        return {"SHOP": [bar(575, 100, 100, 100, 100)]}
+
+
+def test_backtest_scans_f2_names_from_their_own_universe(monkeypatch):
+    seen = []
+
+    def f_universe(*a, **k):
+        raise AssertionError("F2-C must not scan F's S&P-130 universe")
+    monkeypatch.setattr(D.R, "universe_for_day", f_universe)
+    monkeypatch.setattr(D, "f2_universe_for_day", lambda d, data, names, cfg: seen.append(sorted(names)) or {})
+    D.backtest(_Store(), {}, set(), [], _days(16), CFG, {"SHOP", "NVDA"})
+    assert seen == [["NVDA", "SHOP"], ["NVDA", "SHOP"]]
+
+
+def test_the_any_name_sensitivity_keeps_fs_universe(monkeypatch):
+    seen = []
+    monkeypatch.setattr(D.R, "universe_for_day", lambda *a, **k: seen.append(1) or {})
+    D.backtest(_Store(), {}, set(), [], _days(15), CFG, None)
+    assert seen == [1]
