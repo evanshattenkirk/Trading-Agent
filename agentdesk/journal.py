@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS iv_history (
   call_bid REAL, call_ask REAL, call_iv REAL, put_bid REAL, put_ask REAL, put_iv REAL, atm_iv REAL,
   earnings_date TEXT, earnings_timing TEXT, T INTEGER, PRIMARY KEY (day, symbol, kind)
 );
+CREATE TABLE IF NOT EXISTS rh_calls (
+  ts REAL, tool TEXT, ms REAL, ok INTEGER, kind TEXT, err TEXT, tag TEXT
+);
+CREATE INDEX IF NOT EXISTS option_quotes_expiry_ts ON option_quotes(expiry, ts);
+CREATE INDEX IF NOT EXISTS option_quotes_ts ON option_quotes(ts);
+CREATE INDEX IF NOT EXISTS rh_calls_tag_ts ON rh_calls(tag, ts);
 """
 IV_COLS = ("day", "ts", "symbol", "kind", "expiry", "dte", "strike", "spot", "call_bid", "call_ask", "call_iv",
            "put_bid", "put_ask", "put_iv", "atm_iv", "earnings_date", "earnings_timing", "T")
