@@ -118,6 +118,14 @@ n1_n2_1dte_close_prereg.md, frozen before any data). Mac only, on the existing s
     .venv/bin/python research/n1_n2_1dte_close.py --quotes data/thetadata/spy_0dte \
         --next-quotes data/thetadata/spy_next --out data/thetadata/n1_n2_results  # n1_n2_1dte_close.md / _results.json
 
+N3 weekly put credit spread (rules in n3_weekly_put_spread_prereg.md, frozen before any data). Mac only: a small
+ThetaData pull of next week's expiry at 15:30-16:00 ET on each week's last session, plus the existing spy_0dte pull:
+
+    .venv/bin/python research/fetch_thetadata_spy_weekly.py --smoke           # the latest week, printed
+    .venv/bin/python research/fetch_thetadata_spy_weekly.py                   # data/thetadata/spy_weekly
+    .venv/bin/python research/n3_weekly_put_spread.py --quotes data/thetadata/spy_0dte \
+        --weekly-quotes data/thetadata/spy_weekly --out data/thetadata/n3_results   # n3_weekly_put_spread.md / _results.json
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)
