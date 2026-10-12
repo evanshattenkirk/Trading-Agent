@@ -112,6 +112,12 @@ SEC EDGAR for report times, ThetaData single-name option quotes, Alpaca daily ba
     .venv/bin/python research/fetch_thetadata_x1.py                           # data/thetadata/x1
     .venv/bin/python research/x1_earnings_fly.py                              # x1_earnings_fly.md / _results.json
 
+Round 4, N1/N2 1DTE credit structures sold at 15:50 ET and closed 15:40 ET on expiry day (rules in
+n1_n2_1dte_close_prereg.md, frozen before any data). Mac only, on the existing spy_0dte and spy_next pulls:
+
+    .venv/bin/python research/n1_n2_1dte_close.py --quotes data/thetadata/spy_0dte \
+        --next-quotes data/thetadata/spy_next --out data/thetadata/n1_n2_results  # n1_n2_1dte_close.md / _results.json
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)
