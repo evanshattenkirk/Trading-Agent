@@ -124,7 +124,7 @@ ThetaData pull of next week's expiry at 15:30-16:00 ET on each week's last sessi
     .venv/bin/python research/fetch_thetadata_spy_weekly.py --smoke           # the latest week, printed
     .venv/bin/python research/fetch_thetadata_spy_weekly.py                   # data/thetadata/spy_weekly
     .venv/bin/python research/n3_weekly_put_spread.py --quotes data/thetadata/spy_0dte \
-        --weekly-quotes data/thetadata/spy_weekly --out data/thetadata/n3_results   # n3_weekly_put_spread.md / _results.json
+        --weekly-quotes data/thetadata/spy_weekly --out data/thetadata/n3_results   # n3_weekly_put_spread.md (FAIL)
 
 ## Tests
 
