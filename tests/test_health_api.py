@@ -96,3 +96,10 @@ def test_the_review_server_serves_health_with_no_saved_session(tmp_path, monkeyp
     c = TestClient(create_review_app(tmp_path / "none", cfg=CFG), base_url=BASE)
     r = c.get("/api/health")
     assert r.status_code == 200 and len(r.json()["checks"]) == 9
+
+
+def test_the_simulator_has_no_manager_panel():
+    e = engine()
+    e.mode = "sim"
+    c = TestClient(create_app(e, Bus(), token="t0ken"), base_url=BASE)
+    assert c.get("/api/health").status_code == 404

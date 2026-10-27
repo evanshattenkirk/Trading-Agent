@@ -37,7 +37,9 @@ JOBS = ("com.agentdesk.paper", "com.agentdesk.review", "com.agentdesk.quant", "c
 JOB_LOGS = {"paper": "paper", "review": "review", "quant": "reports", "recorder": "recorder"}
 RECORDER_LOG = "~/.agentdesk/recorder/recorder.log"
 LATER = "outside market hours"
-NOW = "now (any time; the engine and recorder pick the new sign-in up on their next connect)"
+NOW = "now"
+RESTART_RECORDER = "launchctl kickstart -k gui/$(id -u)/com.agentdesk.recorder"
+ENGINE_LOG = "tail -50 ~/.agentdesk/paper/$(date +%F).log"
 
 
 @dataclass
@@ -59,8 +61,9 @@ class Paths:
                    journal=Path(expand(cfg["journal_path"])))
 
 
-def row(name: str, state: str, detail: str, fix: str = "") -> dict:
-    return {"name": name, "state": state, "detail": detail, "fix": fix}
+def row(name: str, state: str, detail: str, fix: str = "", cmd: str = "") -> dict:
+    """`fix` is what to do in words; `cmd` the exact Terminal command, shown with a Copy button."""
+    return {"name": name, "state": state, "detail": detail, "fix": fix, "cmd": cmd}
 
 
 # ---------------------------------------------------------------- time helpers
@@ -106,20 +109,22 @@ def sign_in(name: str, token_file: Path, now: float, cmd: str, live=None) -> dic
     and the engine's own verdict (`live`: RobinhoodMCP.sign_in_status()) when it says red, since Robinhood may
     have refused a token whose file still looks valid."""
     if live is not None and not live[0]:
-        return row(name, BAD, str(live[1]), f"Run in Terminal {NOW}: {cmd}")
+        return row(name, BAD, str(live[1]), f"Sign in again: run this in Terminal {NOW}.", cmd)
     if not Path(token_file).exists():
-        return row(name, BAD, "no saved sign-in", f"Run in Terminal {NOW}: {cmd}")
+        return row(name, BAD, "no saved sign-in", f"Sign in: run this in Terminal {NOW}.", cmd)
     exp = FileTokenStorage(Path(token_file)).expires_at()
     if exp is None:
-        return row(name, WARN, "signed in, but the token gives no lifetime", f"Run in Terminal {LATER}: {cmd}")
+        return row(name, WARN, "signed in, but the token gives no lifetime",
+                   f"To be sure, sign in again {LATER}.", cmd)
     rest = exp - now
     if rest <= 0:
-        return row(name, BAD, f"expired {when(exp)}", f"Run in Terminal {NOW}: {cmd}")
+        return row(name, BAD, f"expired {when(exp)}", f"Sign in again: run this in Terminal {NOW}.", cmd)
     detail = f"signed in until {when(exp)} ({left(rest)} left)"
     if rest < BAD_LEFT_S:
-        return row(name, BAD, detail + "; it should have renewed by now", f"Run in Terminal {LATER} today: {cmd}")
+        return row(name, BAD, detail + "; it should have renewed by now",
+                   f"Sign in again today, {LATER}: run this in Terminal.", cmd)
     if rest < WARN_LEFT_S:
-        return row(name, WARN, detail, f"Run in Terminal {LATER} before then: {cmd}")
+        return row(name, WARN, detail, f"Sign in again before then, {LATER}: run this in Terminal.", cmd)
     return row(name, OK, detail)
 
 
@@ -154,8 +159,8 @@ def recorder_writing(heartbeat: Path, days_log: Path, now: float, cfg) -> dict:
     if not session_open(now, cfg):
         return row(name, IDLE, f"market closed; {seen}{tail}")
     return row(name, BAD, ("no quotes written yet" if age is None else f"no quotes for {ago(age)}") + tail,
-               f"Check {RECORDER_LOG}. If it asks for a sign-in, run in Terminal: {RECORDER_SIGN_IN_CMD}. "
-               "To restart the recorder: launchctl kickstart -k gui/$(id -u)/com.agentdesk.recorder")
+               f"Check {RECORDER_LOG}. If it asks for a sign-in, use the recorder sign-in row's command; "
+               "otherwise restart the recorder:", RESTART_RECORDER)
 
 
 def _counts(kinds: dict[str, int]) -> str:
@@ -191,13 +196,12 @@ def recorder_calls(journal: Path, now: float, cfg) -> dict:
         return row(name, IDLE, f"market closed; {len(rows)} calls in the last 15 min" if rows else "market closed")
     detail = f"{len(rows)} calls in the last 15 min: {_counts(kinds)}" if rows else "no calls in the last 15 min"
     if kinds.get("auth"):
-        return row(name, BAD, detail, f"Robinhood refused the recorder's sign-in. Run in Terminal {NOW}: "
-                                      f"{RECORDER_SIGN_IN_CMD}")
+        return row(name, BAD, detail, f"Robinhood refused the recorder's sign-in. Run this in Terminal {NOW}:",
+                   RECORDER_SIGN_IN_CMD)
     if not good or now - max(good) > SILENT_S:
         quiet = "no good call in the last 15 min" if not good else f"no good call for {ago(now - max(good))}"
         return row(name, BAD, f"{quiet}; {detail}" if rows else detail,
-                   f"Check {RECORDER_LOG}. To restart the recorder: "
-                   "launchctl kickstart -k gui/$(id -u)/com.agentdesk.recorder")
+                   f"Check {RECORDER_LOG}, then restart the recorder:", RESTART_RECORDER)
     if len(kinds) > 1:
         return row(name, WARN, detail, "Usually passes by itself; the engine and recorder share ~240 calls/min.")
     return row(name, OK, detail)
@@ -218,10 +222,10 @@ def engine_calls(stats: dict | None, now: float, cfg, running: bool) -> dict:
         parts.append(f"{d['reconnects']} reconnects today")
     detail = "; ".join(parts)
     if w.get("auth"):
-        return row(name, BAD, detail, f"Robinhood refused the engine's sign-in. Run in Terminal {NOW}: {ENGINE_SIGN_IN_CMD}, "
-                                      "then restart the engine")
+        return row(name, BAD, detail, f"Robinhood refused the engine's sign-in. Run this in Terminal {NOW}, then "
+                                      "restart the engine:", ENGINE_SIGN_IN_CMD)
     if session_open(now, cfg) and (not last_ok or now - last_ok > SILENT_S):
-        return row(name, BAD, detail, "Check today's engine log ~/.agentdesk/paper/<date>.log for Robinhood errors.")
+        return row(name, BAD, detail, "Look for Robinhood errors in today's engine log:", ENGINE_LOG)
     if w.get("rate_limited") or w.get("timeout") or w.get("error"):
         return row(name, WARN, detail, "Usually passes by itself; calls are paused and retried. Many in a row halt "
                                        "the books (see Halts).")
@@ -239,7 +243,7 @@ def feed(name_: str | None, last_print: float | None, now: float, cfg, running: 
     if last_print and now - last_print < PRINT_STALE_S:
         return row(name, OK, f"{src}: {seen}")
     return row(name, BAD, f"{src}: " + (f"no SPY prints for {ago(now - last_print)}" if last_print else seen),
-               "Check today's engine log ~/.agentdesk/paper/<date>.log (the Alpaca socket reconnects by itself).")
+               "The Alpaca socket reconnects by itself; if it doesn't, check today's engine log:", ENGINE_LOG)
 
 
 def engine_row(running: bool, snap: dict | None, now: float, cfg) -> dict:
@@ -250,8 +254,8 @@ def engine_row(running: bool, snap: dict | None, now: float, cfg) -> dict:
     last = f"; last session {snap['day']}" if snap.get("day") else ""
     if trading_day(now, cfg) and time(8, 15) <= ct(now).time() < time(15, 0):
         return row(name, BAD, "not running during the session" + last,
-                   "Start it in Terminal: launchctl kickstart gui/$(id -u)/com.agentdesk.paper "
-                   "(why it stopped: ~/.agentdesk/paper/<date>.log and ~/.agentdesk/paper/launchd.err.log)")
+                   "Start it with this; why it stopped is in ~/.agentdesk/paper/<date>.log and "
+                   "~/.agentdesk/paper/launchd.err.log.", "launchctl kickstart gui/$(id -u)/com.agentdesk.paper")
     return row(name, IDLE, "not running; it starts at 08:10 CT on trading days" + last)
 
 
@@ -314,13 +318,15 @@ def jobs(runner=None, platform: str | None = None) -> dict:
         out = row(name, OK, "paper, review, quant and recorder loaded; last runs exited cleanly")
     else:
         detail = "; ".join([f"{j} not loaded" for j in missing] + [f"{j} last exit {c}" for j, c in failed])
-        fixes = []
-        if any(j != "recorder" for j in missing):
-            fixes.append("cd ~/Trading-Agent && tools/install_paper.sh (outside 08:10-15:10 CT)")
-        if "recorder" in missing:
-            fixes.append("cd ~/Trading-Agent && tools/install_recorder.sh")
-        fixes += [f"{j}: see ~/.agentdesk/{JOB_LOGS[j]}/launchd.err.log" for j, _ in failed]
-        out = row(name, BAD, detail, "; ".join(fixes))
+        steps = (["tools/install_recorder.sh"] if "recorder" in missing else []) \
+            + (["tools/install_paper.sh"] if any(j != "recorder" for j in missing) else [])
+        if steps:
+            fix, cmd = ("Reinstall the missing jobs (install_paper.sh only outside 08:10-15:10 CT):",
+                        "cd ~/Trading-Agent && " + " && ".join(steps))
+        else:
+            j = failed[0][0]
+            fix, cmd = "See why the last run failed:", f"tail -30 ~/.agentdesk/{JOB_LOGS[j]}/launchd.err.log"
+        out = row(name, BAD, detail, fix, cmd)
     if cached:
         _jobs_cache = (_time.monotonic(), out)
     return out

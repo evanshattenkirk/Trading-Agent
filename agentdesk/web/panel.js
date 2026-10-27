@@ -74,7 +74,20 @@
     return { text: m[0], cls: m[1], title: `${m[2]}; ${ago}` };
   }
 
-  const api = { riskTotals, liveBlackouts, onChart, openLabel, bar144, exitPlan, exitPlanText, rsiBand, isReviewConfig, recorderPill };
+  // The Manager button (2026-10-27): coloured by the worst check from /api/health, counting the amber and red rows.
+  // Hidden (null) without a report (the simulator, the demo).
+  function managerPill(rep) {
+    if (!rep || !rep.checks) return null;
+    const bad = rep.checks.filter((c) => c.state === 'bad' || c.state === 'warn');
+    const tone = { ok: 'good', warn: 'warn', bad: 'bad' }[rep.state];
+    return {
+      text: bad.length ? `MANAGER ${bad.length}` : 'MANAGER',
+      cls: 'pill mgr' + (tone ? ' ' + tone : ''),
+      title: bad.length ? `${bad.length} need attention: ${bad.map((c) => c.name).join(', ')}` : 'All checks green',
+    };
+  }
+
+  const api = { riskTotals, liveBlackouts, onChart, openLabel, bar144, exitPlan, exitPlanText, rsiBand, isReviewConfig, recorderPill, managerPill };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AgentPanel = api;
 })(this);

@@ -94,6 +94,8 @@ def create_app(engine, bus, token: str | None = None, allowed_hosts=()) -> FastA
     @app.get("/api/health")
     async def health_check():
         """The Manager panel (agentdesk/health.py): local files only, no token needed, nothing secret in it."""
+        if engine.mode == "sim":
+            return JSONResponse({"ok": False, "error": "The simulator has no Manager panel."}, 404)
         snap = engine.manager_snapshot()           # on the event loop; the file reads and launchctl run in a thread
         rep = await asyncio.to_thread(health.report, engine.cfg, time.time(), snap, True)
         return JSONResponse(rep, headers={"Cache-Control": "no-store"})

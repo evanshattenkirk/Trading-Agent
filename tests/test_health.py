@@ -43,25 +43,25 @@ def test_a_fresh_sign_in_is_green_with_its_deadline(tmp_path):
     r = health.sign_in("Engine Robinhood sign-in", token(tmp_path / "t.json", OPEN - DAY), OPEN, ENGINE_SIGN_IN_CMD)
     assert r["state"] == "ok"
     assert "until" in r["detail"] and "8d" in r["detail"]
-    assert not r["fix"]
+    assert not r["fix"] and not r["cmd"]
 
 
 def test_under_three_days_left_is_amber(tmp_path):
     r = health.sign_in("x", token(tmp_path / "t.json", OPEN - 7.6 * DAY), OPEN, ENGINE_SIGN_IN_CMD)
     assert r["state"] == "warn"
-    assert ENGINE_SIGN_IN_CMD in r["fix"] and "outside market hours" in r["fix"]
+    assert r["cmd"] == ENGINE_SIGN_IN_CMD and "outside market hours" in r["fix"]
 
 
 def test_under_a_day_left_is_red(tmp_path):
     r = health.sign_in("x", token(tmp_path / "t.json", OPEN - 9.2 * DAY), OPEN, ENGINE_SIGN_IN_CMD)
     assert r["state"] == "bad"
-    assert ENGINE_SIGN_IN_CMD in r["fix"]
+    assert r["cmd"] == ENGINE_SIGN_IN_CMD
 
 
 def test_an_expired_sign_in_is_red_and_says_so(tmp_path):
     r = health.sign_in("x", token(tmp_path / "t.json", OPEN - 10 * DAY), OPEN, ENGINE_SIGN_IN_CMD)
     assert r["state"] == "bad" and "expired" in r["detail"]
-    assert ENGINE_SIGN_IN_CMD in r["fix"]
+    assert r["cmd"] == ENGINE_SIGN_IN_CMD
 
 
 def test_no_token_file_is_red(tmp_path):
@@ -81,7 +81,7 @@ def test_the_engines_own_verdict_wins_when_it_is_red(tmp_path):
     p = token(tmp_path / "t.json", OPEN - DAY)
     r = health.sign_in("x", p, OPEN, ENGINE_SIGN_IN_CMD, live=(False, "Robinhood sign-in expired: run `x`"))
     assert r["state"] == "bad" and "sign-in expired" in r["detail"]
-    assert ENGINE_SIGN_IN_CMD in r["fix"]
+    assert r["cmd"] == ENGINE_SIGN_IN_CMD
 
 
 def test_a_sign_in_row_never_carries_the_token(tmp_path):
@@ -99,7 +99,7 @@ def test_recorder_writing_in_market_hours_is_green(tmp_path):
 def test_recorder_silent_in_market_hours_is_red_with_the_log_and_restart(tmp_path):
     r = health.recorder_writing(touched(tmp_path / "hb", OPEN - 600), tmp_path / "days.jsonl", OPEN, CFG)
     assert r["state"] == "bad" and "10 min" in r["detail"]
-    assert "recorder.log" in r["fix"] and "com.agentdesk.recorder" in r["fix"]
+    assert "recorder.log" in r["fix"] and "com.agentdesk.recorder" in r["cmd"]
 
 
 def test_recorder_never_written_in_market_hours_is_red(tmp_path):
@@ -146,7 +146,7 @@ def test_recorder_rate_limits_are_amber(tmp_path):
 def test_recorder_auth_errors_are_red_with_the_sign_in_command(tmp_path):
     db = calls_db(tmp_path, [(OPEN - 20, "get_option_quotes", 300, 0, "auth", "401", "recorder")])
     r = health.recorder_calls(db, OPEN, CFG)
-    assert r["state"] == "bad" and "record-quotes --once" in r["fix"]
+    assert r["state"] == "bad" and "record-quotes --once" in r["cmd"]
 
 
 def test_recorder_calls_ignore_other_tags_and_old_rows(tmp_path):
@@ -187,7 +187,7 @@ def test_engine_rate_limits_and_timeouts_are_amber():
 def test_engine_auth_errors_are_red():
     s = {**STATS, "window": {**STATS["window"], "auth": 2}}
     r = health.engine_calls(s, OPEN, CFG, running=True)
-    assert r["state"] == "bad" and ENGINE_SIGN_IN_CMD in r["fix"]
+    assert r["state"] == "bad" and r["cmd"] == ENGINE_SIGN_IN_CMD
 
 
 def test_engine_no_good_call_for_two_minutes_in_market_hours_is_red():
@@ -221,7 +221,7 @@ def test_engine_running_is_green():
 
 def test_engine_not_running_in_session_hours_is_red_with_the_kickstart():
     r = health.engine_row(False, {"day": "2026-10-26"}, OPEN, CFG)
-    assert r["state"] == "bad" and "com.agentdesk.paper" in r["fix"]
+    assert r["state"] == "bad" and "com.agentdesk.paper" in r["cmd"]
 
 
 def test_engine_not_running_outside_session_hours_is_idle():
@@ -278,7 +278,7 @@ def test_all_jobs_loaded_and_clean_is_green():
 def test_a_job_not_loaded_is_red_with_the_installer():
     out = {j: LOADED for j in health.JOBS if j != "com.agentdesk.recorder"}
     r = health.jobs(launchctl(out), platform="darwin")
-    assert r["state"] == "bad" and "recorder not loaded" in r["detail"] and "install_recorder.sh" in r["fix"]
+    assert r["state"] == "bad" and "recorder not loaded" in r["detail"] and "install_recorder.sh" in r["cmd"]
 
 
 def test_a_job_whose_last_run_failed_is_red():
@@ -322,3 +322,9 @@ def test_the_report_works_with_no_saved_session(tmp_path):
     rep = health.report(CFG, EVENING, None, running=False, paths=paths, runner=launchctl({}), platform="linux")
     assert rep["state"] == "bad"                         # no saved sign-ins at all
     assert len(rep["checks"]) == 9
+
+
+def test_a_command_is_never_repeated_in_the_fix_text(tmp_path):
+    """The panel shows `fix` as prose and `cmd` in a box with a Copy button."""
+    r = health.sign_in("x", token(tmp_path / "t.json", OPEN - 10 * DAY), OPEN, ENGINE_SIGN_IN_CMD)
+    assert r["cmd"] and r["cmd"] not in r["fix"]
