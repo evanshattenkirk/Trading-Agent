@@ -25,6 +25,7 @@ import stat
 import uuid
 import time
 import webbrowser
+from collections import deque
 from contextlib import AsyncExitStack
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -440,6 +441,11 @@ class RobinhoodMCP:
         self.on_token_warning = None                # callable(msg): a refused refresh, while the token still works
         self._told = False
         self._refresh_warning: str | None = None
+        self._calls: deque = deque()                # (ts, kind) of every call, last STATS_WINDOW_S (Manager panel)
+        self._day_counts: dict[str, int] = {}
+        self._stats_day = None
+        self._last_ok: float | None = None
+        self._last_err: dict | None = None
 
     def _session_down(self) -> bool:
         owner = self._owner
@@ -667,6 +673,7 @@ class RobinhoodMCP:
             self._dead = True
             raise ConnectionError(f"Robinhood MCP reconnect failed: {ex!r}") from ex
         log.warning("Robinhood MCP reconnected: %d tools", len(self.tools))
+        self._count("reconnects")
 
     async def _own_session(self, transport, session_cls, ready: asyncio.Future) -> None:
         try:
@@ -707,6 +714,53 @@ class RobinhoodMCP:
             await asyncio.wait({owner}, timeout=1.0)
 
     async def call(self, tool: str, args: dict):
+        try:
+            out = await self._call(tool, args)
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            kind = ("auth" if isinstance(ex, SignInRequired) else "rate_limited" if isinstance(ex, RateLimited)
+                    else "timeout" if isinstance(ex, TimeoutError) else "error")
+            self._count(kind, f"{tool}: {ex}"[:200])
+            raise
+        self._count("ok")
+        return out
+
+    # ------------------------------------------------------------------ call stats (the dashboard's Manager panel)
+    STATS_WINDOW_S = 900.0
+
+    def _count(self, kind: str, msg: str | None = None) -> None:
+        now = time.time()
+        self._roll(now)
+        self._day_counts[kind] = self._day_counts.get(kind, 0) + 1
+        if kind == "reconnects":
+            return
+        self._calls.append((now, kind))
+        if kind == "ok":
+            self._last_ok = now
+        else:
+            self._last_err = {"ts": now, "kind": kind, "msg": msg}
+
+    def _roll(self, now: float) -> None:
+        from ..clock import session_date
+        day = session_date(now)
+        if day != self._stats_day:
+            self._stats_day, self._day_counts = day, {}
+        while self._calls and self._calls[0][0] < now - self.STATS_WINDOW_S:
+            self._calls.popleft()
+
+    def stats(self) -> dict:
+        """Counts only: when the last good call was, the last error, and per kind (ok, rate_limited, timeout, auth,
+        error) over the last 15 minutes and today, plus today's reconnects."""
+        self._roll(time.time())
+        kinds = ("ok", "rate_limited", "timeout", "auth", "error")
+        window = dict.fromkeys(kinds, 0)
+        for _, k in self._calls:
+            window[k] = window.get(k, 0) + 1
+        day = {k: self._day_counts.get(k, 0) for k in kinds + ("reconnects",)}
+        return {"last_ok": self._last_ok, "last_err": self._last_err, "window": window, "day": day}
+
+    async def _call(self, tool: str, args: dict):
         if self._closed:
             raise RuntimeError(f"{tool}: Robinhood MCP is closed")
         self._check_signed_out()
