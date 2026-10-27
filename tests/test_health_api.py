@@ -1,6 +1,7 @@
 """The Manager panel's data: the engine's snapshot carries its Robinhood call stats, sign-in verdict and last SPY
 print, and both the engine and the after-hours review server answer GET /api/health without the control token,
 with nothing secret in the body (2026-10-27)."""
+import asyncio
 import json
 import sys
 import time
@@ -13,11 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agentdesk import health
 from agentdesk.archive import SessionArchive
+from agentdesk.bars import Trade
 from agentdesk.bus import Bus
 from agentdesk.review import create_review_app
 from agentdesk.server import create_app
 
-from test_safety import CFG, engine
+from test_safety import CFG, NOW, engine
 
 SECRET = "eyJhbGciOi-access-token-value"
 BASE = "http://127.0.0.1:8765"
@@ -34,11 +36,20 @@ class RH:
 def test_the_snapshot_carries_the_engine_health_inputs():
     e = engine()
     e.l2_rh = RH()
-    e.feed.last_print = 456.0
     h = e.snapshot()["health"]
     assert h["rh"]["day"]["reconnects"] == 1
     assert h["rh_sign_in"] == [True, "signed in until Fri Oct 30 09:12 CT"]
-    assert h["feed"] == "test" and h["last_print"] == 456.0
+    assert h["feed"] == "test"
+
+
+def test_the_last_print_is_stamped_by_the_engine_for_any_feed():
+    """Every feed (Alpaca, Massive) reaches the engine through the same trade path, so the engine stamps the wall
+    clock there; MassiveFeed has no last_print of its own (Codex, PR #60)."""
+    e = engine()
+    assert not hasattr(e.feed, "last_print")
+    before = time.time()
+    asyncio.run(e.on_item(Trade(NOW, 600.0)))
+    assert e.snapshot()["health"]["last_print"] >= before
 
 
 def test_without_robinhood_the_health_inputs_are_empty():

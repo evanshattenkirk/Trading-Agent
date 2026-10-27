@@ -93,6 +93,7 @@ class Engine:
         self._recorder_task = None  # the engine's own quote recorder, when config turns it on
         self._rec: dict | None = None           # recorder_status() as last checked, for the snapshot
         self._rec_checked = -1e18
+        self._last_print: float | None = None   # wall clock of the last SPY print, any feed (Manager panel)
         self._rec_sent = -1e18
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
         self.trade_tweaks: dict = {}
@@ -243,6 +244,7 @@ class Engine:
 
     async def _on_trade(self, tr: Trade) -> None:
         now = tr.ts
+        self._last_print = _time.time()
         self.price = tr.px
         closed: list[Bar] = []
         if is_rth(now):
@@ -950,7 +952,7 @@ class Engine:
         stats = getattr(rh, "stats", None)
         status = getattr(rh, "sign_in_status", None)
         return {"rh": stats() if stats else None, "rh_sign_in": list(status()) if status else None,
-                "feed": self.feed.name, "last_print": getattr(self.feed, "last_print", None)}
+                "feed": self.feed.name, "last_print": self._last_print}
 
     def manager_snapshot(self) -> dict:
         """The light part of snapshot() that /api/health reads (no bars)."""
