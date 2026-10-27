@@ -97,3 +97,25 @@ test('the recorder pill: ok, down, engine, idle; hidden without a state or on th
   assert.strictEqual(P.recorderPill({ state: 'ok', age: 3 }, 'review'), null);     // a saved state isn't live
   assert.strictEqual(P.recorderPill({ state: 'what', age: 3 }, 'ws'), null);
 });
+
+// The Manager panel's header button (2026-10-27): its colour is the worst check; amber and red rows are counted.
+const row = (name, state) => ({ name, state, detail: '', fix: '', cmd: '' });
+
+test('no health report hides the Manager button', () => {
+  assert.strictEqual(P.managerPill(null), null);
+});
+
+test('all green reads MANAGER in green', () => {
+  const m = P.managerPill({ state: 'ok', checks: [row('Engine', 'ok'), row('Halts', 'idle')] });
+  assert.deepStrictEqual([m.text, m.cls, m.title], ['MANAGER', 'pill mgr good', 'All checks green']);
+});
+
+test('amber and red rows are counted and named, coloured by the worst', () => {
+  const m = P.managerPill({ state: 'bad', checks: [row('Engine Robinhood sign-in', 'bad'), row('Mac jobs', 'warn'), row('Engine', 'ok')] });
+  assert.deepStrictEqual([m.text, m.cls], ['MANAGER 2', 'pill mgr bad']);
+  assert.strictEqual(m.title, '2 need attention: Engine Robinhood sign-in, Mac jobs');
+});
+
+test('only amber reads amber', () => {
+  assert.strictEqual(P.managerPill({ state: 'warn', checks: [row('Halts', 'warn')] }).cls, 'pill mgr warn');
+});

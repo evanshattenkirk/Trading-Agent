@@ -202,7 +202,7 @@ def cmd_review(args) -> None:
     rv = review_cfg(cfg)
     host, port = cfg["server"]["host"], cfg["server"]["port"]
     app = create_review_app(os.path.expanduser(rv["sessions_dir"]),
-                            allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])])
+                            allowed_hosts=[host, *(cfg["server"].get("allowed_hosts") or [])], cfg=cfg)
     print(f"\n  AgentDesk review -> http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/  "
           f"(read-only; steps aside while the engine runs)\n", flush=True)
     asyncio.run(serve_forever(app, host, port, os.path.expanduser(rv["claims_dir"])))

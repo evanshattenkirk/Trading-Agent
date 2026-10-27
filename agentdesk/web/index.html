@@ -14,7 +14,7 @@
 <!--BODY-->
 <div class="app" id="app">
   <header class="top">
-    <div class="brand"><span class="logo">AGENTDESK</span><span class="pill mode" id="mode">SIM</span><span class="pill" id="rec" hidden>REC</span></div>
+    <div class="brand"><span class="logo">AGENTDESK</span><span class="pill mode" id="mode">SIM</span><span class="pill" id="rec" hidden>REC</span><button class="pill mgr" id="mgr" type="button" aria-haspopup="dialog" aria-controls="manager" hidden>MANAGER</button></div>
     <div class="stats" id="stats">
       <div class="stat"><span class="k">SPY</span><span class="v num" id="s-px">—</span><span class="d num" id="s-chg"></span></div>
       <div class="stat"><span class="k">VWAP</span><span class="v num" id="s-vwap">—</span></div>
@@ -49,6 +49,11 @@
     <button class="btn" id="confirm-no" type="button">Cancel</button>
   </div>
   <div class="banner" id="banner" hidden></div>
+  <aside class="manager" id="manager" role="dialog" aria-labelledby="mgr-h" hidden>
+    <div class="card-h"><h2 id="mgr-h">Manager</h2><span class="mgr-ts" id="mgr-ts"></span><button class="icon-btn" id="mgr-close" type="button">Close</button></div>
+    <p class="note">Connections and jobs, read from files on this Mac. Nothing here changes anything; fixes run in Terminal.</p>
+    <ul class="mgr-rows" id="mgr-rows"></ul>
+  </aside>
 
   <main class="main">
     <section class="chart-col">
@@ -144,6 +149,7 @@
 <script src="static/app.js"></script>
 <script src="static/book_f.js"></script>
 <script src="static/layout.js"></script>
+<script src="static/manager.js"></script>
 <!--/BODY-->
 </body>
 </html>

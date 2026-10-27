@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+import time
 from pathlib import Path
 
 import uvicorn
@@ -18,15 +19,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import claims
+from . import claims, health
 from .archive import load_day
+from .config import load_config
 from .server import LOCAL_HOSTS, SAFE_METHODS, WEB, _hostname, set_cache_headers
 
 log = logging.getLogger("agentdesk.review")
 NOTHING = {"ok": False, "error": "No saved session yet. The engine saves one from its next paper run."}
 
 
-def create_review_app(sessions_dir: Path | str, allowed_hosts=()) -> FastAPI:
+def create_review_app(sessions_dir: Path | str, allowed_hosts=(), cfg=None) -> FastAPI:
     app = FastAPI(title="AgentDesk review", docs_url=None, redoc_url=None, openapi_url=None)
     hosts = LOCAL_HOSTS | {h for h in allowed_hosts if h and h not in ("0.0.0.0", "::")}
 
@@ -60,6 +62,15 @@ def create_review_app(sessions_dir: Path | str, allowed_hosts=()) -> FastAPI:
     async def state(day: str | None = None):
         data = load_day(sessions_dir, day, max_events=0)
         return JSONResponse(data["snapshot"]) if data else JSONResponse(NOTHING, 404)
+
+    @app.get("/api/health")
+    async def health_check():
+        """The Manager panel from local files and the last saved session (the engine isn't running)."""
+        def build():
+            data = load_day(sessions_dir, None, max_events=0)
+            return health.report(cfg or load_config(), time.time(), data["snapshot"] if data else None, running=False)
+        rep = await asyncio.to_thread(build)
+        return JSONResponse(rep, headers={"Cache-Control": "no-store"})
 
     return app
 

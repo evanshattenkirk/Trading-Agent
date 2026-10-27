@@ -18,6 +18,7 @@ from .clock import at_ct, ct, ct_time, hm, is_rth, session_date
 from .exits import Contract, ExitIntent, ExitPlan, Position
 from .feeds.base import Heartbeat
 from .levels import Levels
+from .health import session_open
 from .risk import RiskManager
 from .strategy import SignalEngine
 from .strikes import choose_strike
@@ -92,6 +93,7 @@ class Engine:
         self._recorder_task = None  # the engine's own quote recorder, when config turns it on
         self._rec: dict | None = None           # recorder_status() as last checked, for the snapshot
         self._rec_checked = -1e18
+        self._last_print: float | None = None   # wall clock of the last SPY print, any feed (Manager panel)
         self._rec_sent = -1e18
         self._day_orig: dict = {}   # original values of per-day crew tweaks, restored next session
         self.trade_tweaks: dict = {}
@@ -242,6 +244,7 @@ class Engine:
 
     async def _on_trade(self, tr: Trade) -> None:
         now = tr.ts
+        self._last_print = _time.time()
         self.price = tr.px
         closed: list[Bar] = []
         if is_rth(now):
@@ -299,10 +302,7 @@ class Engine:
             age = max(0, round(now - RECORDER_HEARTBEAT.stat().st_mtime))
         except OSError:
             age = None
-        cal = self.cfg.get("calendar") or {}
-        day, t = str(session_date(now)), ct_time(now)
-        closed = (not is_rth(now) or t < time(8, 32) or day in {str(d) for d in cal.get("holidays") or []}
-                  or (day in {str(d) for d in cal.get("early_close") or []} and t >= time(12, 0)))
+        closed = not session_open(now, self.cfg)
         if age is not None and age < RECORDER_STALE_SEC:
             state = "ok"
         elif closed:
@@ -942,4 +942,19 @@ class Engine:
             "config": {k: self.cfg[k] for k in ("strategy", "strikes", "sizing", "exits", "risk")},
             "books": self.books.snapshot() if self.books else None,
             "recorder": self._rec,
+            "health": self.health_inputs(),
         }
+
+    def health_inputs(self) -> dict:
+        """What the Manager panel (agentdesk/health.py) needs from the running engine: Robinhood call stats and its
+        sign-in verdict, and the feed's last SPY print. Saved in the snapshot, so the review page has the last values."""
+        rh = self.l2_rh
+        stats = getattr(rh, "stats", None)
+        status = getattr(rh, "sign_in_status", None)
+        return {"rh": stats() if stats else None, "rh_sign_in": list(status()) if status else None,
+                "feed": self.feed.name, "last_print": self._last_print}
+
+    def manager_snapshot(self) -> dict:
+        """The light part of snapshot() that /api/health reads (no bars)."""
+        return {"mode": self.mode, "day": str(self.day), "risk": self.risk.to_dict(),
+                "books": self.books.snapshot() if self.books else None, "health": self.health_inputs()}

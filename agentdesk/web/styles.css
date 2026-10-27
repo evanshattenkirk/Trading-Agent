@@ -256,3 +256,24 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 12px; }
   .stats { gap: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+
+/* Manager panel (2026-10-27): connection and job health from /api/health, over the side column */
+.pill.mgr { cursor: pointer; font-family: inherit; }
+.pill.mgr::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.pill.mgr.good::before { background: var(--up); } .pill.mgr.warn::before { background: var(--warn); } .pill.mgr.bad::before { background: var(--dn); }
+.pill.mgr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.manager { position: fixed; top: 56px; right: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); z-index: 50; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); padding: 12px 14px; box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  display: flex; flex-direction: column; gap: 8px; }
+.mgr-ts { margin-left: auto; color: var(--ink-3); font-size: 11px; }
+.mgr-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mgr-rows li { border: 1px solid var(--line); border-left: 3px solid var(--ink-3); border-radius: var(--r); padding: 7px 10px; background: var(--panel-2); }
+.mgr-rows li.ok { border-left-color: var(--up); } .mgr-rows li.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.mgr-rows li.bad { border-left-color: var(--dn); background: var(--dn-bg); } .mgr-rows li.idle { opacity: .8; }
+.mgr-rows .nm { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.mgr-rows .st { font-size: 10px; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; }
+.mgr-rows li.ok .st { color: var(--up); } .mgr-rows li.warn .st { color: var(--warn); } .mgr-rows li.bad .st { color: var(--dn); }
+.mgr-rows .dt { color: var(--ink-2); overflow-wrap: anywhere; }
+.mgr-rows .fx { margin-top: 4px; }
+.mgr-rows .cmd { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; }
+.mgr-rows code { flex: 1; min-width: 0; font: 11px/1.4 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; overflow-wrap: anywhere; user-select: all; }

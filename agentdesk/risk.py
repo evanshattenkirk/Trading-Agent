@@ -342,6 +342,7 @@ class RiskManager:
             "day_pnl": round(st.day_pnl, 2), "peak_day_pnl": round(st.peak_day_pnl, 2), "trades": st.trades,
             "wins": st.wins, "losses": st.losses, "loss_streak": st.loss_streak,
             "cooldown_until": st.cooldown_until or None, "halted": st.halted, "halt_reason": st.halt_reason,
+            "halt_scope": st.halt_scope,
             "paused": st.paused, "size_mult": st.size_mult, "book_mults": dict(st.book_mults or {}),
             "max_daily_loss": self.r["max_daily_loss"], "max_trades": self.r["max_trades_per_day"],
             "blackouts": [{"start": b.start, "end": b.end, "name": b.name} for b in st.blackouts],
