@@ -189,7 +189,12 @@ def _ml(x: pd.Series) -> dict:
         if len(x) else {}
 
 
+TRADE_COLS = ("pnl", "max_loss", "ret", "credit", "M", "wings_sold", "exit_minute",
+              "s_settle", "settle_src", "s_parity", "spread_med")
+
+
 def report(df: pd.DataFrame, w: pd.DataFrame | None, vix: pd.Series | None, spy_spreads: pd.DataFrame | None) -> dict:
+    df = df.reindex(columns=list(dict.fromkeys([*df.columns, *TRADE_COLS])))   # a run where every session skipped
     main = _sel(df).sort_values("day")
     taker = _sel(df, model="taker")
     h1, h2 = halves(main)

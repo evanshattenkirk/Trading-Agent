@@ -166,3 +166,13 @@ def test_report_runs_end_to_end_and_reads_fresh_rows_from_w(tmp_path):
     assert set(res["settlement_source"]) == {"fred"}
     assert res["fred_vs_parity"]["n"] == 4
     assert res["xsp_vs_spy_same_day"]["n"] == 3
+
+
+def test_report_runs_when_every_session_is_skipped(tmp_path):
+    day = date(2024, 3, 1)
+    df = pd.DataFrame(wx.session_rows("XSP", day, _write(tmp_path, day, chain(ENTRY, ENTRY, minutes=range(570, 721))),
+                                      {}))
+    res = wx.report(df, None, None, None)
+    assert res["xsp_patient"]["n"] == 0 and not res["verdict"]["pass"] and res["verdict"]["provisional"]
+    assert res["reported_only"]["skips_patient"] == {"sessions": 1, "no_pm_quotes": 1}
+    assert res["date_range"] is None
