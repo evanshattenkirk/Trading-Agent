@@ -133,6 +133,9 @@ sessions: THETADATA_API_KEY as an environment variable, DoltHub's free stock tab
     .venv/bin/python research/fetch_thetadata_e.py --earnings research/data/x1/earnings.csv   # data/thetadata/e
     .venv/bin/python research/round5_e.py                                     # E1/E2 replay (book E as built)
     .venv/bin/python research/round5_x3.py                                    # research/data/round5/x3/x3_results.json
+    .venv/bin/python research/round5_w.py --und SPY=data/thetadata/spy_0dte --und QQQ=data/thetadata/qqq_0dte \
+        --und IWM=data/thetadata/iwm_0dte --vix research/data/vix.csv      # research/data/round5/w/w_results.json
+    .venv/bin/python research/round5_k1.py --fetch && .venv/bin/python research/round5_k1.py --report   # Kalshi
 
 ## Tests
 
