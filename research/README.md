@@ -126,6 +126,14 @@ ThetaData pull of next week's expiry at 15:30-16:00 ET on each week's last sessi
     .venv/bin/python research/n3_weekly_put_spread.py --quotes data/thetadata/spy_0dte \
         --weekly-quotes data/thetadata/spy_weekly --out data/thetadata/n3_results   # n3_weekly_put_spread.md (FAIL)
 
+Round 5, W / E1 / E2 / X3 / K1 (rules in round5_prereg.md, frozen before any data; results in round5.md). Cloud
+sessions: THETADATA_API_KEY as an environment variable, DoltHub's free stock tables, Kalshi's public API.
+
+    .venv/bin/python research/fetch_thetadata_spy0dte.py --symbol QQQ         # data/thetadata/qqq_0dte (and IWM)
+    .venv/bin/python research/fetch_thetadata_e.py --earnings research/data/x1/earnings.csv   # data/thetadata/e
+    .venv/bin/python research/round5_e.py                                     # E1/E2 replay (book E as built)
+    .venv/bin/python research/round5_x3.py                                    # research/data/round5/x3/x3_results.json
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)

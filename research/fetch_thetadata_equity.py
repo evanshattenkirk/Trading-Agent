@@ -204,7 +204,12 @@ def append_csv(path: Path, header: list[str], row: list) -> None:
 
 
 def make_client():
+    """THETADATA_API_KEY from the environment (cloud sessions) when set, else the repo .env."""
+    import os
     from thetadata import ThetaClient
+    key = os.environ.get("THETADATA_API_KEY")
+    if key:
+        return ThetaClient(dataframe_type="pandas", api_key=key)
     return ThetaClient(dataframe_type="pandas", dotenv_path=ROOT / ".env")
 
 

@@ -209,3 +209,11 @@ only); entry 72 hours before close.
 3. Pulls: QQQ and IWM 0DTE and book E's event quotes from a cloud session holding the ThetaData key; Kalshi and
    DoltHub from any cloud session.
 4. Runs and one results report, `research/round5.md`, with every verdict, pass or fail.
+
+## Amendments
+
+**Amendment 1 (2026-10-30, before any book E quote was pulled or any E1/E2 outcome computed).** Section 3 says
+"D = `entry_session` (the filing day) and timing = unknown for `dmh`". In X1's file the filing day of a `dmh` row
+is `report_session`; its `entry_session` is the session before the filing. The parenthesis and the stated reason
+("this keeps every exit before it") describe the filing day, so for `dmh` rows D = `report_session`. The exit for
+those events is the session before the filing day. Implemented in `research/round5_e.py`.
