@@ -202,7 +202,7 @@ def net_returns(tr: pd.DataFrame, side_bp: float = SIDE_BP) -> pd.DataFrame:
 def stats(df: pd.DataFrame, col: str) -> dict:
     x = df[col].astype(float)
     if not len(x):
-        return {"trades": 0, "days": 0}
+        return {"trades": 0, "days": 0, "mean_bp": None, "day_mean_bp": None, "t": None, "pf": None, "win": None}
     day = x.groupby(df["date"]).mean()
     nd = len(day)
     sd = day.std(ddof=1) if nd > 1 else float("nan")
@@ -277,6 +277,16 @@ def run(p: pd.DataFrame) -> dict:
     }
 
 
+def _num(v, fmt: str) -> str:
+    return "n/a" if v is None else format(v, fmt)
+
+
+def summary_line(h: dict, v: dict) -> str:
+    return (f"X3 {'PASS' if v['pass'] else 'FAIL'}: {h['trades']} trades on {h['days']} days, day mean "
+            f"{_num(h['day_mean_bp'], '+.1f')} bp, t {_num(h['t'], '+.2f')}, PF {_num(h['pf'], '.2f')}, "
+            f"10bp/side {_num(h['stress_day_mean_bp'], '+.1f')} bp")
+
+
 def load(args) -> tuple:
     import pyarrow.parquet as pq
     ohlcv = pq.read_table(args.ohlcv).to_pandas()
@@ -308,8 +318,7 @@ def main() -> int:
     res["inputs"] = {k: str(v) for k, v in vars(a).items()}
     Path(a.out).write_text(json.dumps(res, indent=1, default=str))
     h, v = res["main_rvol2_excess"], res["verdict"]
-    print(f"X3 {'PASS' if v['pass'] else 'FAIL'}: {h['trades']} trades on {h['days']} days, day mean "
-          f"{h['day_mean_bp']:+.1f} bp, t {h['t']:+.2f}, PF {h['pf']:.2f}, 10bp/side {h['stress_day_mean_bp']:+.1f} bp")
+    print(summary_line(h, v))
     for k, ok in v["checks"].items():
         print(f"  {'ok ' if ok else 'NO '} {k}")
     print(f"-> {a.out}")

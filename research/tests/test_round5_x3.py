@@ -208,3 +208,15 @@ def test_verdict_needs_all_four():
         assert not x3.verdict({**good, k: v})["pass"]
     bad_half = {**good, "halves": {"2016-2020": {"day_mean_bp": 5}, "2021-2026": {"day_mean_bp": -1}}}
     assert not x3.verdict(bad_half)["pass"]
+
+
+def test_an_empty_sample_gives_a_failing_verdict_and_prints():
+    empty = pd.DataFrame({"date": pd.Series([], dtype=object), "x": pd.Series([], dtype=float)})
+    s = x3.stats(empty, "x")
+    assert s["trades"] == 0 and s["days"] == 0
+    assert s["t"] is None and s["pf"] is None and s["day_mean_bp"] is None
+    head = {**x3.row(empty, "x"), "stress_day_mean_bp": s["day_mean_bp"]}
+    v = x3.verdict(head)
+    assert not v["pass"] and not v["t_clears_single_test_2.33"]
+    line = x3.summary_line(head, v)
+    assert line.startswith("X3 FAIL: 0 trades on 0 days") and "t n/a" in line
