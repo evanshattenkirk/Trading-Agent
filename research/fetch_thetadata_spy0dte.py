@@ -5,8 +5,11 @@ and a Python 3.12+ venv with `thetadata pandas pyarrow`.
 
     .venv/bin/python research/fetch_thetadata_spy0dte.py --smoke            # one recent Friday
     .venv/bin/python research/fetch_thetadata_spy0dte.py                    # full resumable pull
+    .venv/bin/python research/fetch_thetadata_spy0dte.py --symbol QQQ       # same for another root (round 5's W)
 
-Output: data/thetadata/spy_0dte/YYYY-MM-DD.parquet (one file per 0DTE session, all strikes, calls+puts).
+Output: data/thetadata/spy_0dte/YYYY-MM-DD.parquet (one file per 0DTE session, all strikes, calls+puts); with
+--symbol X it is data/thetadata/x_0dte/ (or --out), with its manifest and failures CSVs next to that folder.
+THETADATA_API_KEY may also come from the environment (a cloud session's environment variable).
 Failures go to data/thetadata/spy_0dte_failures.csv; the day list and per-day stats to
 data/thetadata/spy_0dte_manifest.csv. Rerunning skips days already on disk.
 """
@@ -16,6 +19,7 @@ import argparse
 import csv
 import datetime as dt
 import logging
+import os
 import sys
 import threading
 import time
@@ -104,7 +108,19 @@ def trading_days(start: dt.date, end: dt.date) -> list[dt.date]:
 
 
 def make_client() -> ThetaClient:
+    key = os.environ.get("THETADATA_API_KEY")
+    if key:
+        return ThetaClient(dataframe_type="pandas", api_key=key)
     return ThetaClient(dataframe_type="pandas", dotenv_path=ROOT / ".env")
+
+
+def set_symbol(symbol: str, out: Path | None = None) -> None:
+    """Point the module at another option root; files go to data/thetadata/<symbol>_0dte unless `out` is given."""
+    global SYMBOL, OUT_DIR, FAIL_CSV, MANIFEST_CSV
+    SYMBOL = symbol.upper()
+    OUT_DIR = Path(out) if out else ROOT / "data" / "thetadata" / f"{SYMBOL.lower()}_0dte"
+    FAIL_CSV = OUT_DIR.parent / f"{OUT_DIR.name}_failures.csv"
+    MANIFEST_CSV = OUT_DIR.parent / f"{OUT_DIR.name}_manifest.csv"
 
 
 def list_expirations(client: ThetaClient) -> set[dt.date]:
@@ -170,7 +186,7 @@ def smoke(client: ThetaClient, day: dt.date | None) -> None:
     print("stock subscription:  ", client.stock_subscription)
     print("index subscription:  ", client.index_subscription)
     exps = sorted(list_expirations(client))
-    print(f"SPY expirations: {len(exps)} from {exps[0]} to {exps[-1]}")
+    print(f"{SYMBOL} expirations: {len(exps)} from {exps[0]} to {exps[-1]}")
     if day is None:
         today = dt.date.today()
         day = today - dt.timedelta(days=(today.weekday() - 4) % 7 or 7)  # most recent past Friday
@@ -207,7 +223,11 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=2, help="concurrent requests")
     ap.add_argument("--pause", type=float, default=0.5, help="seconds to sleep after each request")
     ap.add_argument("--retry-failed", action="store_true", help="also retry days listed in the failures CSV")
+    ap.add_argument("--symbol", default="SPY", help="option root (default SPY)")
+    ap.add_argument("--out", type=Path, default=None, help="output folder (default data/thetadata/<symbol>_0dte)")
     args = ap.parse_args()
+    if args.symbol.upper() != "SPY" or args.out:
+        set_symbol(args.symbol, args.out)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         handlers=[logging.StreamHandler(sys.stdout)])
