@@ -137,6 +137,12 @@ sessions: THETADATA_API_KEY as an environment variable, DoltHub's free stock tab
         --und IWM=data/thetadata/iwm_0dte --vix research/data/vix.csv      # research/data/round5/w/w_results.json
     .venv/bin/python research/round5_k1.py --fetch && .venv/bin/python research/round5_k1.py --report   # Kalshi
 
+WX, a sixth round 5 test (rules in round5_wx_prereg.md, frozen before any XSP quote): W's chosen cell on XSP held
+to cash settlement. XSP quotes from the ThetaData session; the SPX close from FRED (series SP500):
+
+    .venv/bin/python research/fetch_thetadata_spy0dte.py --symbol XSP         # data/thetadata/xsp_0dte
+    curl -sSL 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500' -o research/data/sp500_fred.csv
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)

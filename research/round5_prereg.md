@@ -217,3 +217,7 @@ only); entry 72 hours before close.
 is `report_session`; its `entry_session` is the session before the filing. The parenthesis and the stated reason
 ("this keeps every exit before it") describe the filing day, so for `dmh` rows D = `report_session`. The exit for
 those events is the session before the filing day. Implemented in `research/round5_e.py`.
+
+**Amendment 2 (2026-10-30, before any XSP quote was pulled).** Evan asked for a sixth test after W's settlement
+row: WX, W's chosen cell on XSP held to cash settlement. Its rules and bar (t 2.64, Bonferroni over six) are frozen in
+`research/round5_wx_prereg.md`. The five tests above keep their rules and their 2.58 bar.
