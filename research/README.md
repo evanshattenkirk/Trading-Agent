@@ -142,6 +142,9 @@ to cash settlement. XSP quotes from the ThetaData session; the SPX close from FR
 
     .venv/bin/python research/fetch_thetadata_spy0dte.py --symbol XSP         # data/thetadata/xsp_0dte
     curl -sSL 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500' -o research/data/sp500_fred.csv
+    .venv/bin/python research/round5_wx.py --xsp data/thetadata/xsp_0dte --fred research/data/sp500_fred.csv \
+        --w-trades research/data/round5/w/trades.parquet --spy data/thetadata/spy_0dte \
+        --vix research/data/vix_cboe.csv                                  # research/data/round5/wx/wx_results.json
 
 ## Tests
 

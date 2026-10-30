@@ -109,8 +109,9 @@ def _open(p: bd.QuotePanel, entry: int, w, model: str, legs_fn=None) -> dict:
 
 # ---------------------------------------------------------------- trade
 
-def trade(p: bd.QuotePanel, entry: int, w, model: str, exit_min: int = EXIT, legs_fn=None) -> dict:
-    """One lot. P&L and max loss in dollars; credit per share."""
+def trade(p: bd.QuotePanel, entry: int, w, model: str, exit_min: int = EXIT, legs_fn=None,
+          fee: float = bd.FEE) -> dict:
+    """One lot. P&L and max loss in dollars; credit per share. `fee` is per share per leg per side."""
     o = _open(p, entry, w, model, legs_fn)
     if "skip" in o:
         return o
@@ -130,27 +131,30 @@ def trade(p: bd.QuotePanel, entry: int, w, model: str, exit_min: int = EXIT, leg
     else:
         return {"skip": "no_exit_quote"}
     width = max(o["kc"] - o["K"], o["K"] - o["kp"])
-    max_loss = 100 * (width - credit) + 100 * 8 * bd.FEE
+    max_loss = 100 * (width - credit) + 100 * 8 * fee
     if max_loss <= 0:
         return {"skip": "credit_above_width"}
-    pnl = 100 * (credit - cost - (4 + 2 + sold) * bd.FEE)
+    pnl = 100 * (credit - cost - (4 + 2 + sold) * fee)
     return {"S": o["S"], "K": o["K"], "kc": o["kc"], "kp": o["kp"], "M": o["M"], "credit": credit, "cost": cost,
             "wings_sold": sold, "exit_minute": m, "pnl": pnl, "max_loss": max_loss, "ret": pnl / max_loss}
 
 
-def settlement(p: bd.QuotePanel, entry: int, w, model: str, legs_fn=None) -> dict:
-    """Held to the close: legs at intrinsic against the 16:00 parity spot, no exit cost (not tradeable on SPY)."""
+def settlement(p: bd.QuotePanel, entry: int, w, model: str, legs_fn=None, fee: float = bd.FEE,
+               s_end: float | None = None) -> dict:
+    """Held to the close: legs at intrinsic against the 16:00 parity spot, no exit cost (not tradeable on SPY).
+    WX (round5_wx.py) passes the cash-settlement value as `s_end` and its own fee."""
     o = _open(p, entry, w, model, legs_fn)
     if "skip" in o:
         return o
-    s_end = bd.spot(p, min(p.last_minute, bd.CLOSE - 1))
+    if s_end is None:
+        s_end = bd.spot(p, min(p.last_minute, bd.CLOSE - 1))
     if s_end is None:
         return {"skip": "no_close_spot"}
     width = max(o["kc"] - o["K"], o["K"] - o["kp"])
-    max_loss = 100 * (width - o["credit"]) + 100 * 4 * bd.FEE
+    max_loss = 100 * (width - o["credit"]) + 100 * 4 * fee
     if max_loss <= 0:
         return {"skip": "credit_above_width"}
-    pnl = 100 * (o["credit"] - bd._payoff(o["legs"], s_end) - 4 * bd.FEE)
+    pnl = 100 * (o["credit"] - bd._payoff(o["legs"], s_end) - 4 * fee)
     return {"pnl": pnl, "max_loss": max_loss, "ret": pnl / max_loss, "credit": o["credit"]}
 
 
