@@ -1,0 +1,962 @@
+{
+ "headline": {
+  "IS": {
+   "trades": 283,
+   "events": 126,
+   "mean": 0.022304218846258387,
+   "event_mean": 0.043723913528035126,
+   "t": 2.0956117974054727,
+   "win_rate": 0.901060070671378,
+   "mean_price": 0.8751236749116608,
+   "mean_fee_up": 0.016085883627150875,
+   "event_mean_fee_up": 0.037359550428157785,
+   "t_fee_up": 1.8032579729194345
+  },
+  "OOS": {
+   "trades": 4504,
+   "events": 1693,
+   "mean": -0.006832465389259796,
+   "event_mean": -0.00696328174347482,
+   "t": -0.7674082268656782,
+   "win_rate": 0.8572380106571936,
+   "mean_price": 0.8541121225577265,
+   "mean_fee_up": -0.013275913702312092,
+   "event_mean_fee_up": -0.013534767015102978,
+   "t_fee_up": -1.5025269753862336
+  },
+  "ALL": {
+   "trades": 4787,
+   "events": 1819,
+   "mean": -0.0051099499017620625,
+   "event_mean": -0.003452239080357582,
+   "t": -0.40272245214558106,
+   "win_rate": 0.8598287027365782,
+   "mean_price": 0.8553542928765406,
+   "mean_fee_up": -0.01154008987857321,
+   "event_mean_fee_up": -0.010009377241683043,
+   "t_fee_up": -1.1761485948591628
+  }
+ },
+ "verdict": {
+  "pass": false,
+  "bars": [
+   {
+    "bar": "in-sample mean > 0",
+    "value": 0.022304218846258387,
+    "is_t": false,
+    "ok": true
+   },
+   {
+    "bar": "out-of-sample event-clustered t >= 2.58",
+    "value": -0.7674082268656782,
+    "is_t": true,
+    "ok": false
+   },
+   {
+    "bar": "out-of-sample mean > 0, fee rounded up to a whole cent",
+    "value": -0.013275913702312092,
+    "is_t": false,
+    "ok": false
+   }
+  ],
+  "clears_2_33": false
+ },
+ "verdict_event_mean": {
+  "pass": false,
+  "bars": [
+   {
+    "bar": "in-sample mean > 0",
+    "value": 0.043723913528035126,
+    "is_t": false,
+    "ok": true
+   },
+   {
+    "bar": "out-of-sample event-clustered t >= 2.58",
+    "value": -0.7674082268656782,
+    "is_t": true,
+    "ok": false
+   },
+   {
+    "bar": "out-of-sample mean > 0, fee rounded up to a whole cent",
+    "value": -0.013534767015102978,
+    "is_t": false,
+    "ok": false
+   }
+  ],
+  "clears_2_33": false
+ },
+ "buckets": {
+  "0.50-0.70": {
+   "IS": {
+    "trades": 67,
+    "events": 52,
+    "mean": 0.010907121773566673,
+    "event_mean": 0.03245909504954706,
+    "t": 0.3354839507689983,
+    "win_rate": 0.6417910447761194,
+    "mean_price": 0.6202985074626866,
+    "mean_fee_up": 0.005069009520831232,
+    "event_mean_fee_up": 0.026391469569540558,
+    "t_fee_up": 0.2743418882699985
+   },
+   "OOS": {
+    "trades": 3544,
+    "events": 1618,
+    "mean": -0.04953983614358938,
+    "event_mean": -0.04700045159957374,
+    "t": -2.8297759873285337,
+    "win_rate": 0.5688487584650113,
+    "mean_price": 0.5819173250564335,
+    "mean_fee_up": -0.05436151780367316,
+    "event_mean_fee_up": -0.05184064820235883,
+    "t_fee_up": -3.136797991782296
+   },
+   "ALL": {
+    "trades": 3611,
+    "events": 1670,
+    "mean": -0.04841827807644746,
+    "event_mean": -0.04452626212307417,
+    "t": -2.7200217501543227,
+    "win_rate": 0.5702021600664636,
+    "mean_price": 0.5826294655220161,
+    "mean_fee_up": -0.05325881901365882,
+    "event_mean_fee_up": -0.04940467806814399,
+    "t_fee_up": -3.033214440196898
+   }
+  },
+  "0.70-0.85": {
+   "IS": {
+    "trades": 84,
+    "events": 61,
+    "mean": 0.028795951084887368,
+    "event_mean": 0.012877490385603584,
+    "t": 0.2088261923057368,
+    "win_rate": 0.7976190476190477,
+    "mean_price": 0.7623809523809523,
+    "mean_fee_up": 0.020713932425034488,
+    "event_mean_fee_up": 0.005162879955023483,
+    "t_fee_up": 0.0843804842659738
+   },
+   "OOS": {
+    "trades": 1977,
+    "events": 1087,
+    "mean": -0.01700825707541057,
+    "event_mean": -0.01850180351520497,
+    "t": -1.2394768122587458,
+    "win_rate": 0.768841679312089,
+    "mean_price": 0.7695346484572584,
+    "mean_fee_up": -0.02497073875065524,
+    "event_mean_fee_up": -0.026506964040757707,
+    "t_fee_up": -1.7905792756882861
+   },
+   "ALL": {
+    "trades": 2061,
+    "events": 1148,
+    "mean": -0.01514141889711604,
+    "event_mean": -0.016834436853228198,
+    "t": -1.160660109278964,
+    "win_rate": 0.7700145560407569,
+    "mean_price": 0.7692430858806405,
+    "mean_fee_up": -0.023108772530976474,
+    "event_mean_fee_up": -0.02482415874133031,
+    "t_fee_up": -1.7257501986182398
+   }
+  },
+  "0.85-0.97": {
+   "IS": {
+    "trades": 199,
+    "events": 109,
+    "mean": 0.019563990162616004,
+    "event_mean": 0.04457899273361628,
+    "t": 3.352236577288059,
+    "win_rate": 0.9447236180904522,
+    "mean_price": 0.922713567839196,
+    "mean_fee_up": 0.014132335390858284,
+    "event_mean_fee_up": 0.039068034817568334,
+    "t_fee_up": 2.941710030978589
+   },
+   "OOS": {
+    "trades": 2527,
+    "events": 1073,
+    "mean": 0.001128571477982028,
+    "event_mean": 0.004048183472757169,
+    "t": 0.5481767864556735,
+    "win_rate": 0.926394934705184,
+    "mean_price": 0.9202813612979818,
+    "mean_fee_up": -0.004126460152421159,
+    "event_mean_fee_up": -0.0010971293899557407,
+    "t_fee_up": -0.1491601259800548
+   },
+   "ALL": {
+    "trades": 2726,
+    "events": 1182,
+    "mean": 0.0024743705675792957,
+    "event_mean": 0.007785796171093585,
+    "t": 1.1412125262995205,
+    "win_rate": 0.9277329420396185,
+    "mean_price": 0.9204589141599412,
+    "mean_fee_up": -0.002793554681726877,
+    "event_mean_fee_up": 0.0026067647713133996,
+    "t_fee_up": 0.38359062075870226
+   }
+  },
+  "longshot_<0.30": {
+   "IS": {
+    "trades": 950,
+    "events": 237,
+    "mean": -0.6763414589691142,
+    "event_mean": -0.7111411172980392,
+    "t": -6.279115927826748,
+    "win_rate": 0.02631578947368421,
+    "mean_price": 0.05105263157894737,
+    "mean_fee_up": -0.7307447506232706,
+    "event_mean_fee_up": -0.7661567006369767,
+    "t_fee_up": -9.267538508814468
+   },
+   "OOS": {
+    "trades": 9377,
+    "events": 2057,
+    "mean": -0.5645949228030313,
+    "event_mean": -0.47639022564396777,
+    "t": -12.974572789727596,
+    "win_rate": 0.05886744161245601,
+    "mean_price": 0.07628985816359175,
+    "mean_fee_up": -0.6158030627517657,
+    "event_mean_fee_up": -0.5039453538319845,
+    "t_fee_up": -15.283345356453289
+   },
+   "ALL": {
+    "trades": 10327,
+    "events": 2289,
+    "mean": -0.5748746951820164,
+    "event_mean": -0.49955226690663046,
+    "t": -14.25750997047658,
+    "win_rate": 0.055872954391401185,
+    "mean_price": 0.0739682385978503,
+    "mean_fee_up": -0.6263767630982292,
+    "event_mean_fee_up": -0.5300108042303868,
+    "t_fee_up": -17.163765876987945
+   }
+  }
+ },
+ "by_category": {
+  "Climate and Weather": {
+   "IS": {
+    "trades": 1,
+    "events": 1,
+    "mean": 0.11500992916341919,
+    "event_mean": 0.11500992916341919,
+    "t": null,
+    "win_rate": 1.0,
+    "mean_price": 0.89,
+    "mean_fee_up": 0.1111111111111111,
+    "event_mean_fee_up": 0.1111111111111111,
+    "t_fee_up": null
+   },
+   "OOS": {
+    "trades": 11,
+    "events": 9,
+    "mean": 0.002749935160716087,
+    "event_mean": 0.04378910257221506,
+    "t": 0.6459353204962704,
+    "win_rate": 0.9090909090909091,
+    "mean_price": 0.9090909090909093,
+    "mean_fee_up": -0.0029409877211551178,
+    "event_mean_fee_up": 0.037694905431879394,
+    "t_fee_up": 0.5603372257841271
+   },
+   "ALL": {
+    "trades": 12,
+    "events": 10,
+    "mean": 0.012104934660941346,
+    "event_mean": 0.050911185231335476,
+    "t": 0.8339035088826307,
+    "win_rate": 0.9166666666666666,
+    "mean_price": 0.9075000000000002,
+    "mean_fee_up": 0.006563353848200401,
+    "event_mean_fee_up": 0.04503652599980256,
+    "t_fee_up": 0.7429810087022157
+   }
+  },
+  "Commodities": {
+   "IS": {
+    "trades": 7,
+    "events": 3,
+    "mean": -0.07612475642043758,
+    "event_mean": -0.05281538311316797,
+    "t": -0.4683735318789678,
+    "win_rate": 0.8571428571428571,
+    "mean_price": 0.9214285714285715,
+    "mean_fee_up": -0.08109701284528438,
+    "event_mean_fee_up": -0.05854030704293093,
+    "t_fee_up": -0.5234335338598286
+   },
+   "OOS": {
+    "trades": 223,
+    "events": 30,
+    "mean": 0.005162225349260903,
+    "event_mean": -0.009835109918808482,
+    "t": -0.19264429781768028,
+    "win_rate": 0.8699551569506726,
+    "mean_price": 0.860493273542601,
+    "mean_fee_up": -0.00162474447123524,
+    "event_mean_fee_up": -0.016353651745771684,
+    "t_fee_up": -0.32272643748180935
+   },
+   "ALL": {
+    "trades": 230,
+    "events": 33,
+    "mean": 0.0026882737301831276,
+    "event_mean": -0.013742407481932074,
+    "t": -0.2913802537299241,
+    "win_rate": 0.8695652173913043,
+    "mean_price": 0.8623478260869567,
+    "mean_fee_up": -0.004043465682619339,
+    "event_mean_fee_up": -0.02018880222733162,
+    "t_fee_up": -0.43129236085312855
+   }
+  },
+  "Crypto": {
+   "IS": {
+    "trades": 0,
+    "events": 0,
+    "mean": null,
+    "event_mean": null,
+    "t": null,
+    "win_rate": null,
+    "mean_fee_up": null,
+    "event_mean_fee_up": null,
+    "t_fee_up": null
+   },
+   "OOS": {
+    "trades": 92,
+    "events": 21,
+    "mean": -0.07903310971420875,
+    "event_mean": -0.07701356674977615,
+    "t": -0.9389496434215437,
+    "win_rate": 0.8369565217391305,
+    "mean_price": 0.8985869565217391,
+    "mean_fee_up": -0.0850010717578725,
+    "event_mean_fee_up": -0.08327385428911371,
+    "t_fee_up": -1.022615795019123
+   },
+   "ALL": {
+    "trades": 92,
+    "events": 21,
+    "mean": -0.07903310971420875,
+    "event_mean": -0.07701356674977615,
+    "t": -0.9389496434215437,
+    "win_rate": 0.8369565217391305,
+    "mean_price": 0.8985869565217391,
+    "mean_fee_up": -0.0850010717578725,
+    "event_mean_fee_up": -0.08327385428911371,
+    "t_fee_up": -1.022615795019123
+   }
+  },
+  "Economics": {
+   "IS": {
+    "trades": 75,
+    "events": 40,
+    "mean": 0.018700905998931466,
+    "event_mean": 0.043688214069645515,
+    "t": 1.07357910820834,
+    "win_rate": 0.9066666666666666,
+    "mean_price": 0.8775999999999999,
+    "mean_fee_up": 0.01263685440414889,
+    "event_mean_fee_up": 0.03735652278603684,
+    "t_fee_up": 0.9242106151762896
+   },
+   "OOS": {
+    "trades": 96,
+    "events": 43,
+    "mean": 0.04592973180692902,
+    "event_mean": 0.03628195162136524,
+    "t": 0.8828644514348555,
+    "win_rate": 0.9270833333333334,
+    "mean_price": 0.881875,
+    "mean_fee_up": 0.03907047178403945,
+    "event_mean_fee_up": 0.029385416731074913,
+    "t_fee_up": 0.7204797637948379
+   },
+   "ALL": {
+    "trades": 171,
+    "events": 83,
+    "mean": 0.03398726434728098,
+    "event_mean": 0.03985123472897019,
+    "t": 1.3850235071122652,
+    "win_rate": 0.9181286549707602,
+    "mean_price": 0.8799999999999999,
+    "mean_fee_up": 0.02747677995075411,
+    "event_mean_fee_up": 0.03322691362503247,
+    "t_fee_up": 1.163115491648918
+   }
+  },
+  "Elections": {
+   "IS": {
+    "trades": 3,
+    "events": 2,
+    "mean": 0.20262283081050703,
+    "event_mean": 0.2065580392320705,
+    "t": 17.49657765691308,
+    "win_rate": 1.0,
+    "mean_price": 0.8233333333333334,
+    "mean_fee_up": 0.1928049275754704,
+    "event_mean_fee_up": 0.1958085149587112,
+    "t_fee_up": 21.730516431924933
+   },
+   "OOS": {
+    "trades": 54,
+    "events": 30,
+    "mean": -0.12758902054593213,
+    "event_mean": -0.1125334549927151,
+    "t": -1.4981547729482079,
+    "win_rate": 0.7777777777777778,
+    "mean_price": 0.8882592592592593,
+    "mean_fee_up": -0.13263164402659283,
+    "event_mean_fee_up": -0.11760677574152695,
+    "t_fee_up": -1.573701175965619
+   },
+   "ALL": {
+    "trades": 57,
+    "events": 32,
+    "mean": -0.11020944942190902,
+    "event_mean": -0.09259023660366597,
+    "t": -1.2913361858171282,
+    "win_rate": 0.7894736842105263,
+    "mean_price": 0.8848421052631579,
+    "mean_fee_up": -0.11550340341595791,
+    "event_mean_fee_up": -0.09801832007276208,
+    "t_fee_up": -1.3746986037970057
+   }
+  },
+  "Entertainment": {
+   "IS": {
+    "trades": 42,
+    "events": 16,
+    "mean": 0.030075329311867113,
+    "event_mean": 0.003911600215564116,
+    "t": 0.05340384533500333,
+    "win_rate": 0.9285714285714286,
+    "mean_price": 0.8959523809523811,
+    "mean_fee_up": 0.023244900949126273,
+    "event_mean_fee_up": -0.002743022883770145,
+    "t_fee_up": -0.037694117298408124
+   },
+   "OOS": {
+    "trades": 162,
+    "events": 83,
+    "mean": 0.04432123498385582,
+    "event_mean": 0.02563896538491377,
+    "t": 0.734502179964454,
+    "win_rate": 0.9259259259259259,
+    "mean_price": 0.8852469135802469,
+    "mean_fee_up": 0.037520356052099774,
+    "event_mean_fee_up": 0.019046640685165126,
+    "t_fee_up": 0.5491936888123641
+   },
+   "ALL": {
+    "trades": 204,
+    "events": 99,
+    "mean": 0.04138825440432873,
+    "event_mean": 0.0221274720242108,
+    "t": 0.7039229359026853,
+    "win_rate": 0.9264705882352942,
+    "mean_price": 0.887450980392157,
+    "mean_fee_up": 0.03458129176619346,
+    "event_mean_fee_up": 0.015525078896246297,
+    "t_fee_up": 0.4970962984889336
+   }
+  },
+  "Financials": {
+   "IS": {
+    "trades": 48,
+    "events": 17,
+    "mean": 0.00035935468526958683,
+    "event_mean": 0.03707406093976319,
+    "t": 1.3469044135846493,
+    "win_rate": 0.8958333333333334,
+    "mean_price": 0.8883333333333333,
+    "mean_fee_up": -0.004893220980774624,
+    "event_mean_fee_up": 0.0313296064658411,
+    "t_fee_up": 1.1464318001537674
+   },
+   "OOS": {
+    "trades": 97,
+    "events": 42,
+    "mean": -0.08598058910743107,
+    "event_mean": -0.05490540080832142,
+    "t": -1.0964040065193505,
+    "win_rate": 0.8247422680412371,
+    "mean_price": 0.8911340206185567,
+    "mean_fee_up": -0.09181798788027726,
+    "event_mean_fee_up": -0.061043048938917745,
+    "t_fee_up": -1.2272016506311807
+   },
+   "ALL": {
+    "trades": 145,
+    "events": 59,
+    "mean": -0.05739909047260605,
+    "event_mean": -0.028402844033449576,
+    "t": -0.7724295770733536,
+    "win_rate": 0.8482758620689655,
+    "mean_price": 0.890206896551724,
+    "mean_fee_up": -0.06304289263078672,
+    "event_mean_fee_up": -0.03442719907652961,
+    "t_fee_up": -0.942377892371979
+   }
+  },
+  "Health": {
+   "IS": {
+    "trades": 1,
+    "events": 1,
+    "mean": 0.02876742346227564,
+    "event_mean": 0.02876742346227564,
+    "t": null,
+    "win_rate": 1.0,
+    "mean_price": 0.97,
+    "mean_fee_up": 0.02040816326530615,
+    "event_mean_fee_up": 0.02040816326530615,
+    "t_fee_up": null
+   },
+   "OOS": {
+    "trades": 0,
+    "events": 0,
+    "mean": null,
+    "event_mean": null,
+    "t": null,
+    "win_rate": null,
+    "mean_fee_up": null,
+    "event_mean_fee_up": null,
+    "t_fee_up": null
+   },
+   "ALL": {
+    "trades": 1,
+    "events": 1,
+    "mean": 0.02876742346227564,
+    "event_mean": 0.02876742346227564,
+    "t": null,
+    "win_rate": 1.0,
+    "mean_price": 0.97,
+    "mean_fee_up": 0.02040816326530615,
+    "event_mean_fee_up": 0.02040816326530615,
+    "t_fee_up": null
+   }
+  },
+  "Mentions": {
+   "IS": {
+    "trades": 0,
+    "events": 0,
+    "mean": null,
+    "event_mean": null,
+    "t": null,
+    "win_rate": null,
+    "mean_fee_up": null,
+    "event_mean_fee_up": null,
+    "t_fee_up": null
+   },
+   "OOS": {
+    "trades": 419,
+    "events": 81,
+    "mean": 0.018374135218180775,
+    "event_mean": -0.01045459936000874,
+    "t": -0.3334814824409197,
+    "win_rate": 0.8758949880668258,
+    "mean_price": 0.8512649164677805,
+    "mean_fee_up": 0.011743094724032042,
+    "event_mean_fee_up": -0.01679242604303156,
+    "t_fee_up": -0.5392347998828436
+   },
+   "ALL": {
+    "trades": 419,
+    "events": 81,
+    "mean": 0.018374135218180775,
+    "event_mean": -0.01045459936000874,
+    "t": -0.3334814824409197,
+    "win_rate": 0.8758949880668258,
+    "mean_price": 0.8512649164677805,
+    "mean_fee_up": 0.011743094724032042,
+    "event_mean_fee_up": -0.01679242604303156,
+    "t_fee_up": -0.5392347998828436
+   }
+  },
+  "Politics": {
+   "IS": {
+    "trades": 83,
+    "events": 34,
+    "mean": 0.014494734229617886,
+    "event_mean": 0.027457272273821977,
+    "t": 0.616995069016455,
+    "win_rate": 0.8674698795180723,
+    "mean_price": 0.8504819277108432,
+    "mean_fee_up": 0.007959079821260866,
+    "event_mean_fee_up": 0.02127038260321498,
+    "t_fee_up": 0.4812183487439391
+   },
+   "OOS": {
+    "trades": 110,
+    "events": 48,
+    "mean": -0.0028881435139990978,
+    "event_mean": -0.0007601725205934051,
+    "t": -0.019616702427976467,
+    "win_rate": 0.9090909090909091,
+    "mean_price": 0.902481818181818,
+    "mean_fee_up": -0.009011477649657538,
+    "event_mean_fee_up": -0.007116354111442194,
+    "t_fee_up": -0.18491344380728647
+   },
+   "ALL": {
+    "trades": 193,
+    "events": 82,
+    "mean": 0.004587394582996812,
+    "event_mean": 0.010939743613676398,
+    "t": 0.37589990834781833,
+    "win_rate": 0.8911917098445595,
+    "mean_price": 0.8801191709844559,
+    "mean_fee_up": -0.00171325863366672,
+    "event_mean_fee_up": 0.0046537562336595615,
+    "t_fee_up": 0.16100090032635325
+   }
+  },
+  "Science and Technology": {
+   "IS": {
+    "trades": 5,
+    "events": 3,
+    "mean": 0.12095208659373133,
+    "event_mean": 0.11996172702201265,
+    "t": 2.2158850166049553,
+    "win_rate": 1.0,
+    "mean_price": 0.8959999999999999,
+    "mean_fee_up": 0.11342171524542347,
+    "event_mean_fee_up": 0.11303661455637139,
+    "t_fee_up": 2.0915864344225144
+   },
+   "OOS": {
+    "trades": 27,
+    "events": 20,
+    "mean": 0.07587803846219006,
+    "event_mean": 0.06593823338421008,
+    "t": 1.0620372054231344,
+    "win_rate": 0.9629629629629629,
+    "mean_price": 0.8966666666666667,
+    "mean_fee_up": 0.06885642323378878,
+    "event_mean_fee_up": 0.058566706171310844,
+    "t_fee_up": 0.9505365116444877
+   },
+   "ALL": {
+    "trades": 32,
+    "events": 23,
+    "mean": 0.08292085848274339,
+    "event_mean": 0.0729847760326191,
+    "t": 1.3449756039178693,
+    "win_rate": 0.96875,
+    "mean_price": 0.8965625,
+    "mean_fee_up": 0.07581975011060668,
+    "event_mean_fee_up": 0.06567147683023178,
+    "t_fee_up": 1.2192936126303016
+   }
+  },
+  "Sports": {
+   "IS": {
+    "trades": 15,
+    "events": 6,
+    "mean": 0.055481826549348835,
+    "event_mean": 0.10111172949945187,
+    "t": 1.5890064727079445,
+    "win_rate": 0.9333333333333333,
+    "mean_price": 0.8893333333333333,
+    "mean_fee_up": 0.05005019617126251,
+    "event_mean_fee_up": 0.09534993685734978,
+    "t_fee_up": 1.5128778985442766
+   },
+   "OOS": {
+    "trades": 3213,
+    "events": 1286,
+    "mean": -0.009484266273102279,
+    "event_mean": -0.0067746353942564974,
+    "t": -0.6192235465347375,
+    "win_rate": 0.848428260192966,
+    "mean_price": 0.8464743230625583,
+    "mean_fee_up": -0.015913095168557632,
+    "event_mean_fee_up": -0.013402993466740067,
+    "t_fee_up": -1.2341528796184964
+   },
+   "ALL": {
+    "trades": 3228,
+    "events": 1292,
+    "mean": -0.009182379224670818,
+    "event_mean": -0.006273615123852277,
+    "t": -0.5758271951959637,
+    "win_rate": 0.8488228004956629,
+    "mean_price": 0.846673482032218,
+    "mean_fee_up": -0.015606574298019434,
+    "event_mean_fee_up": -0.01289794889867154,
+    "t_fee_up": -1.1926108974086616
+   }
+  },
+  "Transportation": {
+   "IS": {
+    "trades": 3,
+    "events": 3,
+    "mean": 0.2567632683995256,
+    "event_mean": 0.2567632683995256,
+    "t": 2.9010087946342047,
+    "win_rate": 1.0,
+    "mean_price": 0.7933333333333333,
+    "mean_fee_up": 0.247469880746621,
+    "event_mean_fee_up": 0.247469880746621,
+    "t_fee_up": 2.8539824176095507
+   },
+   "OOS": {
+    "trades": 0,
+    "events": 0,
+    "mean": null,
+    "event_mean": null,
+    "t": null,
+    "win_rate": null,
+    "mean_fee_up": null,
+    "event_mean_fee_up": null,
+    "t_fee_up": null
+   },
+   "ALL": {
+    "trades": 3,
+    "events": 3,
+    "mean": 0.2567632683995256,
+    "event_mean": 0.2567632683995256,
+    "t": 2.9010087946342047,
+    "win_rate": 1.0,
+    "mean_price": 0.7933333333333333,
+    "mean_fee_up": 0.247469880746621,
+    "event_mean_fee_up": 0.247469880746621,
+    "t_fee_up": 2.8539824176095507
+   }
+  }
+ },
+ "maker": {
+  "IS": {
+   "trades": 283,
+   "events": 126,
+   "mean": 0.06836241039713505,
+   "event_mean": 0.08993179370030799,
+   "t": 4.057384833276536,
+   "win_rate": 0.901060070671378,
+   "mean_price": 0.8451590106007068
+  },
+  "OOS": {
+   "trades": 4504,
+   "events": 1693,
+   "mean": 0.028028582165447003,
+   "event_mean": 0.029700304725616872,
+   "t": 3.1372107174557238,
+   "win_rate": 0.8572380106571936,
+   "mean_price": 0.8338463587921847
+  },
+  "ALL": {
+   "trades": 4787,
+   "events": 1819,
+   "mean": 0.030413055403292772,
+   "event_mean": 0.03387246943744265,
+   "t": 3.7845776401918685,
+   "win_rate": 0.8598287027365782,
+   "mean_price": 0.8345151451848757
+  }
+ },
+ "entry_72h": {
+  "IS": {
+   "trades": 283,
+   "events": 127,
+   "mean": -0.0004963009716620782,
+   "event_mean": -0.006666178132652335,
+   "t": -0.24611110786095167,
+   "win_rate": 0.8869257950530035,
+   "mean_price": 0.8808480565371025,
+   "mean_fee_up": -0.006498094640404426,
+   "event_mean_fee_up": -0.012503866009130499,
+   "t_fee_up": -0.4644420043262845
+  },
+  "OOS": {
+   "trades": 2705,
+   "events": 1070,
+   "mean": -0.012176343017455933,
+   "event_mean": -0.004671231092731344,
+   "t": -0.424726931265157,
+   "win_rate": 0.8595194085027726,
+   "mean_price": 0.8614672828096119,
+   "mean_fee_up": -0.018579805767824968,
+   "event_mean_fee_up": -0.011219805803336473,
+   "t_fee_up": -1.027490167055837
+  },
+  "ALL": {
+   "trades": 2988,
+   "events": 1197,
+   "mean": -0.011070100748727803,
+   "event_mean": -0.004882892140408844,
+   "t": -0.47687179920986916,
+   "win_rate": 0.8621151271753681,
+   "mean_price": 0.8633028781793842,
+   "mean_fee_up": -0.017435520543909296,
+   "event_mean_fee_up": -0.011356042767526818,
+   "t_fee_up": -1.1169356030352113
+  }
+ },
+ "favourite_sides": {
+  "IS": {
+   "yes": 69,
+   "no": 214
+  },
+  "OOS": {
+   "yes": 1268,
+   "no": 3236
+  }
+ },
+ "diagnostics": {
+  "note": "not pre-registered; changes no verdict",
+  "can_close_early": {
+   "False": {
+    "IS": {
+     "trades": 41,
+     "events": 19,
+     "mean": 0.011124539140850948,
+     "event_mean": 0.02032751245222412,
+     "t": 0.2772167098497466,
+     "win_rate": 0.8780487804878049,
+     "mean_price": 0.8621951219512195,
+     "mean_fee_up": 0.0042232778215158156,
+     "event_mean_fee_up": 0.013592952142255055,
+     "t_fee_up": 0.18691210582256587
+    },
+    "OOS": {
+     "trades": 14,
+     "events": 7,
+     "mean": -0.05713249848058851,
+     "event_mean": -0.06931511387402438,
+     "t": -0.4274820406736309,
+     "win_rate": 0.8571428571428571,
+     "mean_price": 0.897142857142857,
+     "mean_fee_up": -0.062314939575939324,
+     "event_mean_fee_up": -0.07453316291601654,
+     "t_fee_up": -0.46247731728251745
+    },
+    "ALL": {
+     "trades": 55,
+     "events": 26,
+     "mean": -0.006249979526424558,
+     "event_mean": -0.003807040789458177,
+     "t": -0.05618579165715917,
+     "win_rate": 0.8727272727272727,
+     "mean_price": 0.8710909090909092,
+     "mean_fee_up": -0.012713722970563675,
+     "event_mean_fee_up": -0.010133309604202688,
+     "t_fee_up": -0.15068966948414558
+    }
+   },
+   "True": {
+    "IS": {
+     "trades": 242,
+     "events": 107,
+     "mean": 0.024198296812877,
+     "event_mean": 0.04787841465364644,
+     "t": 2.2791378869566086,
+     "win_rate": 0.9049586776859504,
+     "mean_price": 0.8773140495867768,
+     "mean_fee_up": 0.018095663949593166,
+     "event_mean_fee_up": 0.04157978750696296,
+     "t_fee_up": 1.9925536201111678
+    },
+    "OOS": {
+     "trades": 4490,
+     "events": 1686,
+     "mean": -0.006675627869598637,
+     "event_mean": -0.006704406995601836,
+     "t": -0.737593867720339,
+     "win_rate": 0.8572383073496659,
+     "mean_price": 0.8539779510022272,
+     "mean_fee_up": -0.013123008053708356,
+     "event_mean_fee_up": -0.013281511516107486,
+     "t_fee_up": -1.4718552538034229
+    },
+    "ALL": {
+     "trades": 4732,
+     "events": 1793,
+     "mean": -0.005096699346107701,
+     "event_mean": -0.0034470941587532236,
+     "t": -0.3988294219410591,
+     "win_rate": 0.8596787827557059,
+     "mean_price": 0.8551713863060016,
+     "mean_fee_up": -0.011526448750073748,
+     "event_mean_fee_up": -0.01000758011874634,
+     "t_fee_up": -1.1663032779292268
+    }
+   }
+  },
+  "volume_window_longer_than_7_days": 103,
+  "fee_multiplier_counts": {
+   "1.0": 4783,
+   "0.5": 4
+  },
+  "entries_with_7_candle_volume_above_lifetime_volume": 2
+ },
+ "counts": {
+  "markets_listed": 19405974,
+  "listing_rows_before_dedupe": 19929395,
+  "markets_listed_historical": 14300278,
+  "markets_listed_live": 5105696,
+  "eligible": 874183,
+  "k": 15,
+  "sampled_markets": 56069,
+  "sampled_events": 8085,
+  "series_from_ticker_prefix": 148,
+  "listed_eligible": 874183,
+  "listed_not_settled_yes_no": 49899,
+  "listed_close_outside_window": 81810,
+  "listed_open_lt_3d": 18400082,
+  "skip24_spread": 16281,
+  "skip24_volume": 25645,
+  "entered": 13998,
+  "skip24_volume_market_total": 13350,
+  "skip24_no_entry_candle": 32,
+  "skip24_settled_before_entry": 113,
+  "fee_type_dropped_series": 0,
+  "skip72_no_entry_candle": 10198,
+  "skip72_settled_before_entry": 95,
+  "skip72_no_quote": 0,
+  "skip72_spread": 14732,
+  "skip72_volume": 22210,
+  "skip72_candles_missing": 0,
+  "skip72_entered": 8834,
+  "no_side_in_range_24h": 9211,
+  "trades_IS": 283,
+  "events_IS": 126,
+  "trades_OOS": 4504,
+  "events_OOS": 1693
+ },
+ "dropped_series": {},
+ "series_fee_types": {
+  "quadratic": 15399,
+  "quadratic_with_combo_maker_fees": 3,
+  "quadratic_with_maker_fees": 160
+ },
+ "cutoff": {
+  "market_positions_last_updated_ts": "2026-08-31T00:00:00Z",
+  "market_settled_ts": "2026-08-31T00:00:00Z",
+  "orders_updated_ts": "2026-10-16T00:00:00Z",
+  "trades_created_ts": "2026-08-31T00:00:00Z",
+  "fetched_at": "2026-10-30T19:05:06.250829+00:00"
+ },
+ "notes": [
+  "close_time is the API's `close_time` field. For markets that can close early and did, Kalshi rewrites it to the actual close; no field keeps the original schedule, so the entry candle is placed against the realized close.",
+  "Window and split in UTC: 2021-07-01T00:00Z <= close_time < 2026-10-30T00:00Z; in-sample close_time < 2025-05-01T00:00Z.",
+  "Settled yes or no = result 'yes'/'no' and status 'finalized'/'settled'.",
+  "Non-multivariate = listed with mve_filter=exclude and no mve_collection_ticker (nor a KXMVE ticker).",
+  "Archived markets from /historical/markets; settled markets still in the live set from /markets?status=settled (/events?status=settled drops settled markets whose event still has open ones); /events?tickers= maps events to series.",
+  "Sampling: int(SHA-1 hex digest of the UTF-8 event_ticker) mod k == 0, k = 1, 2, ... until the eligible markets kept are <= 60,000; counted before the fee-type drop.",
+  "Entry candle: the last daily candle (they end at midnight New York time) with end_period_ts <= close_time - 24 h. The 7 candles for the volume rule are the entry candle and the 6 candles before it as the API returns them (the API skips some days, so the window can be longer than 7 days; counted in diagnostics).",
+  "A market whose lifetime volume (volume_fp) is under 100 contracts can't have 100 in any 7 candles, so its candles weren't fetched and it is counted under volume (volume_market_total) ahead of the other entry filters; the trade set is the same as fetching them.",
+  "Spread = yes_ask close - yes_bid close at the entry candle; a candle without a bid or ask is skipped as no_quote. Kalshi shows a missing bid as 0.00 and a missing ask as 1.00, which the favourite range excludes.",
+  "Fees use each series' current fee_type and fee_multiplier (some series have 0.5 or 0); fee changes over time are not modelled. Series absent from /series are dropped and counted (series_missing).",
+  "The bars' 'mean' is the mean return per contract over trades; the event-clustered mean is reported beside it (verdict_event_mean in the JSON). t is over event means, ddof 1.",
+  "Buckets use the ask of each side on markets that passed the entry filters: [0.50, 0.70) can take both sides of one market; [0.70, 0.85), [0.85, 0.97]; the longshot side is any ask in (0, 0.30), the mirror of the favourite rule.",
+  "Maker version: the same trades as K1 (side chosen by the ask rule), bought at that side's bid (YES: yes bid; NO: 1 - yes ask), no fee. Fills not knowable.",
+  "72 h entry: the same rule and filters on the last candle ending >= 72 h before close_time."
+ ],
+ "generated_at": "2026-10-31T00:29:47.857015+00:00"
+}
