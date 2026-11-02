@@ -46,8 +46,11 @@ def market(ch):
     ch.set("XOM", FRI2, 115, "put", 2.40, 2.50, 0.31)
 
 
-def make(cal=(AMD_EV, XOM_EV), vix=18.0, cfg=None, engine=None, chains=None, **over):
+def make(cal=(AMD_EV, XOM_EV), vix=18.0, cfg=None, engine=None, chains=None, shipped=False, **over):
+    """shipped=True keeps config.yaml's structures; otherwise both run, so E2's code stays tested while it's off."""
     cfg = cfg or load_config()
+    if not shipped:
+        over.setdefault("structures", ["straddle_t3", "calendar_t10"])
     cfg["books"]["E_earnings_iv"] = {**cfg["books"]["E_earnings_iv"], **over}
     eng = engine or FakeEngine(FakeQuotes(), cfg)
     ch = chains or FakeChains()
@@ -88,6 +91,27 @@ def test_entries_wait_for_1445_then_open_e1_and_e2_at_paper_fills():
     assert [d["outcome"] for d in h.ej.decisions()] == ["opened", "opened"]
     assert {p.id for p in h.ej.open_positions()[0]} == {amd.id, xom.id}
     assert "IV filter: 0/4 cycles" in amd.entry_reasons
+
+
+def test_e2_is_off_in_the_shipped_config_and_an_open_calendar_keeps_its_exits():    # Evan, 2026-11-02
+    h, eng, ch = make(shipped=True)
+    tick(h, ch, at(MON, 14, 45))
+    assert set(by_symbol(h)) == {"AMD"}                   # XOM's T-9 calendar is not entered
+    assert [d["symbol"] for d in h.ej.decisions()] == ["AMD"]
+    h1, eng1, ch1 = make()                                # a calendar opened before the switch
+    tick(h1, ch1, at(MON, 14, 45))
+    eng2 = FakeEngine(FakeQuotes(), eng1.cfg)
+    eng2.journal = eng1.journal
+    eng2.feed.t = at(TUE, 8, 10)
+    h2, _, _ = make(engine=eng2, chains=ch1, shipped=True)
+    asyncio.run(h2.start())
+    assert set(by_symbol(h2)) == {"AMD", "XOM"}
+    tick(h2, ch1, at(FRI1, 14, 14))
+    assert "XOM" in by_symbol(h2)
+    tick(h2, ch1, at(FRI1, 14, 15))
+    assert "XOM" not in by_symbol(h2)
+    t = [x for x in eng1.journal.trades() if "XOM" in x["contract"]][0]
+    assert "short leg expires today" in t["exit_reason"]
 
 
 def test_the_book_strip_shows_es_open_limit_not_a_default_trade_cap():          # review 2026-10-06

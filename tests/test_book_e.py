@@ -28,6 +28,7 @@ def test_config_carries_the_approved_values():
     assert (C["max_debit"], C["max_debit_e2"], C["max_open"], C["paper_only"]) == (500, 250, 3, True)
     assert (C["entry_ct"], C["exit_ct"], C["expiry_day_exit_ct"], C["half_day_ct"]) == ("14:45", "14:45", "14:15", "11:20")
     assert C["take_profit"] == {"straddle_t3": 0.20, "calendar_t10": 0.15} and C["stop_pct"] == 0.30
+    assert C["structures"] == ["straddle_t3"]            # Evan turned E2 off 2026-11-02 (round 5 replay)
     assert (C["vix_max"], C["iv_pct_max"], C["iv_min_cycles"], C["max_leg_spread_pct"]) == (30, 0.80, 4, 0.05)
     assert R.sector_of("NVDA", C["sectors"]) == "tech" and R.sector_of("XOM", C["sectors"]) == "energy"
     universe = load_config()["crew"]["earnings"]["universe"]

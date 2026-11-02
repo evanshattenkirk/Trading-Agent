@@ -163,8 +163,10 @@ books:
   D_iron_condor:   {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, short_em_mult: 0.9, em_rth_mult: 0.80, wings: 2, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:25", quiet_filter: true, quiet_window_min: 30, quiet_lookback_days: 14, vwap_max_pct: 0.0012}
   # Book E (HANDOFF 7E; spec docs/superpowers/specs/2026-09-29-book-e-design.md, approved 2026-09-29). Holds for days:
   # positions persist in e_positions and are NOT sold at shutdown; kill/halts/Flatten sell them. Paper only.
+  # E2 (calendar_t10) is off: Evan, 2026-11-02, after round 5's real-quote replay (research/round5.md) lost in both
+  # periods. No new calendars; one already open keeps its exits. Add calendar_t10 back to structures to re-enable.
   E_earnings_iv:   {enabled: true,  paper_only: true,  max_debit: 500, max_debit_e2: 250, max_open: 3,
-                    structures: [straddle_t3, calendar_t10], never_hold_through_announcement: true,
+                    structures: [straddle_t3], never_hold_through_announcement: true,
                     entry_ct: "14:45", exit_ct: "14:45", expiry_day_exit_ct: "14:15", half_day_ct: "11:20",
                     e1_dte: [4, 10], take_profit: {straddle_t3: 0.20, calendar_t10: 0.15}, stop_pct: 0.30,
                     vix_max: 30, iv_pct_max: 0.80, iv_min_cycles: 4, max_leg_spread_pct: 0.05, poll_sec: 15,
