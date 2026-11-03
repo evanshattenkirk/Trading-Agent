@@ -4,7 +4,7 @@
 
 A multi-book options trading agent, mostly 0DTE SPY options, built on Robinhood's Agentic Trading MCP. Entries, exits and risk are fixed-rule Python. A research crew of Claude "desks" briefs the engine, argues in roundtables and votes on size, but it can only cut risk or propose changes; it never places an order and can't touch size or loss limits.
 
-**Status (October 2026):** paper only. Nothing trades live, and live mode refuses to start until a book is promoted. **No book has shown an edge yet.** Every book that has been tested on real historical option quotes loses money at realistic fills, and the rest are untested or failed their backtests (see [Evidence so far](#evidence-so-far)). The books keep running on paper to collect real fills; a book reaches real money only through the promotion ladder below, one book at a time, at one contract.
+**Status (November 2026):** paper only. Nothing trades live, and live mode refuses to start until a book is promoted. **No book has shown an edge yet.** Every book that has been tested on real historical option quotes loses money at realistic fills, and the rest are untested or failed their backtests. Five research rounds have run 17 pre-registered tests on real data, including real-quote replays of books E and G, and all 17 failed (see [Evidence so far](#evidence-so-far)). Two books are switched off after failing on real quotes: G (the call calendar) and E2 (book E's calendar leg). The books keep running on paper to collect real fills; a book reaches real money only through the promotion ladder below, one book at a time, at one contract.
 
 ![AgentDesk dashboard during a live paper session: SPY chart with MACD and RSI, per-book P&L chips, signal gate, book F1's scan, today's trades, and the pixel-art office where the research crew meets](docs/img/dashboard.png)
 
@@ -27,10 +27,10 @@ This is the account where I take concentrated risk on purpose; retirement accoun
 - **An LLM with bounded authority.** Claude desks (Macro, Vol, Quant, Risk, Tape and others) brief before the open and during the day, then vote size 0.5–1.25×. Any vote below 1 cuts size at once. A size-up needs every item on a checklist to pass. Tweaks apply automatically only for whitelisted parameters inside hard bounds; standing changes and new strategies wait for a human to approve them. `agentdesk/crew.py`, `agentdesk/proposals.py`
 - **A deterministic core.** Signals, strikes, exits and risk are plain Python rules (`strategy.py`, `strikes.py`, `exits.py`, `risk.py`). The same engine runs the simulator, backtests, paper, shadow and live; only the feed and the broker change.
 - **Broker integration over MCP.** Orders are built from the tool schemas Robinhood's MCP server reports. Shadow mode sends every order to `review_option_order` without placing it. Each `place_option_order` carries an idempotency `ref_id`, and a client-side call budget keeps the engine under Robinhood's rate limit. `agentdesk/brokers/robinhood.py`
-- **Safety you can test.** A daily loss limit that counts open P&L at the bid, per-book halts, a stale-quote watchdog, day risk state that survives restarts, every position sold on Ctrl-C, and dashboard controls behind a per-run token with Origin and Host checks. `risk.py`, `lifecycle.py`, `server.py`
-- **Research that reports its failures.** Rules are pre-registered before any data is pulled, split in-sample and out-of-sample, and re-run at taker fills. Every candidate tested so far has failed, and the write-ups say so. `research/`
+- **Safety you can test.** A daily loss limit that counts open P&L at the bid, per-book halts, a stale-quote watchdog, day risk state that survives restarts, every position sold on Ctrl-C, dashboard controls behind a per-run token with Origin and Host checks, and a read-only Manager panel that shows sign-in deadlines, Robinhood call health, the recorder, halts and the Mac jobs in one place. Unattended runs never open a Robinhood sign-in page: an expired sign-in fails closed and names the command to run. `risk.py`, `lifecycle.py`, `server.py`, `health.py`
+- **Research that reports its failures.** Rules are pre-registered before any data is pulled, split in-sample and out-of-sample, and re-run at taker fills. All 17 tests across five research rounds have failed, and the write-ups say so. `research/`
 - **Cost-aware model use.** Prompt-cache breakpoints on every Claude call, about 3 web-search calls a day, and a per-desk tally of tokens and estimated cost.
-- **703 tests**, including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. GitHub Actions runs them on every push and pull request. `tests/`
+- **1,324 tests** (1,002 for the engine, 322 for the research scripts), including a real `run --mode sim` subprocess shut down by signal and full simulated days across every book. GitHub Actions runs them on every push and pull request. `tests/`
 
 ## Strategy books
 
@@ -44,14 +44,14 @@ All books run side by side on one paper account: $10,000 balance, $2,500 cap on 
 | **D** | 10:00 ET iron condor, shorts at 0.9× the expected move, quiet-day filter | Paper | **No edge at realistic fills.** Real quotes: +0.81% a trade at mid (t 2.87), −1.45% at mid −1¢ and −1.97% at taker. The published quiet filter used look-ahead; the tradeable one isn't significant |
 | **E** | Pre-earnings IV run-up: ATM straddle at T−3 (E1), always sold before the report. The call calendar at T−10 (E2) is off | Paper; holds positions across days. **E2 off in config** (`structures: [straddle_t3]`, 2026-11-02; code and tests kept) | **No edge on real quotes** (1,070 events, 2018–2026): E1 out of sample +0.64% of the debit a trade at mid −1¢ (t 0.64), −1.36% at taker; E2 −4.62% in sample, +0.26% out of sample (t 0.15), −24.5% at taker (`research/round5.md`) |
 | **F1** | Stocks in play: opening-range breakout on high relative volume, long shares, now across all liquid US stocks with a stop at the opening-range low | Paper | The large-cap version fails its 2016–2026 replication (PF 0.66, t −10.5, `research/strategy_f_intraday.md`); the v2 rules are pre-registered (`research/strategy_f1_prereg.md`) and wait for the broad-universe backtest |
-| **F2** | Single-name debit spreads: call spreads on F1-style breakouts, put spreads fading high-volume up days; held up to 3 days | Paper | Puts rest on the one significant effect in F's research (high-volume up days reverse next day, t −3.9); calls are the weaker-evidence leg. No option history yet (`research/strategy_f2_prereg.md`) |
+| **F2** | Single-name debit spreads: call spreads on F1-style breakouts, put spreads fading high-volume up days; held up to 3 days | Paper | Puts rest on the one significant effect in F's research (high-volume up days reverse next day, t −3.9 on S&P names). On 2,900 stocks that study never saw, the same reversal is weaker and fails its bar (t 2.30, PF 1.03, test X3 in `research/round5.md`). Calls are the weaker-evidence leg. No single-name option history yet (`research/strategy_f2_prereg.md`) |
 | **G** | 0DTE/1DTE SPY ATM call calendar at 09:00 CT | **Disabled in config** (`enabled: false`, PR #48, 2026-10-06; code and tests kept) | Passed on modeled prices, then **failed its real-quote kill rule**: −3.29% of the debit a trade at mid −1¢ (t −5.40, PF 0.76, 1,882 trades), every year 2022–2026 negative (`research/strategies_new_quotes_report.md`) |
 
 A bearish-puts mirror of C is built but disabled until a pre-registered filter passes out of sample.
 
 ## Evidence so far
 
-Each study fixed its rules and its pass bar before the run, and none were changed after seeing results. Scripts and write-ups are in `research/`; most of the real-quote runs need data that lives on the owner's Mac (ThetaData, Alpaca SIP, CBOE).
+Each study fixed its rules and its pass bar before the run, and none were changed after seeing results. Scripts and write-ups are in `research/`. Many of the real-quote runs need data that lives on the owner's Mac (ThetaData, Alpaca SIP, CBOE); rounds 4 and 5 ran in Claude Code cloud sessions. "Patient" fills are the paper rule (mid −1¢ a leg); "taker" crosses the spread.
 
 | Study | Data | Result |
 |---|---|---|
@@ -64,7 +64,15 @@ Each study fixed its rules and its pass bar before the run, and none were change
 | H1–H3: SPY overnight hold, overnight after a down day, RSI(2) dip | 2005–2020 | Fail out of sample (t −0.51 / +0.06 / −0.33) |
 | H4: overnight 1DTE SPY iron fly | Real quotes 2016–2026 | Fail: −$5.08 a lot at mid −1¢ out of sample (t −3.23), every year negative (`h4_overnight_fly.md`) |
 | V1: short VIX futures carry (SVXY at −0.5× while VIX/VIX3M < 1) | CBOE VX settlements, 2009–2026 | Fail: out-of-sample t +1.09 against a bar of 2.33, max drawdown −65% (`vix_carry.md`) |
-| X1: short iron fly through single-name earnings | ThetaData single-name quotes | Pre-registered (`x1_earnings_fly_prereg.md`); being run now, no result yet |
+| X1: short iron fly through single-name earnings (book E's 30 names) | ThetaData single-name quotes 2018–2026, report times from SEC 8-K filings | Fail: −10.6% of max loss a trade at taker (t −5.24, 698 trades), −4.8% at patient; every exit time and wing width loses (`x1_earnings_fly.md`) |
+| **Round 4:** N1 1DTE SPY iron fly and N2 1DTE bull put spread, sold 15:50 ET, closed 15:40 ET on expiry day | Real quotes 2016–2026 | Both fail out of sample: N1 −$3.16 a lot at patient (t −0.71); N2 passed in sample but was SPY's drift, −$0.31 out of sample (t −0.06) (`n1_n2_1dte_close.md`) |
+| **Round 4:** N3 weekly SPY put credit spread, held to next week's expiry | Real quotes 2016–2026, 534 weeks | Fail: −$9.94 a lot at patient out of sample (t −0.73); net of SPY's move it loses (t −2.21) (`n3_weekly_put_spread.md`) |
+| **Round 5:** W 0DTE iron fly with wide wings, closed 15:40 ET, on SPY, QQQ and IWM | Real quotes 2016–2026 | Fail: pooled −0.77% of max loss at patient (t −0.74); +2.13% at mid, so the spread on four legs takes it (`round5.md`) |
+| **Round 5:** WX, W's fly on XSP held to cash settlement | XSP quotes 2016–2026 | Fail: +2.91% at patient, t 1.34 against a bar of 2.64; first half negative |
+| **Round 5:** X3, short the high-volume up day on stocks outside the S&P study (F2-P's premise) | Daily bars, 2,931 names, 2016–2026 | Fail: t 2.30 against 2.58, profit factor 1.03 |
+| **Round 5:** K1, Kalshi favourites at 70–97¢ a day before the close (information only) | Kalshi public API, 56,069 markets | Fail: −0.68% a contract out of sample (t −0.77) |
+
+**What the research keeps finding.** Each premium shows up at mid or at settlement value, and realistic fills remove it. The 0DTE variance premium is real: on QQQ and IWM, which no earlier test touched, a 13:00 ET iron fly earns +7.3% of max loss a trade at settlement value (t 6.0). It isn't reachable here, though. SPY, QQQ and IWM must be closed by 15:40 ET, and the closing spread takes the premium; XSP can be held to settlement, but its spreads are about 3.5 times wider. The pre-earnings IV run-up (E1) was there in 2018–2019 and has faded since. XSP since daily expiries began (November 2022) is positive (+4.9% a trade, t 2.12), but that period was chosen after seeing the results, so it is a lead for a new forward-only test, not a pass.
 
 ## Architecture
 
@@ -103,7 +111,7 @@ Each rung uses the same engine and only swaps the data feed and the broker.
    - `--source robinhood` pulls SPY 1-minute bars from the Robinhood connection instead of Alpaca. No data key is needed.
    - Option P&L defaults to Black-Scholes on the replayed spot (`--iv 0.16`). `--options alpaca` uses real option bars instead. Read `backtest/summary.json`: expectancy, profit factor, max drawdown, and results by setup, hour and exit reason. **Don't go past step 3 unless expectancy is positive after the fees and slippage modeled here.**
 3. **Connect Robinhood** – on a desktop, run `python -m agentdesk rh-inspect`.
-   - It opens Robinhood's OAuth page. Approve it and create the Agentic account when prompted.
+   - It opens Robinhood's OAuth page. Approve it and create the Agentic account when prompted. Only `rh-inspect` and `record-quotes --once` ever open a sign-in page, one per process; the engine, the recorder daemon and every other command never do.
    - It then prints every tool's schema to `rh_tools.json`, finds the Agentic account, quotes today's first OTM SPY call, and calls `review_option_order` on it. That call is a simulation; nothing is placed.
    - If any required field isn't mapped, the error names it. Pin it in `robinhood.arg_overrides`.
 4. **Paper** – `python -m agentdesk run --mode paper`. Real SPY feed and real Robinhood option quotes, simulated fills. Run it for 2 weeks.
@@ -145,7 +153,7 @@ MASSIVE_API_KEY=...          # alternative data vendor (formerly Polygon.io); se
 ANTHROPIC_API_KEY=...        # research crew with web search; without it, crew runs offline from config.events
 ```
 
-Robinhood auth is OAuth. Tokens are cached at `~/.agentdesk/rh_oauth.json` with mode 0600. No password is stored.
+Robinhood auth is OAuth. Tokens are cached at `~/.agentdesk/rh_oauth.json` (the recorder keeps its own) with mode 0600, along with when they were saved, so a connect refreshes a token with under a day left. No password is stored. If a sign-in is refused, the engine logs one line naming the command to run, fails every later call fast and halts all books (selling what is open mid-session); the recorder sends one notification and reconnects once the token file changes. Neither opens a browser.
 
 ## The research crew
 
@@ -250,6 +258,16 @@ Four per-user LaunchAgents run the desk on the owner's Mac, each from a copy of 
 
 `tools/install_paper.sh` (engine, review page and Quant job) and `tools/install_recorder.sh` deploy the current checkout and load the jobs. Both build a new release from `requirements.lock`, run the test suite in it and switch to it only if the tests pass, so a failing build is never deployed. They refuse uncommitted changes unless `--dirty`. `install_paper.sh` refuses while an engine runs unless `--force`, and takes `--no-quant`. Install after 15:10 CT. The dashboard is local only, at `http://127.0.0.1:8765`.
 
+## Manager panel
+
+The **MANAGER** button in the dashboard header (green, amber or red, with a count of amber and red rows) opens a read-only panel fed by `GET /api/health` (`agentdesk/health.py`, `web/manager.js`). It refreshes every 30 seconds on the live dashboard and on the after-hours review page, and also opens at `http://127.0.0.1:8765/#manager`. Rows:
+- the engine's and the recorder's Robinhood sign-ins, with their deadlines (amber under 3 days, red under 1 or when the engine reports it signed out)
+- the engine's Robinhood calls: last good call, counts for the last 15 minutes and the day, reconnects
+- the recorder writing, SPY prints arriving, the engine running, any halts
+- the four launchd jobs
+
+Each amber or red row says what to do and gives the exact Terminal command with a Copy button. The panel reads local files only and never shows a token or an account number; it has no buttons that change anything.
+
 ## Things to know before real money
 
 - **Stops live in this process, not at Robinhood.** If the host machine sleeps or loses its connection, open positions are unmanaged. Run it on a machine that stays awake (`caffeinate -dims python -m agentdesk run --mode live`). On startup, the engine refuses to trade if the Agentic account already holds option positions.
@@ -262,8 +280,10 @@ Four per-user LaunchAgents run the desk on the owner's Mac, each from a copy of 
 ```
 agentdesk/   engine.py strategy.py indicators.py bars.py strikes.py levels.py exits.py risk.py lifecycle.py
              crew.py desks.py proposals.py      research crew (Claude) and its proposal book
-             server.py web/                     FastAPI + websocket dashboard and the pixel office
+             server.py web/                     FastAPI + websocket dashboard, Manager panel and the pixel office
              archive.py review.py claims.py     saved sessions and the read-only after-hours dashboard
+             health.py                          Manager panel checks (GET /api/health)
+             earnings.py iv.py                  book E: earnings screen, single-stock option chains
              brokers/   paper, robinhood (options), paper_equity, robinhood_equity
              feeds/     sim, alpaca, massive, prints (bad-print filter), f_data
              books/     host, account, group, fills, plus one module per book (iron_fly, orb_bull_put,
