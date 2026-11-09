@@ -76,7 +76,7 @@ def test_live_mode_needs_exactly_one_promoted_book():
     cfg = copy.deepcopy(CFG)
     cfg["books"]["A_macd_calls"]["paper_only"] = False
     check_live_promotion(cfg, "live")
-    cfg["books"]["C_orb_bull_put"]["paper_only"] = False
+    cfg["books"]["D_iron_condor"]["paper_only"] = False
     with pytest.raises(SystemExit):
         check_live_promotion(cfg, "live")
 
@@ -86,7 +86,7 @@ def test_books_refuse_to_build_without_paper_only():
     cfg["books"]["D_iron_condor"]["paper_only"] = False
     with pytest.raises(SystemExit, match="D_iron_condor"):
         build_books(cfg)
-    assert [b.letter for b in build_books(CFG)] == ["B", "C", "D"]          # G off since 2026-10-06
+    assert [b.letter for b in build_books(CFG)] == ["D"]          # G off since 2026-10-06, B and C since 2026-11-09
 
 
 def test_book_code_has_no_order_placing_path():
