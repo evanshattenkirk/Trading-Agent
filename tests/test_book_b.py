@@ -98,3 +98,10 @@ def test_a_raising_quote_call_at_0845_retries_next_second():         # review #2
         fq.now = ct_ts(8, 45, s)
         asyncio.run(host.on_second(ct_ts(8, 45, s)))
     assert len(host.positions()) == 1 and host.books[0].trades == 1
+
+
+def test_config_is_off_with_the_specified_rules_kept():
+    # Evan turned B off on 2026-11-09: no edge on real quotes even at mid (+0.18% a trade, t 0.17). Rules unchanged.
+    assert C["enabled"] is False and C["paper_only"] is True and C["lots"] == 1
+    assert (C["entry_ct"], C["wings"], C["take_profit_pct"], C["stop_debit_x_credit"], C["close_ct"]) == \
+        ("08:45", 5, 0.50, 2.0, "14:30")

@@ -122,3 +122,9 @@ def test_partial_opening_range_never_fires():                        # review #4
     for i, c in [(4, 763.6), (5, 763.2)]:                             # started at 08:50: only 2 of 6 bars
         s.on_bar("5m", bar5(8, 30 + 5 * i, c - 0.3, c, hi=764.0 if i == 4 else c + 0.1), ctx(at(8, 35 + 5 * i)))
     assert s.on_bar("5m", bar5(9, 0, 763.7, 764.4, v=1200), ctx(ct_ts(9, 5))) is None
+
+
+def test_config_is_off_with_the_rules_kept():
+    # Evan turned C off on 2026-11-09: its backtest is negative (underlying t -5.75 in sample). Rules unchanged.
+    assert C["enabled"] is False and C["paper_only"] is True
+    assert (C["width"], C["max_loss_budget"], C["or_minutes"], C["close_ct"]) == (2, 400, 30, "14:15")
