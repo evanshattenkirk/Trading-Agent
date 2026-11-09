@@ -80,7 +80,7 @@ def test_the_engine_serves_health_without_the_token(tmp_path, monkeypatch):
     r = c.get("/api/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["running"] is True and len(body["checks"]) == 9
+    assert body["running"] is True and len(body["checks"]) == 10
     assert body["checks"][0]["state"] == "ok"
     assert SECRET not in r.text and "t0ken" not in r.text
     assert r.headers["cache-control"].startswith("no-")
@@ -106,7 +106,7 @@ def test_the_review_server_serves_health_with_no_saved_session(tmp_path, monkeyp
     fake_paths(tmp_path, monkeypatch)
     c = TestClient(create_review_app(tmp_path / "none", cfg=CFG), base_url=BASE)
     r = c.get("/api/health")
-    assert r.status_code == 200 and len(r.json()["checks"]) == 9
+    assert r.status_code == 200 and len(r.json()["checks"]) == 10
 
 
 def test_the_simulator_has_no_manager_panel():

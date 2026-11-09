@@ -947,12 +947,14 @@ class Engine:
 
     def health_inputs(self) -> dict:
         """What the Manager panel (agentdesk/health.py) needs from the running engine: Robinhood call stats and its
-        sign-in verdict, and the feed's last SPY print. Saved in the snapshot, so the review page has the last values."""
+        sign-in verdict, the feed's last SPY print and the crew's Claude calls. Saved in the snapshot, so the review page
+        has the last values."""
         rh = self.l2_rh
         stats = getattr(rh, "stats", None)
         status = getattr(rh, "sign_in_status", None)
         return {"rh": stats() if stats else None, "rh_sign_in": list(status()) if status else None,
-                "feed": self.feed.name, "last_print": self._last_print}
+                "feed": self.feed.name, "last_print": self._last_print,
+                "crew": self.crew.health() if getattr(self, "crew", None) else None}
 
     def manager_snapshot(self) -> dict:
         """The light part of snapshot() that /api/health reads (no bars)."""

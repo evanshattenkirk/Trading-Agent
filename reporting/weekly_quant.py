@@ -647,7 +647,13 @@ def _crew_block(trades: list, log: list) -> dict:
         if r["kind"] == "block":
             k = f"{r['detail'].get('desk', '?')} -> {r['book']}"
             blocks[k] = blocks.get(k, 0) + 1
-    usage = [r["detail"] for r in log if r["kind"] == "usage"]
+    # Each huddle writes the day's running tally (since 2026-11-09; before, one row at 15:05), so count each run's
+    # last row once: a restart starts a new run at 0, and rows without a run id are one per session.
+    last: dict = {}
+    for r in log:
+        if r["kind"] == "usage":
+            last[(r["session"], r["detail"].get("run"))] = r["detail"]
+    usage = list(last.values())
     return {
         "sizing": sizing,
         "tweaks": {k: {"trades": len(v), "net": sum(v)} for k, v in tw.items()},
@@ -656,6 +662,9 @@ def _crew_block(trades: list, log: list) -> dict:
         "sessions_logged": len({r["session"] for r in log}),
         "est_cost_usd": sum(float(u.get("est_cost_usd") or 0) for u in usage),
         "web_searches": sum(int(u.get("web_searches") or 0) for u in usage),
+        "claude_calls": sum(int(u.get("calls") or 0) for u in usage),
+        "failed_calls": sum(int(u.get("failed") or 0) for u in usage),
+        "offline_sessions": len({s for (s, _), u in last.items() if u.get("offline")}),
     }
 
 
@@ -688,7 +697,10 @@ def _crew_section(rep: dict) -> list:
           f"| Entries blocked | {sum(w['blocks'].values())} | {sum(c['blocks'].values())} |",
           f"| Calendar vs Macro disagreements | {w['calendar_disagreements']} | {c['calendar_disagreements']} |",
           f"| Crew API cost, estimated | ${w['est_cost_usd']:.2f} | ${c['est_cost_usd']:.2f} |",
-          f"| Web searches | {w['web_searches']} | {c['web_searches']} |"]
+          f"| Web searches | {w['web_searches']} | {c['web_searches']} |",
+          f"| Claude calls (failed) | {w['claude_calls']} ({w['failed_calls']}) | "
+          f"{c['claude_calls']} ({c['failed_calls']}) |",
+          f"| Sessions the crew ran offline | {w['offline_sessions']} | {c['offline_sessions']} |"]
     if c["blocks"]:
         L += ["", "Blocked entries by source: " + ", ".join(f"{k} {v}" for k, v in c["blocks"].items()) + "."]
     return L + [""]

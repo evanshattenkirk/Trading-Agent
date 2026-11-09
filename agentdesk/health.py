@@ -40,6 +40,9 @@ LATER = "outside market hours"
 NOW = "now"
 RESTART_RECORDER = "launchctl kickstart -k gui/$(id -u)/com.agentdesk.recorder"
 ENGINE_LOG = "tail -50 ~/.agentdesk/paper/$(date +%F).log"
+CREW_LOG = "grep -iE 'claude call failed|crew: OFFLINE' ~/.agentdesk/paper/$(date +%F).log | tail -5"
+CREW_REDEPLOY = "cd ~/Trading-Agent && tools/install_paper.sh"
+CREW_QUIET_AFTER = time(8, 40)  # the 08:25 huddle's Macro and Vol calls should be back by then
 
 
 @dataclass
@@ -286,6 +289,41 @@ def halts(risk: dict | None, books: dict | None, running: bool) -> dict:
     return row(name, OK, "no halts")
 
 
+# ---------------------------------------------------------------- crew
+def crew_calls(c: dict | None, now: float, cfg, running: bool) -> dict:
+    """The crew's Claude calls today (Crew.health(), carried in the snapshot). The 2026-11-06 weekly report found a
+    week of $0 calls that nothing had flagged: an offline crew (no key) or one whose every call fails runs on
+    templated briefs, which drop Macro's event blackouts and Vol's VIX1D flag."""
+    name = "Crew Claude calls"
+    if not c:
+        return row(name, IDLE, "no crew data in this snapshot")
+    calls, failed = int(c.get("calls") or 0), int(c.get("failed") or 0)
+    tally = f"{calls} calls, {int(c.get('web_searches') or 0)} web searches, about ${float(c.get('est_cost_usd') or 0):.2f}"
+    err = c.get("last_error") or {}
+    last_err = f"{err.get('desk', '?')}: {str(err.get('error') or '')[:160]}" if err else ""
+    if not running:
+        return row(name, IDLE, "engine not running; last session " + tally + (f", {failed} failed" if failed else ""))
+    if c.get("sim") or c.get("enabled") is False:
+        return row(name, IDLE, "the simulator's crew is offline on purpose" if c.get("sim") else "crew turned off")
+    if c.get("offline"):
+        return row(name, BAD, "offline: the engine has no ANTHROPIC_API_KEY, so the desks use templated briefs "
+                              "(no Macro event blackouts, no VIX1D flag)",
+                   "Put ANTHROPIC_API_KEY=... in ~/Trading-Agent/.env yourself (never paste it in chat), then redeploy "
+                   f"{LATER} (the installer copies .env into the release):", CREW_REDEPLOY)
+    last_ok = c.get("last_ok")
+    if err and (not last_ok or err.get("ts", 0) >= last_ok):
+        return row(name, BAD, f"{failed} failed today, {calls} ok; last error {last_err}",
+                   "The error says why: check the API key and credit balance at console.anthropic.com. Every failure "
+                   "is in today's engine log:", CREW_LOG)
+    if failed:
+        return row(name, WARN, f"{tally}; {failed} failed earlier (last {last_err})",
+                   "Calls are working again; if failures keep coming, check today's engine log:", CREW_LOG)
+    if not calls and trading_day(now, cfg) and ct(now).time() >= CREW_QUIET_AFTER:
+        return row(name, WARN, "no Claude calls yet today, though the 08:25 huddle should have made some",
+                   "Check today's engine log for crew lines:", CREW_LOG)
+    return row(name, OK, tally + " today")
+
+
 # ---------------------------------------------------------------- launchd
 _jobs_cache: tuple[float, dict] | None = None
 
@@ -353,6 +391,7 @@ def report(cfg, now: float, snap: dict | None, running: bool, paths: Paths | Non
         feed(h.get("feed"), h.get("last_print"), now, cfg, running),
         engine_row(running, snap, now, cfg),
         halts(snap.get("risk"), snap.get("books"), running),
+        crew_calls(h.get("crew"), now, cfg, running),
         jobs(runner, platform),
     ]
     return {"ts": now, "state": worst(checks), "running": running, "checks": checks}
