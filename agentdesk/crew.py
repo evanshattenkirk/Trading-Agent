@@ -28,6 +28,7 @@ import math
 import os
 import random
 import re
+import time as _time
 from dataclasses import dataclass
 from datetime import date, time, timedelta
 from pathlib import Path
@@ -93,6 +94,8 @@ BOOKS_TEXT = ("The desk runs paper books: A long SPY 0DTE calls on MACD/RSI trig
 PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0),
           "claude-opus-5-5": (4.0, 20.0)}
 WEB_SEARCH_USD = 0.01           # $10 per 1,000 searches
+API_KEY_RE = re.compile(r"sk-ant-[A-Za-z0-9_\-]+")     # never keep a key in a saved error
+USAGE_COUNTS = ("calls", "failed", "input", "output", "cache_read", "cache_write", "web_searches", "est_cost_usd")
 CITE_TAG = re.compile(r"</?cite\b[^>]*>")     # web-search citation markup the model leaves around quoted facts
 # A desk's web-search brief is untrusted text: at most this many of its events a day become blackouts (or passed
 # events for book B), only times still ahead block entries, and none of them flattens (Evan, decision D4,
@@ -162,6 +165,7 @@ class Crew:
         self.prep: dict[str, dict] = {}                     # briefs the premarket desks wrote at their desks
         self.prep_tasks: dict[str, asyncio.Task] = {}       # ... and the ones still researching
         self._client = None
+        self.run_id = _time.time()                          # this process's usage rows (a restart starts its tally at 0)
         self.cache_usage = self._new_usage()
         self.vix = None                                     # VIX source for the Vol desk (Robinhood or the sim)
         self._calendar: dict | None = None                  # this week's saved economic calendar
@@ -175,6 +179,13 @@ class Crew:
         self.book = ProposalBook(cfg, path)
         self._last_expire = -1e18
         self.mood = getattr(engine.feed, "mood", None)
+        if not engine.feed.is_sim:
+            if self.offline:
+                log.warning("crew: OFFLINE, no ANTHROPIC_API_KEY in the environment or .env; the desks use templated "
+                            "briefs (no Macro events, no VIX1D flag) and make no Claude calls")
+            else:
+                log.info("crew: online, Claude calls on (%s; %s for Quant and the roundtable)",
+                         self.cfg.get("model"), self.cfg.get("fast_model"))
 
     # ------------------------------------------------------------ schedule
     async def on_clock(self, now: float) -> None:
@@ -359,8 +370,7 @@ class Crew:
         self._log(now, "directive", None, {"slot": slot, "desks": desks, "votes": self.directive.get("votes", {}),
                                            "book_mults": self.directive.get("book_mults", {}), "revised": revised,
                                            "blackouts": self.directive.get("blackouts", [])})
-        if slot == "postclose":
-            self._log(now, "usage", None, self.cache_usage)
+        self._log(now, "usage", None, {**self.cache_usage, "run": self.run_id, "offline": self.offline})
         bus.emit("crew", now, desk=desks[0], phase="say", who="agent", to="all", text=self._wrap_line(slot))
         for k in desks:
             bus.emit("crew", now, desk=k, phase="done", brief=self.briefs.get(k))
@@ -862,6 +872,7 @@ class Crew:
                 system=cached_system(ROUNDTABLE_HINT + "\n\n" + SCHEMA_HINT.split("proposals (optional")[1]),
                 messages=[{"role": "user", "content": user}]), timeout=60)
         except Exception as ex:
+            self.note_failure("roundtable", ex)
             self.e.bus.emit("log", now, level="warn", msg=f"roundtable failed: {ex}")
             return None
         self.note_usage(msg, "roundtable", self.cfg["fast_model"])
@@ -873,7 +884,8 @@ class Crew:
         if self._client is None:
             try:
                 from anthropic import AsyncAnthropic
-            except ImportError:
+            except ImportError as ex:
+                self.note_failure("client", ex)
                 return None
             self._client = AsyncAnthropic(api_key=self.api_key)
         return self._client
@@ -900,6 +912,7 @@ class Crew:
         try:
             msg = await asyncio.wait_for(client.messages.create(**kwargs), timeout=120)
         except Exception as ex:
+            self.note_failure(key, ex)
             self.e.bus.emit("log", now, level="warn", msg=f"{desk.name} desk LLM call failed: {ex}")
             return None
         self.note_usage(msg, key, model)
@@ -914,8 +927,28 @@ class Crew:
 
     @staticmethod
     def _new_usage() -> dict:
-        return {"calls": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "web_searches": 0,
-                "est_cost_usd": 0.0, "by_desk": {}}
+        return {"calls": 0, "failed": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "web_searches": 0,
+                "est_cost_usd": 0.0, "last_ok": None, "last_error": None, "by_desk": {}}
+
+    def _desk_usage(self, desk: str) -> dict:
+        return self.cache_usage["by_desk"].setdefault(desk, {k: 0 for k in USAGE_COUNTS})
+
+    def note_failure(self, desk: str, ex) -> None:
+        """A Claude call that raised (no key, no credit, a bad model id, a timeout): counted with its last error and
+        logged to the engine log, so a crew that makes no calls shows on the Manager panel and in the weekly report
+        instead of quietly falling back to offline briefs (2026-11-06: a week of $0 and nothing flagged it)."""
+        err = API_KEY_RE.sub("[key]", f"{type(ex).__name__}: {ex}")[:300]
+        c = self.cache_usage
+        c["failed"] += 1
+        self._desk_usage(desk)["failed"] += 1
+        c["last_error"] = {"ts": self.e.feed.now(), "desk": desk, "error": err}
+        log.warning("crew %s: Claude call failed: %s", desk, err)
+
+    def health(self) -> dict:
+        """The Manager panel's crew row (agentdesk/health.py crew_calls)."""
+        c = self.cache_usage
+        return {"offline": self.offline, "sim": bool(self.e.feed.is_sim), "enabled": self.enabled,
+                **{k: c.get(k) for k in ("calls", "failed", "web_searches", "est_cost_usd", "last_ok", "last_error")}}
 
     def note_usage(self, msg, desk: str = "other", model: str | None = None) -> None:
         """Tally the day's tokens, web searches and estimated cost, in total and per desk (a cache_read of 0 on repeat
@@ -930,10 +963,11 @@ class Crew:
         n["est_cost_usd"] = ((n["input"] * pin + n["output"] * pout + n["cache_read"] * pin * 0.1
                               + n["cache_write"] * pin * 1.25) / 1e6 + n["web_searches"] * WEB_SEARCH_USD)
         c = self.cache_usage
-        d = c["by_desk"].setdefault(desk, {k: 0 for k in n})
+        d = self._desk_usage(desk)
         for k, v in n.items():
             c[k] += v
-            d[k] += v
+            d[k] = d.get(k, 0) + v
+        c["last_ok"] = self.e.feed.now()
         log.debug("crew usage: %s", c)
 
     # ------------------------------------------------------------ Fed and Rates, read from Macro
@@ -1097,6 +1131,7 @@ class Crew:
         try:
             msg = await asyncio.wait_for(client.messages.create(**kwargs), timeout=180)
         except Exception as ex:
+            self.note_failure("calendar", ex)
             self.e.bus.emit("log", now, level="warn", msg=f"weekly calendar call failed: {ex}")
             return None
         self.note_usage(msg, "calendar", self.cfg["model"])

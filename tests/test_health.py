@@ -310,7 +310,7 @@ def test_the_report_rolls_up_to_the_worst_row(tmp_path):
     names = [c["name"] for c in rep["checks"]]
     assert names == ["Engine Robinhood sign-in", "Recorder Robinhood sign-in", "Engine Robinhood calls",
                      "Recorder writing quotes", "Recorder Robinhood calls", "SPY prints", "Engine", "Halts",
-                     "Mac jobs"]
+                     "Crew Claude calls", "Mac jobs"]
     assert rep["state"] == "bad"                         # the recorder's token expired
     assert rep["ts"] == OPEN
     assert SECRET not in json.dumps(rep)
@@ -321,7 +321,7 @@ def test_the_report_works_with_no_saved_session(tmp_path):
                          heartbeat=tmp_path / "hb", days_log=tmp_path / "days.jsonl", journal=tmp_path / "j.db")
     rep = health.report(CFG, EVENING, None, running=False, paths=paths, runner=launchctl({}), platform="linux")
     assert rep["state"] == "bad"                         # no saved sign-ins at all
-    assert len(rep["checks"]) == 9
+    assert len(rep["checks"]) == 10
 
 
 def test_a_command_is_never_repeated_in_the_fix_text(tmp_path):

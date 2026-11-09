@@ -58,6 +58,8 @@ class NewsTagger:
         try:
             tags = await self._ask(now, picks, runners)
         except Exception as ex:
+            if self.e.crew is not None:
+                self.e.crew.note_failure("f_news", ex)
             log.warning("news tag failed: %s", ex)
             self.e.bus.emit("log", self.e.feed.now(), level="warn", msg=f"book F1 news tag failed: {ex}")
             tags = {}
