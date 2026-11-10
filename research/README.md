@@ -167,6 +167,8 @@ then D re-scored at the measured cost per leg:
     .venv/bin/python research/d_fill_quality.py score --quotes data/thetadata/spy_0dte --vix data/vix.csv \
         --events data/thetadata/d_fill/events.parquet --out research   # d_fill_quality.md + _results.json
 
+Result (2026-11-10): **FAIL**. Legs fill about half the spread from mid; D at the measured cost is −1.72% a trade (t −5.91).
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)
