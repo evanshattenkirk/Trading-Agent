@@ -104,8 +104,10 @@ class HostGroup:
             snap = self.bookhost.snapshot()
             snap["books"] = [b for b in snap["books"] if b["book"] not in {x.book.letter for x in self.extras}]
         else:
+            from .host import a_summary
             e = self.hosts[0].e
-            snap = {"books": [], "account": self.account.to_dict(self.open_risk(), e.risk.st.day_pnl)}
+            snap = {"books": [a_summary(e, e.cfg)],          # A leads the strip even with every B/C/D/G book off
+                    "account": self.account.to_dict(self.open_risk(), e.risk.st.day_pnl)}
         snap["books"] = list(snap["books"]) + [h.book.to_dict() for h in self.extras]
         if self.fhost:
             snap["f"] = self.fhost.detail()

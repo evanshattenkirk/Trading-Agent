@@ -461,3 +461,15 @@ def test_group_with_f_alone_runs_hooks():
     run(g.start())
     run(g.run(g.on_second(et(8, 30, 1)), True))
     assert host.prepared
+
+
+def test_group_without_combo_books_keeps_book_a_on_the_dashboard():
+    """With B/C/D/G all off (D since 2026-11-10) there is no BookHost; A's row must still lead the book strip,
+    or the dashboard's ALL total and risk panel drop A's P&L."""
+    from agentdesk.books.group import HostGroup
+    eng, data, host = make()
+    eng.risk.st.day_pnl = -100.0
+    g = HostGroup.of(None, host)
+    books = g.snapshot()["books"]
+    assert [b["book"] for b in books] == ["A", "F1"]
+    assert books[0]["day_pnl"] == -100.0

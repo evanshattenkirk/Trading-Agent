@@ -501,12 +501,7 @@ class BookHost:
         self.e.bus.emit("log", now, level=level, msg=msg)
 
     def _a_summary(self) -> dict:
-        st = self.e.risk.st
-        return {"book": "A", "key": "A_macd_calls", "name": "MACD CALLS", "day_pnl": round(st.day_pnl, 2),
-                "open_pnl": round(sum(p.unrealized for p, _ in self.e.open), 2), "trades": st.trades,
-                "max_trades": self.cfg["risk"]["max_trades_per_day"], "wins": st.wins, "losses": st.losses,
-                "halted": st.halted, "halt_reason": st.halt_reason, "blocked": None, "open": [], "closed": [],
-                "last_skip": None}
+        return a_summary(self.e, self.cfg)
 
     def summary(self) -> list[dict]:
         return [self._a_summary()] + [{k: v for k, v in b.to_dict().items() if k not in ("open", "closed")}
@@ -519,3 +514,13 @@ class BookHost:
     def snapshot(self) -> dict:
         return {"books": [self._a_summary()] + [b.to_dict() for b in list(self.books) + list(self.extra_books)],
                 "account": self.account.to_dict(self.open_risk(), self.e.risk.st.day_pnl)}
+
+
+def a_summary(e, cfg) -> dict:
+    """Book A's row on the dashboard's book strip (also used by HostGroup when no B/C/D/G book is on)."""
+    st = e.risk.st
+    return {"book": "A", "key": "A_macd_calls", "name": "MACD CALLS", "day_pnl": round(st.day_pnl, 2),
+            "open_pnl": round(sum(p.unrealized for p, _ in e.open), 2), "trades": st.trades,
+            "max_trades": cfg["risk"]["max_trades_per_day"], "wins": st.wins, "losses": st.losses,
+            "halted": st.halted, "halt_reason": st.halt_reason, "blocked": None, "open": [], "closed": [],
+            "last_skip": None}
