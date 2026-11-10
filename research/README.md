@@ -146,6 +146,14 @@ to cash settlement. XSP quotes from the ThetaData session; the SPX close from FR
         --w-trades research/data/round5/w/trades.parquet --spy data/thetadata/spy_0dte \
         --vix research/data/vix_cboe.csv                                  # research/data/round5/wx/wx_results.json
 
+R1, retailer search interest before earnings (rules in r1_retail_search_prereg.md, frozen before any data): a free
+test of the consumer-demand idea behind satellite parking-lot counts. SEC report times and Alpaca daily closes come
+from the Mac; Google Trends from any session with `pytrends`:
+
+    .venv/bin/python research/fetch_retail_mac.py     # Mac: research/data/x1/retail_earnings.csv, retail_daily.csv
+    python research/fetch_retail_trends.py            # research/data/retail/trends.csv
+    python research/r1_retail_search.py               # r1_retail_search.md / r1_retail_search_results.json
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)
