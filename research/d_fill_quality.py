@@ -60,7 +60,8 @@ class Order:
 
 
 def _valid(bid, ask) -> bool:
-    return bid is not None and ask is not None and not (pd.isna(bid) or pd.isna(ask)) and bid > 0 and ask > bid
+    """A usable quote: ask above bid. A zero bid is a real quote on far out-of-the-money 0DTE legs (0.00 x 0.01)."""
+    return bid is not None and ask is not None and not (pd.isna(bid) or pd.isna(ask)) and bid >= 0 and ask > bid
 
 
 def simulate(tape: pd.DataFrame, t0: pd.Timestamp, side: str, hold_s: int, rule: str, deadline: pd.Timestamp,
@@ -377,7 +378,7 @@ def _minute_quote(quotes: Path | None, day: dt.date, cache: dict, r: str, k: flo
         return None
     hh, mm_ = DECISION[w][0].split(":")[:2]
     ba = cache["p"].ba(r, k, int(hh) * 60 + int(mm_))
-    return ba if ba is not None and ba[0] > 0 and ba[1] > ba[0] else None
+    return ba if ba is not None and ba[0] >= 0 and ba[1] > ba[0] else None
 
 
 def _seed(tp: pd.DataFrame, t0: pd.Timestamp, ba) -> tuple | None:
@@ -385,7 +386,7 @@ def _seed(tp: pd.DataFrame, t0: pd.Timestamp, ba) -> tuple | None:
     minute, with the displayed sizes of the first valid tape row (the best guess at the queue)."""
     if ba is None:
         return None
-    ok = tp[(tp.bid > 0) & (tp.ask > tp.bid)]
+    ok = tp[(tp.bid >= 0) & (tp.ask > tp.bid)]
     if ok.empty or (ok.ts <= t0).any():
         return None
     return (ba[0], ba[1], float(ok.bid_size.iloc[0]), float(ok.ask_size.iloc[0]))

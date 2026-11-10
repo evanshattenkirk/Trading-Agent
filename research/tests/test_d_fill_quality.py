@@ -94,7 +94,7 @@ def test_deadline_forces_natural():
 def test_bad_quotes_ignored_and_no_quote():
     tp = tape([("09:59:58", 1.00, 1, 1.00, 1.01, 50, 500),
                ("09:59:59", 1.00, 1, 1.02, 1.01, 50, 500),     # crossed: ignored
-               ("10:00:05", 1.00, 1, 0.00, 1.01, 50, 500)])    # zero bid: ignored
+               ("10:00:05", 1.00, 1, -0.01, 1.01, 50, 500)])   # negative bid: ignored
     o = fq.simulate(tp, T0, "sell", 60, "strict", DL)
     assert o.mid0 == pytest.approx(1.005) and o.width_c == 1 and o.ts == T("10:01:00")
     bad = tape([("09:59:59", 1.00, 1, 1.01, 1.01, 50, 500), ("10:00:05", 1.00, 1, 1.00, 1.01, 50, 500)])
@@ -346,3 +346,11 @@ def test_measure_seeds_late_tapes_from_the_one_minute_quote(tmp_path):
     ev = fq.measure(tdir, tmp_path / "f", quotes=qdir)
     e = ev[(ev.right == r) & (ev.strike == k) & (ev.window == "entry")]
     assert e.cost_c.notna().all() and not (e.reason == "no_quote").any()
+
+
+def test_zero_bid_is_a_real_quote():
+    """Far out-of-the-money 0DTE legs quote 0.00 x 0.01: a buy can only pay the ask, a sell rests at 0.01."""
+    tp = tape([("09:59:59", 0.01, 1, 0.00, 0.01, 0, 900), ("10:05:00", 0.01, 1, 0.00, 0.01, 0, 900)])
+    o = fq.simulate(tp, T0, "buy", 60, "queue", DL)
+    assert o.mid0 == pytest.approx(0.005) and o.width_c == 1
+    assert (o.price, o.reason) == (0.01, "walked_to_natural") and fq.cost_cents(o, "buy") == pytest.approx(0.5)
