@@ -28,7 +28,7 @@ import fetch_earnings_edgar as F  # noqa: E402
 RETAIL = ["WMT", "COST", "HD", "LOW", "TGT", "BBY", "DG", "DLTR", "TJX", "ROST",
           "KSS", "M", "ULTA", "TSCO", "DKS", "BJ", "BURL", "AZO", "ORLY"]
 FIRST = date(2014, 1, 1)
-PRICE_START, PRICE_END = "2015-12-01", "2026-11-10"
+PRICE_START, PRICE_END = "2015-12-01T00:00:00Z", "2026-11-09T21:00:00Z"   # end before today: no recent SIP
 OUT = ROOT / "research" / "data" / "x1"
 
 
@@ -61,25 +61,36 @@ def prices(out: Path) -> None:
     from agentdesk.config import load_config          # loads .env (Alpaca keys)
     from agentdesk.feeds.f_data import alpaca_bars
     load_config()
-    bars = asyncio.run(alpaca_bars(RETAIL + ["SPY"], "1Day", PRICE_START, PRICE_END, feed="sip"))
+    import httpx
+    feed = "sip"
+    try:
+        bars = asyncio.run(alpaca_bars(RETAIL + ["SPY"], "1Day", PRICE_START, PRICE_END, feed=feed))
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code != 403:
+            raise
+        print(f"Alpaca refused SIP ({e.response.text[:200]}); falling back to the IEX feed")
+        feed = "iex"
+        bars = asyncio.run(alpaca_bars(RETAIL + ["SPY"], "1Day", PRICE_START, PRICE_END, feed=feed))
     n = 0
     with open(out, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["symbol", "date", "close"])
+        w.writerow(["symbol", "date", "close", "feed"])
         for sym in sorted(bars):
             for b in bars[sym]:
-                w.writerow([sym, b["t"][:10], b["c"]])
+                w.writerow([sym, b["t"][:10], b["c"], feed])
                 n += 1
-    print(f"{n} daily bars for {len(bars)} symbols -> {out}")
+    print(f"{n} daily bars ({feed}) for {len(bars)} symbols -> {out}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out-dir", type=Path, default=OUT)
     ap.add_argument("--skip-prices", action="store_true")
+    ap.add_argument("--skip-earnings", action="store_true")
     a = ap.parse_args()
     a.out_dir.mkdir(parents=True, exist_ok=True)
-    earnings(a.out_dir / "retail_earnings.csv")
+    if not a.skip_earnings:
+        earnings(a.out_dir / "retail_earnings.csv")
     if not a.skip_prices:
         prices(a.out_dir / "retail_daily.csv")
     return 0
