@@ -14,7 +14,9 @@ SEEDS = (21, 7)
 
 def run_day(seed, books_on):
     cfg = copy.deepcopy(CFG)
-    if not books_on:
+    if books_on:                       # D is off in config since 2026-11-10; switch it on to exercise the book framework
+        cfg["books"]["D_iron_condor"]["enabled"] = True
+    else:
         for k in ("B_iron_fly", "C_orb_bull_put", "D_iron_condor", "G_call_calendar"):
             cfg["books"][k]["enabled"] = False
     engine, bus = build(cfg, "sim", 0, seed, "2026-09-28")

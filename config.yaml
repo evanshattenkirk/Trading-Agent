@@ -158,11 +158,12 @@ books:
   history_days: 20        # 1m history the books load at startup (D's 14-day quiet filter, C's indicators)
   A_macd_calls:    {enabled: true,  paper_only: true,  risk_per_trade: 500, max_contracts: 5, daily_loss: 400}
   # B and C off since 2026-11-09 (Evan): B has no edge on real quotes even at mid (+0.18%/trade, t 0.17); C's backtest
-  # is negative (t -5.75). Rules unchanged; code and tests stay.
+  # is negative (t -5.75). D off since 2026-11-10 (Evan): fills no better than half the spread even with a walked
+  # limit order (research/d_fill_quality.md, -1.72%/trade, t -5.91). Rules unchanged; code and tests stay.
   B_iron_fly:      {enabled: false, paper_only: true,  lots: 1, entry_ct: "08:45", entry_grace_min: 5, wings: 5, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:30", skip_event_before_ct: "14:00", vix1d_gap: 3.0}
   C_orb_bull_put:  {enabled: false, paper_only: true,  max_loss_budget: 400, width: 2, max_trades_day: 2, window_ct: {start: "09:00", end: "13:30"}, or_minutes: 30, ema: 20, rsi: [55, 72], vol_mult: 0.8, vol_lookback: 20, stop_pct: 0.0018, target_pct: 0.0045, max_hold_min: 45, close_ct: "14:15"}
   C_bear_puts:     {enabled: false, paper_only: true,  note: "failed its backtest; stays off until a pre-registered filter set passes out-of-sample"}
-  D_iron_condor:   {enabled: true,  paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, short_em_mult: 0.9, em_rth_mult: 0.80, wings: 2, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:25", quiet_filter: true, quiet_window_min: 30, quiet_lookback_days: 14, vwap_max_pct: 0.0012}
+  D_iron_condor:   {enabled: false, paper_only: true,  lots: 1, entry_ct: "09:00", entry_grace_min: 5, short_em_mult: 0.9, em_rth_mult: 0.80, wings: 2, take_profit_pct: 0.50, stop_debit_x_credit: 2.0, close_ct: "14:25", quiet_filter: true, quiet_window_min: 30, quiet_lookback_days: 14, vwap_max_pct: 0.0012}
   # Book E (HANDOFF 7E; spec docs/superpowers/specs/2026-09-29-book-e-design.md, approved 2026-09-29). Holds for days:
   # positions persist in e_positions and are NOT sold at shutdown; kill/halts/Flatten sell them. Paper only.
   # E2 (calendar_t10) is off: Evan, 2026-11-02, after round 5's real-quote replay (research/round5.md) lost in both

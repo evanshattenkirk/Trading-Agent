@@ -120,3 +120,11 @@ def test_partial_opening_window_skips_instead_of_guessing():         # review #4
         s.on_bar("1m", Bar("1m", t, 765.0, 765.0, 765.0, 765.0, 100, 1, t + 60), None)
     assert s.on_clock(ct_ts(9, 0), ctx(ct_ts(9, 0))) is None
     assert "30 minutes" in s.on_clock(ct_ts(9, 6), ctx(ct_ts(9, 6))).reason
+
+
+def test_config_is_off_with_the_rules_kept():
+    # Evan turned D off on 2026-11-10: the fill-quality study failed (research/d_fill_quality.md, -1.72% a trade
+    # at the measured cost, t -5.91). Rules unchanged.
+    assert C["enabled"] is False and C["paper_only"] is True and C["lots"] == 1
+    assert (C["entry_ct"], C["short_em_mult"], C["wings"], C["take_profit_pct"], C["stop_debit_x_credit"],
+            C["close_ct"], C["quiet_filter"]) == ("09:00", 0.9, 2, 0.50, 2.0, "14:25", True)
