@@ -64,8 +64,9 @@ def _valid(bid, ask) -> bool:
 
 
 def simulate(tape: pd.DataFrame, t0: pd.Timestamp, side: str, hold_s: int, rule: str, deadline: pd.Timestamp,
-             step_s: int = 15) -> Order:
-    """One order for one contract, decided at t0, worked until filled or until the deadline (then natural)."""
+             step_s: int = 15, init: tuple | None = None) -> Order:
+    """One order for one contract, decided at t0, worked until filled or until the deadline (then natural).
+    init = (bid, ask, bid_size, ask_size) seeds the quote when the tape has none at or before t0."""
     if rule not in RULES:
         raise ValueError(rule)
     sgn = 1 if side == "buy" else -1                     # direction the limit walks: buy up, sell down
@@ -75,9 +76,12 @@ def simulate(tape: pd.DataFrame, t0: pd.Timestamp, side: str, hold_s: int, rule:
     for r in before.itertuples(index=False):
         if _valid(r.bid, r.ask):
             q = r
-    if q is None:
+    if q is not None:
+        bid, ask, bsz, asz = float(q.bid), float(q.ask), float(q.bid_size), float(q.ask_size)
+    elif init is not None and _valid(init[0], init[1]):
+        bid, ask, bsz, asz = (float(x) for x in init)
+    else:
         return Order(None, None, float("nan"), 0, False, "no_quote")
-    bid, ask, bsz, asz = float(q.bid), float(q.ask), float(q.bid_size), float(q.ask_size)
     mid0, width_c = (bid + ask) / 2, int(round((ask - bid) * 100))
     start = start_price(bid, ask, side)
 
@@ -361,9 +365,8 @@ def _parse(name: str):
     return dt.date.fromisoformat(d), leg[0], float(leg[1:]), w
 
 
-def _natural_from_minutes(quotes: Path | None, day: dt.date, cache: dict, r: str, k: float, w: str, side: str):
-    """No trades in the window: the order can't fill passively, so it walks to the natural of the 1-minute quote
-    at the decision minute. None without a quote file or a quote."""
+def _minute_quote(quotes: Path | None, day: dt.date, cache: dict, r: str, k: float, w: str):
+    """(bid, ask) of the 1-minute quote at the window's decision minute, or None."""
     if quotes is None:
         return None
     if "p" not in cache:
@@ -374,7 +377,25 @@ def _natural_from_minutes(quotes: Path | None, day: dt.date, cache: dict, r: str
         return None
     hh, mm_ = DECISION[w][0].split(":")[:2]
     ba = cache["p"].ba(r, k, int(hh) * 60 + int(mm_))
-    if ba is None or not ba[1] > ba[0]:
+    return ba if ba is not None and ba[0] > 0 and ba[1] > ba[0] else None
+
+
+def _seed(tp: pd.DataFrame, t0: pd.Timestamp, ba) -> tuple | None:
+    """Initial quote for a tape whose first valid quote comes after t0: the 1-minute bid/ask at the decision
+    minute, with the displayed sizes of the first valid tape row (the best guess at the queue)."""
+    if ba is None:
+        return None
+    ok = tp[(tp.bid > 0) & (tp.ask > tp.bid)]
+    if ok.empty or (ok.ts <= t0).any():
+        return None
+    return (ba[0], ba[1], float(ok.bid_size.iloc[0]), float(ok.ask_size.iloc[0]))
+
+
+def _natural_from_minutes(quotes: Path | None, day: dt.date, cache: dict, r: str, k: float, w: str, side: str):
+    """No trades in the window: the order can't fill passively, so it walks to the natural of the 1-minute quote
+    at the decision minute. None without a quote file or a quote."""
+    ba = _minute_quote(quotes, day, cache, r, k, w)
+    if ba is None:
         return None
     bid, ask = ba
     return Order(ask if side == "buy" else bid, None, (bid + ask) / 2, int(round((ask - bid) * 100)), False,
@@ -392,9 +413,10 @@ def _measure_day(args) -> list[dict]:
         side = ("sell" if is_short else "buy") if w == "entry" else ("buy" if is_short else "sell")
         t0 = pd.Timestamp(f"{day} {DECISION[w][0]}", tz=ET)
         dl = pd.Timestamp(f"{day} {DECISION[w][1]}", tz=ET)
+        init = _seed(tp, t0, _minute_quote(quotes, day, cache, r, k, w)) if not tp.empty else None
         for rule in RULES:
             for h in HOLDS:
-                o = simulate(tp, t0, side, h, rule, dl)
+                o = simulate(tp, t0, side, h, rule, dl, init=init)
                 if o.reason == "no_quote" and tp.empty:
                     o = _natural_from_minutes(quotes, day, cache, r, k, w, side) or o
                 mid_at_fill = None

@@ -323,3 +323,26 @@ def test_empty_tape_crosses_at_the_one_minute_natural(tmp_path):
     assert (e.width_c == 1).all() and not e.passive.any()
     ev2 = fq.measure(tdir, tmp_path / "f2")
     assert ev2[(ev2.right == r) & (ev2.strike == k) & (ev2.window == "entry")].cost_c.isna().all()
+
+
+def test_simulate_uses_an_initial_quote_when_the_tape_starts_after_t0():
+    tp = tape([("10:00:30", 1.01, 6, 1.00, 1.01, 50, 4),
+               ("10:00:40", 1.01, 1, 1.00, 1.01, 50, 4)])
+    assert fq.simulate(tp, T0, "sell", 60, "queue", DL).reason == "no_quote"
+    o = fq.simulate(tp, T0, "sell", 60, "queue", DL, init=(1.00, 1.01, 50.0, 4.0))
+    assert (o.price, o.ts, o.reason) == (1.01, T("10:00:30"), "queue") and o.mid0 == pytest.approx(1.005)
+
+
+def test_measure_seeds_late_tapes_from_the_one_minute_quote(tmp_path):
+    qdir, tdir = tmp_path / "q", tmp_path / "t"
+    qdir.mkdir(), tdir.mkdir()
+    pd.DataFrame({"DATE": ["06/11/2024"], "CLOSE": [16.0]}).to_csv(tmp_path / "vix.csv", index=False)
+    day = dt.date(2024, 6, 12)
+    legs = write_session(qdir, tdir, day, bd.load_vix(tmp_path / "vix.csv"))
+    r, k, _ = legs[0]
+    f = fq.tick_path(tdir, day, r, k, "entry")
+    tp = pd.read_parquet(f)
+    tp[tp.ts > pd.Timestamp(f"{day} 10:00:00", tz=fq.ET)].to_parquet(f)       # first trade after the decision
+    ev = fq.measure(tdir, tmp_path / "f", quotes=qdir)
+    e = ev[(ev.right == r) & (ev.strike == k) & (ev.window == "entry")]
+    assert e.cost_c.notna().all() and not (e.reason == "no_quote").any()
