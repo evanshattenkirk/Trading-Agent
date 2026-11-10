@@ -445,7 +445,7 @@ def test_group_shares_risk_and_shows_f2_on_the_strip():
     h, eng, ch, f1 = opened_call()
     g = HostGroup(None, None, None, h)
     snap = g.snapshot()
-    assert [b["book"] for b in snap["books"]] == ["F2"] and snap["f2"]["universe"]
+    assert [b["book"] for b in snap["books"]] == ["A", "F2"] and snap["f2"]["universe"]     # A leads the strip
     assert g.open_risk() == pytest.approx(h.book.open[0].max_loss)
 
 
@@ -456,11 +456,12 @@ def test_opens_and_closes_refresh_the_book_strip():
     stock(f1, "NVDA", 100.6, et(THU, 9, 36))
     tick(h, ch, et(THU, 9, 36))
     [strip] = eng.bus.of("books")
-    assert strip["books"][0]["book"] == "F2" and strip["books"][0]["trades"] == 1 and "open" not in strip["books"][0]
+    assert strip["books"][0]["book"] == "A"                                  # A leads the strip, then F2
+    assert strip["books"][1]["book"] == "F2" and strip["books"][1]["trades"] == 1 and "open" not in strip["books"][1]
     ch.set("NVDA", EXP, 100, "call", 6.40, 6.50, 0.5)
     ch.set("NVDA", EXP, 105, "call", 2.20, 2.30, 0.55)
     tick(h, ch, et(THU, 11, 0))                                             # take profit
-    assert len(eng.bus.of("books")) == 2 and eng.bus.of("books")[-1]["books"][0]["day_pnl"] > 0
+    assert len(eng.bus.of("books")) == 2 and eng.bus.of("books")[-1]["books"][1]["day_pnl"] > 0
 
 
 def test_build_is_paper_only_and_idle_in_sim():
