@@ -141,10 +141,9 @@ def _value(p: QuotePanel, legs, minute: int, model: str, opening: bool):
         if ba is None:
             return None
         short = q < 0
-        if opening:
-            tot += fill(*ba, "sell", model) if short else -fill(*ba, "buy", model)
-        else:
-            tot += fill(*ba, "buy", model) if short else -fill(*ba, "sell", model)
+        side = ("sell" if short else "buy") if opening else ("buy" if short else "sell")
+        px = model(*ba, side, opening) if callable(model) else fill(*ba, side, model)   # callable: d_fill_quality
+        tot += px if (side == "sell") == opening else -px      # opening: credit = sells - buys; closing: debit
     return tot
 
 

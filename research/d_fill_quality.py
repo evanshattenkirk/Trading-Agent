@@ -140,3 +140,53 @@ def cost_cents(o: Order, side: str) -> float | None:
         return None
     c = (o.price - o.mid0) * 100 if side == "buy" else (o.mid0 - o.price) * 100
     return round(c, 6)
+
+
+# ---------------------------------------------------------------- Part 2: fill models for the D replay
+
+Costs = dict  # (window "entry"/"close", side "buy"/"sell", width bucket 1/2/3) -> cents worse than mid
+
+
+def width_bucket(width_c: int) -> int:
+    return 1 if width_c <= 1 else (2 if width_c == 2 else 3)
+
+
+def _clamped(bid: float, ask: float, side: str, c_cents: float) -> float:
+    mid = (bid + ask) / 2
+    if side == "buy":
+        return min(ask, max(bid, mid + c_cents / 100))
+    return max(bid, min(ask, mid - c_cents / 100))
+
+
+def measured_model(costs: Costs):
+    """Leg price = mid -/+ the measured cost for (window, side, width bucket), between the passive side and natural.
+    A missing bucket falls back to the next wider one for that window and side, then to taker."""
+    def f(bid: float, ask: float, side: str, opening: bool) -> float:
+        window = "entry" if opening else "close"
+        wb = width_bucket(int(round((ask - bid) * 100)))
+        for b in range(wb, 4):
+            c = costs.get((window, side, b))
+            if c is not None and not (isinstance(c, float) and math.isnan(c)):
+                return _clamped(bid, ask, side, c)
+        return ask if side == "buy" else bid
+    return f
+
+
+def uniform_model(c_cents: float):
+    def f(bid: float, ask: float, side: str, opening: bool) -> float:
+        return _clamped(bid, ask, side, c_cents)
+    return f
+
+
+def replay_d(p, legs, model) -> dict | None:
+    """bd_real_quotes.replay for D with any fill model; a stop exit is re-priced at taker (a stop is urgent)."""
+    import bd_real_quotes as bd
+    r = bd.replay(p, legs, bd.D_ENTRY, bd.D_CLOSE, model, width=2)
+    if r is None or r["why"] != "stop":
+        return r
+    d = bd._value(p, legs, r["exit_minute"], "taker", opening=False)
+    if d is None:
+        return r
+    v = min(d, 2.0) + len(legs) * bd.FEE
+    pnl = r["credit"] - v
+    return {**r, "pnl": pnl, "ret": pnl / r["risk"]}

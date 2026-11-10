@@ -106,3 +106,64 @@ def test_cost_signs():
     sell = fq.Order(1.00, T0, 1.005, 1, False, "walked_to_natural")
     assert fq.cost_cents(buy, "buy") == pytest.approx(-0.5)
     assert fq.cost_cents(sell, "sell") == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------- task 2: fill models in the D replay
+
+import bd_real_quotes as bd  # noqa: E402
+
+
+def mm(hm: str) -> int:
+    h, m_ = hm.split(":")
+    return int(h) * 60 + int(m_)
+
+
+def panel(price_by_minute: dict, half_spread: float = 0.01):
+    px = pd.Series(price_by_minute).sort_index().reindex(range(mm("09:30"), mm("16:00") + 1)).ffill().bfill()
+    rows = [{"minute": t, "right": "C", "strike": 500.0, "bid": round(v - half_spread, 4),
+             "ask": round(v + half_spread, 4)} for t, v in px.items()]
+    return bd.QuotePanel(pd.DataFrame(rows))
+
+
+def test_measured_model_clamps():
+    f = fq.measured_model({("entry", "sell", 1): -0.5})
+    assert f(1.00, 1.01, "sell", True) == pytest.approx(1.01)
+    f2 = fq.measured_model({("entry", "sell", 1): 2.0})
+    assert f2(1.00, 1.01, "sell", True) == pytest.approx(1.00)
+    f3 = fq.measured_model({("close", "buy", 1): -3.0})
+    assert f3(1.00, 1.01, "buy", False) == pytest.approx(1.00)        # never better than the passive side
+
+
+def test_measured_model_fallback():
+    f = fq.measured_model({("entry", "buy", 3): 0.25})
+    assert f(1.00, 1.02, "buy", True) == pytest.approx(1.0125)        # 2c key missing -> 3c key
+    g = fq.measured_model({})
+    assert g(1.00, 1.02, "buy", True) == pytest.approx(1.02)          # nothing -> taker
+    assert g(1.00, 1.02, "sell", False) == pytest.approx(1.00)
+
+
+def test_uniform_zero_is_mid():
+    assert fq.uniform_model(0)(1.00, 1.02, "sell", True) == pytest.approx(1.01)
+    assert fq.uniform_model(0.5)(1.00, 1.02, "buy", False) == pytest.approx(1.015)
+
+
+def test_callable_model_matches_string_models():
+    p = panel({mm("09:30"): 1.00, mm("11:00"): 0.45})
+    legs = [("C", 500.0, -1)]
+    a = bd.replay(p, legs, mm("10:00"), mm("15:25"), fq.uniform_model(0), width=2)
+    b = bd.replay(p, legs, mm("10:00"), mm("15:25"), "mid", width=2)
+    assert a == b
+    taker = lambda bid, ask, side, opening: bid if side == "sell" else ask  # noqa: E731
+    assert bd.replay(p, legs, mm("10:00"), mm("15:25"), taker, width=2) == \
+        bd.replay(p, legs, mm("10:00"), mm("15:25"), "taker", width=2)
+
+
+def test_replay_d_stop_pays_taker():
+    p = panel({mm("09:30"): 0.50, mm("11:00"): 1.20}, half_spread=0.02)
+    legs = [("C", 500.0, -1)]
+    r = fq.replay_d(p, legs, fq.uniform_model(0))
+    assert r["why"] == "stop" and r["exit_minute"] == mm("11:00")
+    cr = 0.50 - bd.FEE
+    assert r["credit"] == pytest.approx(cr)
+    assert r["pnl"] == pytest.approx(cr - (1.22 + bd.FEE))
+    assert r["ret"] == pytest.approx(r["pnl"] / (2 - cr))
