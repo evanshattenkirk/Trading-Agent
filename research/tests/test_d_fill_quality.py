@@ -216,3 +216,36 @@ def test_verdict_fails_one_half():
 def test_verdict_fails_queue2():
     v = fq.verdict(trades(1.0), trades(-0.2))
     assert v["pass"] is False and v["checks"] == [True, True, False] and v["avg_queue2"] < 0
+
+
+# ---------------------------------------------------------------- task 4: tick normalisation and D's legs
+
+import datetime as dt  # noqa: E402
+
+
+def test_normalize_ticks_columns_and_tz():
+    raw = pd.DataFrame({
+        "symbol": ["SPY", "SPY"], "expiration": ["2026-11-06"] * 2, "strike": [757.0, 757.0], "right": ["CALL"] * 2,
+        "trade_timestamp": pd.to_datetime(["2026-11-06 09:45:07.100", "2026-11-06 09:45:04.897"]).tz_localize("America/New_York"),
+        "quote_timestamp": pd.to_datetime(["2026-11-06 09:45:07.09", "2026-11-06 09:45:04.86"]).tz_localize("America/New_York"),
+        "condition": [18, 18], "size": [1, 5], "exchange": [73, 43], "price": [0.15, 0.14],
+        "bid_size": [2045, 1625], "bid": [0.14, 0.14], "ask_size": [585, 607], "ask": [0.15, 0.15]})
+    t = fq.normalize_ticks(raw.assign(trade_timestamp=raw.trade_timestamp.dt.tz_convert("UTC")))
+    assert list(t.columns) == fq.TAPE_COLS
+    assert str(t.ts.dt.tz) == "America/New_York" and t.ts.is_monotonic_increasing
+    assert t.iloc[0].price == 0.14 and t.iloc[0].ts.hour == 9
+
+
+def test_d_legs_for_day():
+    rows = []
+    for t in range(mm("09:30"), mm("16:00") + 1):
+        for k in range(590, 611):
+            c, p_ = max(600.2 - k, 0) + 0.5, max(k - 600.2, 0) + 0.5
+            rows += [{"minute": t, "right": "C", "strike": float(k), "bid": c - 0.01, "ask": c + 0.01},
+                     {"minute": t, "right": "P", "strike": float(k), "bid": p_ - 0.01, "ask": p_ + 0.01}]
+    p = bd.QuotePanel(pd.DataFrame(rows))
+    vix = pd.Series([16.0], index=[dt.date(2024, 6, 11)])
+    legs = fq.d_legs_for_day(p, dt.date(2024, 6, 12), vix)
+    assert legs == bd.legs_D(bd.spot(p, bd.D_ENTRY), 16.0)
+    assert sorted(q for _, _, q in legs) == [-1, -1, 1, 1]
+    assert fq.d_legs_for_day(p, dt.date(2024, 6, 11), vix) is None          # no prior VIX close

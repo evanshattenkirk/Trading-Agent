@@ -10,10 +10,22 @@ replay from research/bd_real_quotes.py with the measured cost per leg.
 """
 from __future__ import annotations
 
+import argparse
+import csv
+import datetime as dt
+import logging
 import math
+import os
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+log = logging.getLogger("d_fill_quality")
 
 TAPE_COLS = ["ts", "price", "size", "bid", "ask", "bid_size", "ask_size"]
 RULES = ("queue", "queue2", "optimistic", "strict")
@@ -218,3 +230,128 @@ def verdict(primary: pd.DataFrame, queue2: pd.DataFrame) -> dict:
     return {"pass": all(checks), "checks": checks, "n": s.get("n", 0), "avg": avg, "t": t,
             "avg_2016_2021": h1.get("avg"), "avg_2022_2026": h2.get("avg"), "avg_queue2": s2.get("avg"),
             "t_queue2": s2.get("t")}
+
+
+# ---------------------------------------------------------------- data: D's legs and the tick pull
+
+ET = "America/New_York"
+WINDOWS = {"entry": ("09:59:00", "10:10:00"), "close": ("15:19:00", "15:28:00")}
+
+
+def normalize_ticks(raw: pd.DataFrame) -> pd.DataFrame:
+    """ThetaData option_history_trade_quote rows -> TAPE_COLS, timestamps in ET, sorted by time."""
+    if raw is None or len(raw) == 0:
+        return pd.DataFrame(columns=TAPE_COLS)
+    ts = pd.to_datetime(raw["trade_timestamp"])
+    ts = ts.dt.tz_localize(ET) if ts.dt.tz is None else ts.dt.tz_convert(ET)
+    out = pd.DataFrame({"ts": ts, "price": raw["price"].astype(float), "size": raw["size"].astype(float),
+                        "bid": raw["bid"].astype(float), "ask": raw["ask"].astype(float),
+                        "bid_size": raw["bid_size"].astype(float), "ask_size": raw["ask_size"].astype(float)})
+    return out.sort_values("ts", kind="stable").reset_index(drop=True)[TAPE_COLS]
+
+
+def d_legs_for_day(p, d: dt.date, vix: pd.Series):
+    """D's four legs as the verdict replay picks them: parity spot at 10:00 ET, prior VIX close."""
+    import bd_real_quotes as bd
+    s = bd.spot(p, bd.D_ENTRY)
+    vx = bd.prev_close(vix, d)
+    if s is None or math.isnan(vx):
+        return None
+    return bd.legs_D(s, vx)
+
+
+def tick_path(out: Path, d: dt.date, right: str, strike: float, window: str) -> Path:
+    return out / f"{d.isoformat()}_{right}{strike:g}_{window}.parquet"
+
+
+def _client():
+    from thetadata import ThetaClient
+    return ThetaClient(dataframe_type="pandas", api_key=os.environ["THETADATA_API_KEY"])
+
+
+def _fetch_ticks(client, d: dt.date, right: str, strike: float, window: str, retries: int = 6) -> pd.DataFrame:
+    import grpc
+    from thetadata.errors import NoDataFoundError
+    from fetch_thetadata_spy0dte import TRANSIENT
+    start, end = WINDOWS[window]
+    delay = 5.0
+    for attempt in range(1, retries + 1):
+        try:
+            return normalize_ticks(client.option_history_trade_quote(
+                symbol="SPY", expiration=d, date=d, strike=f"{strike:g}", right="call" if right == "C" else "put",
+                start_time=start, end_time=end))
+        except NoDataFoundError:
+            return normalize_ticks(None)
+        except grpc.RpcError as e:
+            if e.code() not in TRANSIENT or attempt == retries:
+                raise
+        except (ConnectionError, TimeoutError):
+            if attempt == retries:
+                raise
+        time.sleep(delay)
+        delay = min(delay * 2, 120)
+    return normalize_ticks(None)
+
+
+def pull_ticks(quotes: Path, vix_path: Path, out: Path, workers: int = 4) -> None:
+    import bd_real_quotes as bd
+    vix = bd.load_vix(vix_path)
+    out.mkdir(parents=True, exist_ok=True)
+    jobs = []
+    for f in sorted(quotes.glob("*.parquet")):
+        d = dt.date.fromisoformat(f.stem)
+        try:
+            p = bd.QuotePanel(bd.normalize(pd.read_parquet(f)))
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s unreadable: %s", f.name, e)
+            continue
+        if p.last_minute < bd.B_CLOSE:
+            continue                                          # half day: the verdict drops it too
+        legs = d_legs_for_day(p, d, vix)
+        if legs is None:
+            continue
+        for r, k, _ in legs:
+            for w in WINDOWS:
+                if not tick_path(out, d, r, k, w).exists():
+                    jobs.append((d, r, k, w))
+    log.info("%d tick requests to make", len(jobs))
+    client = _client()
+    fails = out.parent / "d_ticks_failures.csv"
+
+    def one(job):
+        d, r, k, w = job
+        df = _fetch_ticks(client, d, r, k, w)
+        df.to_parquet(tick_path(out, d, r, k, w))
+        return len(df)
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(one, j): j for j in jobs}
+        for fut in as_completed(futs):
+            j = futs[fut]
+            try:
+                fut.result()
+            except Exception as e:  # noqa: BLE001
+                with fails.open("a", newline="") as fh:
+                    csv.writer(fh).writerow([j[0], j[1], j[2], j[3], repr(e)[:200]])
+            done += 1
+            if done % 500 == 0:
+                log.info("%d/%d", done, len(jobs))
+
+
+def main(argv=None):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    a = sub.add_parser("pull-ticks")
+    a.add_argument("--quotes", type=Path, required=True)
+    a.add_argument("--vix", type=Path, required=True)
+    a.add_argument("--out", type=Path, required=True)
+    a.add_argument("--workers", type=int, default=4)
+    args = ap.parse_args(argv)
+    if args.cmd == "pull-ticks":
+        pull_ticks(args.quotes, args.vix, args.out, args.workers)
+
+
+if __name__ == "__main__":
+    main()
