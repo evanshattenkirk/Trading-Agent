@@ -167,3 +167,52 @@ def test_replay_d_stop_pays_taker():
     assert r["credit"] == pytest.approx(cr)
     assert r["pnl"] == pytest.approx(cr - (1.22 + bd.FEE))
     assert r["ret"] == pytest.approx(r["pnl"] / (2 - cr))
+
+
+# ---------------------------------------------------------------- task 3: pooling and the verdict
+
+import numpy as np  # noqa: E402
+
+
+def test_width_bucket():
+    assert [fq.width_bucket(w) for w in (1, 2, 3, 7)] == [1, 2, 3, 3]
+
+
+def test_pool_costs_means_by_key():
+    ev = pd.DataFrame([
+        {"window": "entry", "side": "sell", "width_c": 1, "rule": "queue", "hold_s": 60, "cost_c": 0.5},
+        {"window": "entry", "side": "sell", "width_c": 1, "rule": "queue", "hold_s": 60, "cost_c": -0.5},
+        {"window": "entry", "side": "sell", "width_c": 1, "rule": "queue", "hold_s": 60, "cost_c": 0.5},
+        {"window": "entry", "side": "sell", "width_c": 4, "rule": "queue", "hold_s": 60, "cost_c": 1.0},
+        {"window": "entry", "side": "sell", "width_c": 5, "rule": "queue", "hold_s": 60, "cost_c": float("nan")},
+        {"window": "entry", "side": "sell", "width_c": 1, "rule": "strict", "hold_s": 60, "cost_c": 9.0},
+        {"window": "close", "side": "buy", "width_c": 2, "rule": "queue", "hold_s": 15, "cost_c": 9.0},
+    ])
+    c = fq.pool_costs(ev, "queue", 60)
+    assert c == {("entry", "sell", 1): pytest.approx(1 / 6), ("entry", "sell", 3): pytest.approx(1.0)}
+
+
+def trades(mean_pct, n=400, sd_pct=2.0, years=(2016, 2026), seed=1):
+    rng = np.random.default_rng(seed)
+    x = rng.normal(0, sd_pct / 100, n)
+    x = x - x.mean() + mean_pct / 100
+    yrs = np.linspace(years[0], years[1], n).round().astype(int)
+    return pd.DataFrame({"year": yrs, "ret": x})
+
+
+def test_verdict_pass():
+    v = fq.verdict(trades(1.0), trades(0.5, seed=2))
+    assert v["pass"] is True and v["checks"] == [True, True, True] and v["t"] > 2.33
+    assert v["avg"] == pytest.approx(1.0)
+
+
+def test_verdict_fails_one_half():
+    p = trades(1.0)
+    p.loc[p.year <= 2021, "ret"] -= 0.03
+    v = fq.verdict(p, trades(0.5))
+    assert v["pass"] is False and v["checks"][1] is False and v["avg_2016_2021"] < 0
+
+
+def test_verdict_fails_queue2():
+    v = fq.verdict(trades(1.0), trades(-0.2))
+    assert v["pass"] is False and v["checks"] == [True, True, False] and v["avg_queue2"] < 0

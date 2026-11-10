@@ -190,3 +190,31 @@ def replay_d(p, legs, model) -> dict | None:
     v = min(d, 2.0) + len(legs) * bd.FEE
     pnl = r["credit"] - v
     return {**r, "pnl": pnl, "ret": pnl / r["risk"]}
+
+
+# ---------------------------------------------------------------- pooling and the pre-registered verdict
+
+T_BAR = 2.33
+
+
+def pool_costs(events: pd.DataFrame, rule: str, hold_s: int) -> Costs:
+    ev = events[(events.rule == rule) & (events.hold_s == hold_s)].dropna(subset=["cost_c"])
+    if ev.empty:
+        return {}
+    ev = ev.assign(wb=ev.width_c.astype(int).map(width_bucket))
+    return {(w, s, int(b)): float(c) for (w, s, b), c in ev.groupby(["window", "side", "wb"]).cost_c.mean().items()}
+
+
+def verdict(primary: pd.DataFrame, queue2: pd.DataFrame) -> dict:
+    """Spec section 7: t >= 2.33, mean > 0 in 2016-2021 and in 2022-2026, mean > 0 with the queue doubled.
+    Returns are fractions per trade; the reported averages are in percent."""
+    from bd_real_quotes import summ
+    s = summ(primary.ret)
+    h1, h2 = summ(primary[primary.year <= 2021].ret), summ(primary[primary.year >= 2022].ret)
+    s2 = summ(queue2.ret)
+    avg, t = s.get("avg", float("nan")), s.get("t", float("nan"))
+    checks = [bool(avg > 0 and t >= T_BAR), bool(h1.get("avg", -1) > 0 and h2.get("avg", -1) > 0),
+              bool(s2.get("avg", -1) > 0)]
+    return {"pass": all(checks), "checks": checks, "n": s.get("n", 0), "avg": avg, "t": t,
+            "avg_2016_2021": h1.get("avg"), "avg_2022_2026": h2.get("avg"), "avg_queue2": s2.get("avg"),
+            "t_queue2": s2.get("t")}
