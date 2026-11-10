@@ -154,6 +154,21 @@ from the Mac; Google Trends from any session with `pytrends`:
     python research/fetch_retail_trends.py            # research/data/retail/trends.csv
     python research/r1_retail_search.py               # r1_retail_search.md / r1_retail_search_results.json
 
+Book D fill-quality study (spec docs/superpowers/specs/2026-11-09-d-fill-quality-design.md, pass rule fixed
+before any run): each D leg's resting-then-walking limit order replayed on ThetaData tick trades with the NBBO,
+then D re-scored at the measured cost per leg:
+
+    .venv/bin/python research/fetch_thetadata_spy0dte.py --start 2016-01-08 --end 2026-09-25   # 1-minute quotes
+    curl -sSL https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv -o data/vix.csv
+    .venv/bin/python research/d_fill_quality.py pull-ticks --quotes data/thetadata/spy_0dte --vix data/vix.csv \
+        --out data/thetadata/d_ticks
+    .venv/bin/python research/d_fill_quality.py measure --ticks data/thetadata/d_ticks --out data/thetadata/d_fill \
+        --quotes data/thetadata/spy_0dte
+    .venv/bin/python research/d_fill_quality.py score --quotes data/thetadata/spy_0dte --vix data/vix.csv \
+        --events data/thetadata/d_fill/events.parquet --out research   # d_fill_quality.md + _results.json
+
+Result (2026-11-10): **FAIL**. Legs fill about half the spread from mid; D at the measured cost is −1.72% a trade (t −5.91).
+
 ## Tests
 
     python -m pytest -q research/tests      # pyarrow is needed for the parquet tests (requirements.lock has it)
