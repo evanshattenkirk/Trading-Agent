@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import datetime as dt
 import logging
 import math
@@ -339,6 +340,225 @@ def pull_ticks(quotes: Path, vix_path: Path, out: Path, workers: int = 4) -> Non
                 log.info("%d/%d", done, len(jobs))
 
 
+# ---------------------------------------------------------------- Part 1: measure
+
+HOLDS = (15, 60, 300)
+PRIMARY_RULE, PRIMARY_HOLD = "queue", 60
+DECISION = {"entry": ("10:00:00", "10:10:00"), "close": ("15:20:00", "15:28:00")}
+
+
+def _leg_sides(files: list[tuple[str, float, str]]) -> dict:
+    """Which of a day's legs are shorts: the lower call strike and the higher put strike (legs_D's layout)."""
+    calls = sorted({k for r, k, _ in files if r == "C"})
+    puts = sorted({k for r, k, _ in files if r == "P"})
+    short = {("C", calls[0])} if calls else set()
+    short |= {("P", puts[-1])} if puts else set()
+    return {(r, k): (r, k) in short for r, k in {(r, k) for r, k, _ in files}}
+
+
+def _parse(name: str):
+    d, leg, w = name[:-len(".parquet")].split("_")
+    return dt.date.fromisoformat(d), leg[0], float(leg[1:]), w
+
+
+def _measure_day(args) -> list[dict]:
+    day, items = args
+    shorts = _leg_sides([(r, k, w) for _, r, k, w in items])
+    rows = []
+    for path, r, k, w in items:
+        tp = pd.read_parquet(path)
+        is_short = shorts[(r, k)]
+        side = ("sell" if is_short else "buy") if w == "entry" else ("buy" if is_short else "sell")
+        t0 = pd.Timestamp(f"{day} {DECISION[w][0]}", tz=ET)
+        dl = pd.Timestamp(f"{day} {DECISION[w][1]}", tz=ET)
+        for rule in RULES:
+            for h in HOLDS:
+                o = simulate(tp, t0, side, h, rule, dl)
+                mid_at_fill = None
+                if o.price is not None and o.ts is not None:
+                    q = tp[(tp.ts <= o.ts) & (tp.bid > 0) & (tp.ask > tp.bid)]
+                    if len(q):
+                        mid_at_fill = (q.bid.iloc[-1] + q.ask.iloc[-1]) / 2
+                c_fill = None if mid_at_fill is None else round(
+                    ((o.price - mid_at_fill) if side == "buy" else (mid_at_fill - o.price)) * 100, 6)
+                rows.append({"date": day, "window": w, "side": side, "right": r, "strike": k, "short": is_short,
+                             "width_c": o.width_c, "rule": rule, "hold_s": h, "price": o.price, "mid0": o.mid0,
+                             "cost_c": cost_cents(o, side), "reason": o.reason, "passive": o.passive,
+                             "secs_to_fill": None if o.ts is None else (o.ts - t0).total_seconds(),
+                             "cost_vs_mid_at_fill_c": c_fill})
+    return rows
+
+
+def measure(ticks: Path, out: Path, workers: int = 1) -> pd.DataFrame:
+    by_day: dict = {}
+    for f in sorted(ticks.glob("*.parquet")):
+        d, r, k, w = _parse(f.name)
+        by_day.setdefault(d, []).append((f, r, k, w))
+    jobs = sorted(by_day.items())
+    rows: list[dict] = []
+    if workers > 1:
+        from multiprocessing import Pool
+        with Pool(workers) as pool:
+            for part in pool.imap_unordered(_measure_day, jobs, chunksize=4):
+                rows.extend(part)
+    else:
+        for j in jobs:
+            rows.extend(_measure_day(j))
+    ev = pd.DataFrame(rows)
+    out.mkdir(parents=True, exist_ok=True)
+    ev.to_parquet(out / "events.parquet")
+    return ev
+
+
+# ---------------------------------------------------------------- Part 2: score
+
+UNIFORM = tuple(x / 100 for x in range(-50, 101, 25))
+
+
+def _score_day(args) -> list[dict]:
+    import bd_real_quotes as bd
+    f, vix, models = args
+    d = dt.date.fromisoformat(f.stem)
+    try:
+        p = bd.QuotePanel(bd.normalize(pd.read_parquet(f)))
+    except Exception:  # noqa: BLE001
+        return []
+    if p.last_minute < bd.B_CLOSE or bd.spot(p, bd.B_ENTRY) is None:
+        return []                                          # the verdict's skips (half days, no spot)
+    legs = d_legs_for_day(p, d, vix)
+    if legs is None:
+        return []
+    base = {"date": d, "year": d.year}
+    rows = []
+    for name in ("mid", "patient", "taker"):
+        r = bd.replay(p, legs, bd.D_ENTRY, bd.D_CLOSE, name, width=2)
+        if r:
+            rows.append({**base, "model": name, **r})
+    for name, fn in models.items():
+        r = replay_d(p, legs, fn)
+        if r:
+            rows.append({**base, "model": name, **r})
+    for c in UNIFORM:
+        r = replay_d(p, legs, uniform_model(c))
+        if r:
+            rows.append({**base, "model": f"uniform {c:+.2f}c", **r})
+    return rows
+
+
+def _measured_models(events: pd.DataFrame) -> dict:
+    return {f"measured {rule} H{h}": measured_model(pool_costs(events, rule, h)) for rule in RULES for h in HOLDS}
+
+
+def score(quotes: Path, vix_path: Path, events_path: Path, out_dir: Path, workers: int = 1) -> dict:
+    import bd_real_quotes as bd
+    vix = bd.load_vix(vix_path)
+    events = pd.read_parquet(events_path)
+    models = _measured_models(events)
+    files = sorted(quotes.glob("*.parquet"))
+    rows: list[dict] = []
+    if workers > 1:
+        from multiprocessing import Pool
+        # closures don't pickle: rebuild the models in each worker from the events
+        with Pool(workers, initializer=_init_worker, initargs=(events,)) as pool:
+            for part in pool.imap_unordered(_score_day_w, [(f, vix) for f in files], chunksize=8):
+                rows.extend(part)
+    else:
+        for f in files:
+            rows.extend(_score_day((f, vix, models)))
+    df = pd.DataFrame(rows)
+    res = report(df, events, out_dir)
+    return res
+
+
+_W_MODELS: dict = {}
+
+
+def _init_worker(events):
+    _W_MODELS.update(_measured_models(events))
+
+
+def _score_day_w(args):
+    f, vix = args
+    return _score_day((f, vix, _W_MODELS))
+
+
+def _cost_table(events: pd.DataFrame) -> list[dict]:
+    g = events.dropna(subset=["cost_c"]).assign(wb=lambda e: e.width_c.astype(int).map(width_bucket))
+    out = []
+    for (rule, h, w, side, wb), x in g.groupby(["rule", "hold_s", "window", "side", "wb"]):
+        out.append({"rule": rule, "hold_s": int(h), "window": w, "side": side, "width": int(wb), "n": int(len(x)),
+                    "cost_c": float(x.cost_c.mean()), "passive_fill_rate": float(x.passive.mean()),
+                    "median_secs": float(x.secs_to_fill.median()),
+                    "cost_vs_mid_at_fill_c": float(x.cost_vs_mid_at_fill_c.mean())})
+    return out
+
+
+def report(df: pd.DataFrame, events: pd.DataFrame, out_dir: Path) -> dict:
+    from bd_real_quotes import summ
+    def s(model):
+        x = df[df.model == model] if len(df) else df
+        return summ(x.ret) if len(x) else {"n": 0}
+    prim = f"measured {PRIMARY_RULE} H{PRIMARY_HOLD}"
+    q2 = f"measured queue2 H{PRIMARY_HOLD}"
+    pdf = df[df.model == prim] if len(df) else pd.DataFrame(columns=["year", "ret"])
+    qdf = df[df.model == q2] if len(df) else pd.DataFrame(columns=["year", "ret"])
+    v = verdict(pdf, qdf)
+    uniform = [{"c": c, **s(f"uniform {c:+.2f}c")} for c in UNIFORM]
+    be = None
+    for a, b in zip(uniform, uniform[1:]):
+        if a.get("avg") is not None and b.get("avg") is not None and a["avg"] > 0 >= b["avg"]:
+            be = a["c"] + (b["c"] - a["c"]) * a["avg"] / (a["avg"] - b["avg"])
+    measured = {f"{r} H{h}": s(f"measured {r} H{h}") for r in RULES for h in HOLDS}
+    per_year = {int(y): summ(g.ret) for y, g in pdf.groupby("year")} if len(pdf) else {}
+    reasons = (events[(events.rule == PRIMARY_RULE) & (events.hold_s == PRIMARY_HOLD)]
+               .groupby(["window", "reason"]).size().unstack(fill_value=0).to_dict(orient="index"))
+    res = {"verdict": v, "reference": {m: s(m) for m in ("mid", "patient", "taker")}, "measured": measured,
+           "uniform": uniform, "break_even_c": be, "per_year_primary": per_year,
+           "costs": _cost_table(events), "reasons_primary": reasons,
+           "exits_primary": pdf.why.value_counts().to_dict() if len(pdf) else {},
+           "quiet_filter": "not run: no SPY 1-minute bars in the cloud session (information only, spec section 5)"}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "d_fill_quality_results.json").write_text(json.dumps(res, indent=1, default=str))
+    (out_dir / "d_fill_quality.md").write_text(_markdown(res))
+    return res
+
+
+def _f(x, nd=2):
+    return "-" if x is None or (isinstance(x, float) and math.isnan(x)) else f"{x:+.{nd}f}"
+
+
+def _markdown(res: dict) -> str:
+    v = res["verdict"]
+    L = ["# Book D fill-quality study: results", "",
+         "Spec and pass rule: `docs/superpowers/specs/2026-11-09-d-fill-quality-design.md` (fixed before the run). "
+         "Script: `research/d_fill_quality.py`. Returns are % of max risk per trade.", "",
+         f"## Verdict: **{'PASS' if v['pass'] else 'FAIL'}**", "",
+         f"Primary (queue rule, hold 60 s, stops at taker): n {v['n']}, mean {_f(v['avg'])}%, t {_f(v['t'])} "
+         f"(bar 2.33); 2016-2021 {_f(v['avg_2016_2021'])}%, 2022-2026 {_f(v['avg_2022_2026'])}%; "
+         f"queue doubled {_f(v['avg_queue2'])}%. Checks: {v['checks']}.", "",
+         "## D under each fill model", "", "| Model | n | Mean % | t | PF | Win % |", "|---|---|---|---|---|---|"]
+    for name, x in list(res["reference"].items()) + [(f"measured {k}", x) for k, x in res["measured"].items()]:
+        L.append(f"| {name} | {x.get('n', 0)} | {_f(x.get('avg'))} | {_f(x.get('t'))} | "
+                 f"{_f(x.get('pf'))} | {_f(x.get('win'), 1)} |")
+    L += ["", "## Uniform cost per leg (stops at taker)", "", "| c (cents vs mid) | n | Mean % | t |", "|---|---|---|---|"]
+    for u in res["uniform"]:
+        L.append(f"| {u['c']:+.2f} | {u.get('n', 0)} | {_f(u.get('avg'))} | {_f(u.get('t'))} |")
+    L += ["", f"Break-even uniform cost: {_f(res['break_even_c'])} c a leg.", "",
+          "## Measured cost per leg (cents worse than the decision-time mid)", "",
+          "| Rule | Hold s | Window | Side | Width | n | Cost c | Passive fill % | Median s to fill | Cost vs mid at fill c |",
+          "|---|---|---|---|---|---|---|---|---|---|"]
+    for c in res["costs"]:
+        L.append(f"| {c['rule']} | {c['hold_s']} | {c['window']} | {c['side']} | {c['width']}{'+' if c['width'] == 3 else ''}c "
+                 f"| {c['n']} | {_f(c['cost_c'])} | {100 * c['passive_fill_rate']:.0f} | {c['median_secs']:.0f} "
+                 f"| {_f(c['cost_vs_mid_at_fill_c'])} |")
+    L += ["", "## Primary, by year", "", "| Year | n | Mean % | t |", "|---|---|---|---|"]
+    for y, x in res["per_year_primary"].items():
+        L.append(f"| {y} | {x.get('n', 0)} | {_f(x.get('avg'))} | {_f(x.get('t'))} |")
+    L += ["", f"Exits (primary): {res['exits_primary']}", "", f"Order outcomes (primary): {res['reasons_primary']}", "",
+          f"Quiet filter: {res['quiet_filter']}", ""]
+    return "\n".join(L)
+
+
 def main(argv=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -348,9 +568,24 @@ def main(argv=None):
     a.add_argument("--vix", type=Path, required=True)
     a.add_argument("--out", type=Path, required=True)
     a.add_argument("--workers", type=int, default=4)
+    b = sub.add_parser("measure")
+    b.add_argument("--ticks", type=Path, required=True)
+    b.add_argument("--out", type=Path, required=True)
+    b.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    c = sub.add_parser("score")
+    c.add_argument("--quotes", type=Path, required=True)
+    c.add_argument("--vix", type=Path, required=True)
+    c.add_argument("--events", type=Path, required=True)
+    c.add_argument("--out", type=Path, required=True)
+    c.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     args = ap.parse_args(argv)
     if args.cmd == "pull-ticks":
         pull_ticks(args.quotes, args.vix, args.out, args.workers)
+    elif args.cmd == "measure":
+        measure(args.ticks, args.out, args.workers)
+    elif args.cmd == "score":
+        res = score(args.quotes, args.vix, args.events, args.out, args.workers)
+        print(json.dumps(res["verdict"], indent=1, default=str))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Tests for research/d_fill_quality.py (book D fill-quality study, spec 2026-11-09)."""
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -249,3 +250,58 @@ def test_d_legs_for_day():
     assert legs == bd.legs_D(bd.spot(p, bd.D_ENTRY), 16.0)
     assert sorted(q for _, _, q in legs) == [-1, -1, 1, 1]
     assert fq.d_legs_for_day(p, dt.date(2024, 6, 11), vix) is None          # no prior VIX close
+
+
+# ---------------------------------------------------------------- task 5: measure and score end to end
+
+import json  # noqa: E402
+
+
+def write_session(qdir: Path, tdir: Path, day: dt.date, vix: pd.Series):
+    """A 1-minute quote file shaped like ThetaData's (ms_of_day), plus a tick tape for each D leg and window."""
+    rows = []
+    for t in range(mm("09:30"), mm("16:00") + 1):
+        left = (mm("16:00") - t) / 390
+        for k in range(580, 621):
+            tv = 3.0 * left * math.exp(-((600.2 - k) / 6) ** 2 / 2) + 0.03
+            c, p_ = max(600.2 - k, 0) + tv, max(k - 600.2, 0) + tv
+            for r, v in (("C", c), ("P", p_)):
+                rows.append({"ms_of_day": t * 60_000, "strike": float(k), "right": r,
+                             "bid": round(v - 0.005, 3), "ask": round(v + 0.005, 3)})
+    raw = pd.DataFrame(rows)
+    raw.to_parquet(qdir / f"{day.isoformat()}.parquet")
+    p = bd.QuotePanel(bd.normalize(raw))
+    legs = fq.d_legs_for_day(p, day, vix)
+    for r, k, q in legs:
+        for w, (a, b) in fq.WINDOWS.items():
+            m0 = mm(a[:5]) + 1
+            ba = p.ba(r, k, m0)
+            bid, ask = round(ba[0], 2), round(ba[0], 2) + 0.01
+            base = pd.Timestamp(f"{day} {a}", tz=fq.ET)
+            tp = pd.DataFrame([{"ts": base + pd.Timedelta(seconds=s), "price": px, "size": 5.0, "bid": bid,
+                                "ask": ask, "bid_size": 3.0, "ask_size": 3.0}
+                               for s, px in ((30, bid), (80, ask), (95, bid), (200, ask))], columns=fq.TAPE_COLS)
+            tp.to_parquet(fq.tick_path(tdir, day, r, k, w))
+    return legs
+
+
+def test_measure_and_score_end_to_end(tmp_path):
+    qdir, tdir, fdir, rdir = (tmp_path / x for x in ("q", "t", "f", "r"))
+    for d_ in (qdir, tdir, fdir, rdir):
+        d_.mkdir()
+    pd.DataFrame({"DATE": ["06/10/2024", "06/11/2024", "06/12/2024"], "CLOSE": [15.0, 16.0, 14.0]}).to_csv(
+        tmp_path / "vix.csv", index=False)
+    vix = bd.load_vix(tmp_path / "vix.csv")
+    for day in (dt.date(2024, 6, 11), dt.date(2024, 6, 12)):
+        write_session(qdir, tdir, day, vix)
+    ev = fq.measure(tdir, fdir)
+    assert (fdir / "events.parquet").exists()
+    assert len(ev) == 2 * 4 * 2 * len(fq.RULES) * len(fq.HOLDS)
+    assert set(ev.side[(ev.window == "entry")]) == {"buy", "sell"}
+    assert ev.cost_c.notna().all()
+    res = fq.score(qdir, tmp_path / "vix.csv", fdir / "events.parquet", rdir)
+    js = json.loads((rdir / "d_fill_quality_results.json").read_text())
+    assert (rdir / "d_fill_quality.md").exists()
+    assert "pass" in js["verdict"] and len(js["uniform"]) == 7
+    assert {"mid", "patient", "taker"} <= set(js["reference"])
+    assert res["verdict"]["pass"] == js["verdict"]["pass"]
