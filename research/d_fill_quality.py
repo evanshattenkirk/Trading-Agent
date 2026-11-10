@@ -353,12 +353,16 @@ DECISION = {"entry": ("10:00:00", "10:10:00"), "close": ("15:20:00", "15:28:00")
 
 
 def _leg_sides(files: list[tuple[str, float, str]]) -> dict:
-    """Which of a day's legs are shorts: the lower call strike and the higher put strike (legs_D's layout)."""
-    calls = sorted({k for r, k, _ in files if r == "C"})
-    puts = sorted({k for r, k, _ in files if r == "P"})
-    short = {("C", calls[0])} if calls else set()
-    short |= {("P", puts[-1])} if puts else set()
-    return {(r, k): (r, k) in short for r, k in {(r, k) for r, k, _ in files}}
+    """Which of a day's legs are shorts: the lower call strike and the higher put strike (legs_D's layout).
+
+    A right without both its strikes on disk (a failed pull) can't be told apart, so its legs map to None
+    and are skipped rather than risk measuring a wing on the short's side."""
+    strikes = {r: sorted({k for rr, k, _ in files if rr == r}) for r in ("C", "P")}
+    out = {}
+    for r, k in {(r, k) for r, k, _ in files}:
+        ks = strikes[r]
+        out[(r, k)] = None if len(ks) != 2 else k == (ks[0] if r == "C" else ks[-1])
+    return out
 
 
 def _parse(name: str):
@@ -409,8 +413,10 @@ def _measure_day(args) -> list[dict]:
     cache: dict = {}
     rows = []
     for path, r, k, w in items:
-        tp = pd.read_parquet(path)
         is_short = shorts[(r, k)]
+        if is_short is None:
+            continue
+        tp = pd.read_parquet(path)
         side = ("sell" if is_short else "buy") if w == "entry" else ("buy" if is_short else "sell")
         t0 = pd.Timestamp(f"{day} {DECISION[w][0]}", tz=ET)
         dl = pd.Timestamp(f"{day} {DECISION[w][1]}", tz=ET)

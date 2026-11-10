@@ -354,3 +354,12 @@ def test_zero_bid_is_a_real_quote():
     o = fq.simulate(tp, T0, "buy", 60, "queue", DL)
     assert o.mid0 == pytest.approx(0.005) and o.width_c == 1
     assert (o.price, o.reason) == (0.01, "walked_to_natural") and fq.cost_cents(o, "buy") == pytest.approx(0.5)
+
+
+def test_leg_sides_skips_a_right_missing_a_strike():
+    """A right with only one strike on disk can't be told short from wing, so its legs are skipped (None)."""
+    from d_fill_quality import _leg_sides
+    files = [("C", 560.0, "entry"), ("C", 562.0, "entry"), ("P", 548.0, "close")]
+    sides = _leg_sides(files)
+    assert sides[("C", 560.0)] is True and sides[("C", 562.0)] is False
+    assert sides[("P", 548.0)] is None
