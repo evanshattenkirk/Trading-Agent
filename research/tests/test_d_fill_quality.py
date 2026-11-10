@@ -305,3 +305,21 @@ def test_measure_and_score_end_to_end(tmp_path):
     assert "pass" in js["verdict"] and len(js["uniform"]) == 7
     assert {"mid", "patient", "taker"} <= set(js["reference"])
     assert res["verdict"]["pass"] == js["verdict"]["pass"]
+
+
+def test_empty_tape_crosses_at_the_one_minute_natural(tmp_path):
+    """A leg with no trades in its window can't fill passively: with --quotes it walks to the natural of the
+    1-minute quote at the decision minute (cost = +half the spread), and without quotes it is dropped."""
+    qdir, tdir = tmp_path / "q", tmp_path / "t"
+    qdir.mkdir(), tdir.mkdir()
+    pd.DataFrame({"DATE": ["06/11/2024"], "CLOSE": [16.0]}).to_csv(tmp_path / "vix.csv", index=False)
+    day = dt.date(2024, 6, 12)
+    legs = write_session(qdir, tdir, day, bd.load_vix(tmp_path / "vix.csv"))
+    r, k, _ = legs[0]
+    pd.DataFrame(columns=fq.TAPE_COLS).to_parquet(fq.tick_path(tdir, day, r, k, "entry"))
+    ev = fq.measure(tdir, tmp_path / "f", quotes=qdir)
+    e = ev[(ev.right == r) & (ev.strike == k) & (ev.window == "entry")]
+    assert (e.reason == "no_trades_natural").all() and e.cost_c.tolist() == pytest.approx([0.5] * len(e))
+    assert (e.width_c == 1).all() and not e.passive.any()
+    ev2 = fq.measure(tdir, tmp_path / "f2")
+    assert ev2[(ev2.right == r) & (ev2.strike == k) & (ev2.window == "entry")].cost_c.isna().all()

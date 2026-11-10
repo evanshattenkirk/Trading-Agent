@@ -361,9 +361,30 @@ def _parse(name: str):
     return dt.date.fromisoformat(d), leg[0], float(leg[1:]), w
 
 
+def _natural_from_minutes(quotes: Path | None, day: dt.date, cache: dict, r: str, k: float, w: str, side: str):
+    """No trades in the window: the order can't fill passively, so it walks to the natural of the 1-minute quote
+    at the decision minute. None without a quote file or a quote."""
+    if quotes is None:
+        return None
+    if "p" not in cache:
+        import bd_real_quotes as bd
+        f = quotes / f"{day.isoformat()}.parquet"
+        cache["p"] = bd.QuotePanel(bd.normalize(pd.read_parquet(f))) if f.exists() else None
+    if cache["p"] is None:
+        return None
+    hh, mm_ = DECISION[w][0].split(":")[:2]
+    ba = cache["p"].ba(r, k, int(hh) * 60 + int(mm_))
+    if ba is None or not ba[1] > ba[0]:
+        return None
+    bid, ask = ba
+    return Order(ask if side == "buy" else bid, None, (bid + ask) / 2, int(round((ask - bid) * 100)), False,
+                 "no_trades_natural")
+
+
 def _measure_day(args) -> list[dict]:
-    day, items = args
+    day, items, quotes = args
     shorts = _leg_sides([(r, k, w) for _, r, k, w in items])
+    cache: dict = {}
     rows = []
     for path, r, k, w in items:
         tp = pd.read_parquet(path)
@@ -374,6 +395,8 @@ def _measure_day(args) -> list[dict]:
         for rule in RULES:
             for h in HOLDS:
                 o = simulate(tp, t0, side, h, rule, dl)
+                if o.reason == "no_quote" and tp.empty:
+                    o = _natural_from_minutes(quotes, day, cache, r, k, w, side) or o
                 mid_at_fill = None
                 if o.price is not None and o.ts is not None:
                     q = tp[(tp.ts <= o.ts) & (tp.bid > 0) & (tp.ask > tp.bid)]
@@ -389,12 +412,12 @@ def _measure_day(args) -> list[dict]:
     return rows
 
 
-def measure(ticks: Path, out: Path, workers: int = 1) -> pd.DataFrame:
+def measure(ticks: Path, out: Path, workers: int = 1, quotes: Path | None = None) -> pd.DataFrame:
     by_day: dict = {}
     for f in sorted(ticks.glob("*.parquet")):
         d, r, k, w = _parse(f.name)
         by_day.setdefault(d, []).append((f, r, k, w))
-    jobs = sorted(by_day.items())
+    jobs = [(d, items, quotes) for d, items in sorted(by_day.items())]
     rows: list[dict] = []
     if workers > 1:
         from multiprocessing import Pool
@@ -571,6 +594,7 @@ def main(argv=None):
     b = sub.add_parser("measure")
     b.add_argument("--ticks", type=Path, required=True)
     b.add_argument("--out", type=Path, required=True)
+    b.add_argument("--quotes", type=Path, default=None, help="1-minute quotes: legs with no trades cross at their natural")
     b.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     c = sub.add_parser("score")
     c.add_argument("--quotes", type=Path, required=True)
@@ -582,7 +606,7 @@ def main(argv=None):
     if args.cmd == "pull-ticks":
         pull_ticks(args.quotes, args.vix, args.out, args.workers)
     elif args.cmd == "measure":
-        measure(args.ticks, args.out, args.workers)
+        measure(args.ticks, args.out, args.workers, args.quotes)
     elif args.cmd == "score":
         res = score(args.quotes, args.vix, args.events, args.out, args.workers)
         print(json.dumps(res["verdict"], indent=1, default=str))
