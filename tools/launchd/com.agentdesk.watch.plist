@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: tools/install_paper.sh fills in __APP__ and __HOME__ and loads it as a per-user LaunchAgent.
+     Phone alerts (docs/superpowers/specs/2026-11-10-phone-alerts-design.md): every 5 minutes, one check of the
+     Manager panel (python -m agentdesk alerts); it texts ALERT_IMESSAGE_TO from .env through Messages when a row
+     turns amber or red. Read-only: it never touches the engine, the broker or the data feeds. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agentdesk.watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__APP__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>agentdesk</string>
+    <string>--config</string>
+    <string>__APP__/src/config.yaml</string>
+    <string>alerts</string>
+  </array>
+  <key>WorkingDirectory</key><string>__APP__/src</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>__HOME__/.agentdesk/alerts/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.agentdesk/alerts/launchd.err.log</string>
+</dict>
+</plist>

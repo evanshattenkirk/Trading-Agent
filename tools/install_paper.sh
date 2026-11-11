@@ -1,8 +1,9 @@
 #!/bin/bash
 # Installs (or updates) the daily paper session as a per-user LaunchAgent (com.agentdesk.paper), the after-hours
-# review page (com.agentdesk.review: the last saved session, read-only, on the same port while the engine is off)
-# and the Friday Quant job (com.agentdesk.quant, tools/quant_week.sh: SIP replay, weekly report, monthly prune;
-# --no-quant leaves it out and removes an installed one).
+# review page (com.agentdesk.review: the last saved session, read-only, on the same port while the engine is off),
+# the Friday Quant job (com.agentdesk.quant, tools/quant_week.sh: SIP replay, weekly report, monthly prune;
+# --no-quant leaves it out and removes an installed one) and the phone alerts (com.agentdesk.watch: every 5 min,
+# texts ALERT_IMESSAGE_TO from .env when the Manager panel turns amber or red).
 #
 # Like the recorder, it deploys a pinned copy of the code and its own venv (~/.agentdesk/paper-app), because
 # macOS blocks background jobs from reading ~/Desktop and edits to the working copy shouldn't change a running
@@ -27,6 +28,8 @@ REVIEW="com.agentdesk.review"
 REVIEW_PLIST="$HOME/Library/LaunchAgents/$REVIEW.plist"
 QUANT="com.agentdesk.quant"
 QUANT_PLIST="$HOME/Library/LaunchAgents/$QUANT.plist"
+WATCH="com.agentdesk.watch"
+WATCH_PLIST="$HOME/Library/LaunchAgents/$WATCH.plist"
 NO_LOAD=no FORCE=no DIRTY=no NO_QUANT=no
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,7 +49,8 @@ if [ "$FORCE" != yes ] && why="$(engine_running)"; then
   die "An engine is running: $why. Not deployed. Install after 15:10 CT, or run again with --force (the running engine then keeps its code until its next start)."
 fi
 
-mkdir -p "$HOME/.agentdesk/paper" "$HOME/.agentdesk/review" "$HOME/.agentdesk/reports" "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/.agentdesk/paper" "$HOME/.agentdesk/review" "$HOME/.agentdesk/reports" "$HOME/.agentdesk/alerts" \
+  "$HOME/Library/LaunchAgents"
 new_release "$APP" "$REPO"
 build_venv
 run_tests
@@ -62,6 +66,7 @@ echo "Deployed $DESC to $APP (release ${REL##*/}); src, .venv and DEPLOYED there
 write_plist "$APP/src/tools/launchd/$LABEL.plist" "$PLIST"
 write_plist "$APP/src/tools/launchd/$REVIEW.plist" "$REVIEW_PLIST"
 [ "$NO_QUANT" = yes ] || write_plist "$APP/src/tools/launchd/$QUANT.plist" "$QUANT_PLIST"
+write_plist "$APP/src/tools/launchd/$WATCH.plist" "$WATCH_PLIST"
 if [ "$NO_LOAD" = yes ]; then
   echo "Not loaded (--no-load)."
   exit 0
@@ -89,3 +94,25 @@ else
   echo "Loaded $QUANT: Fridays 16:00 system time (keep the Mac on Central), SIP replay + weekly Quant report into"
   echo "  ~/.agentdesk/reports/quant-<Friday>.md, tools/prune.sh on the first Friday of a month."
 fi
+# Phone alerts. It only reads the Manager panel, so it loads even while an engine runs. Each install resets the
+# "hello" so the job's first run texts "AgentDesk alerts are on": that run is also when macOS asks, once, whether
+# osascript may control Messages.
+"$APP/.venv/bin/python" - "$HOME/.agentdesk/alerts/state.json" <<'PY' || echo "WARNING: could not reset the alerts hello (the watch job still loads)."
+import json, os, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        st = json.load(f)
+except (OSError, ValueError):
+    st = None
+if isinstance(st, dict) and st.pop("hello", None) is not None:
+    with open(p + ".tmp", "w") as f:
+        json.dump(st, f)
+    os.replace(p + ".tmp", p)
+PY
+load_job "$WATCH" "$WATCH_PLIST"   # WATCH
+echo "Loaded $WATCH: checks the Manager panel every 5 min and texts ALERT_IMESSAGE_TO from .env; log in ~/.agentdesk/alerts/"
+echo "  If macOS asks whether python3 (or osascript) may control Messages, click OK. Then check your phone for"
+echo "  'AgentDesk alerts are on'. To send it again by hand: cd ~/.agentdesk/paper-app/src && ../.venv/bin/python -m agentdesk alerts --test"
+grep -q '^ALERT_IMESSAGE_TO=.' "$APP/src/.env" 2>/dev/null \
+  || echo "WARNING: no ALERT_IMESSAGE_TO in .env, so alerts are Mac banners only. Add it to ~/Trading-Agent/.env and install again."

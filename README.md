@@ -256,8 +256,9 @@ Four per-user LaunchAgents run the desk on the owner's Mac, each from a copy of 
 - `com.agentdesk.recorder` records real SPY 0DTE quotes every 10 seconds from 08:25 to 15:05 CT, plus book E's end-of-day IV pass, into the journal. It keeps its own Robinhood call budget (100 a minute).
 - `com.agentdesk.review` serves the last saved session read-only on the same port after hours.
 - `com.agentdesk.quant` runs Fridays at 16:00 system time: book A's SIP replay, the weekly Quant report (with the Post-mortem files) into `~/.agentdesk/reports`, and `tools/prune.sh` on the first Friday of a month (old logs and sessions gzipped, journal quotes older than 90 days moved to yearly archives the report still reads).
+- `com.agentdesk.watch` checks the Manager panel every 5 minutes and sends phone alerts (below).
 
-`tools/install_paper.sh` (engine, review page and Quant job) and `tools/install_recorder.sh` deploy the current checkout and load the jobs. Both build a new release from `requirements.lock`, run the test suite in it and switch to it only if the tests pass, so a failing build is never deployed. They refuse uncommitted changes unless `--dirty`. `install_paper.sh` refuses while an engine runs unless `--force`, and takes `--no-quant`. Install after 15:10 CT. The dashboard is local only, at `http://127.0.0.1:8765`.
+`tools/install_paper.sh` (engine, review page, Quant job and phone alerts) and `tools/install_recorder.sh` deploy the current checkout and load the jobs. Both build a new release from `requirements.lock`, run the test suite in it and switch to it only if the tests pass, so a failing build is never deployed. They refuse uncommitted changes unless `--dirty`. `install_paper.sh` refuses while an engine runs unless `--force`, and takes `--no-quant`. Install after 15:10 CT. The dashboard is local only, at `http://127.0.0.1:8765`.
 
 ## Manager panel
 
@@ -265,9 +266,12 @@ The **MANAGER** button in the dashboard header (green, amber or red, with a coun
 - the engine's and the recorder's Robinhood sign-ins, with their deadlines (amber under 3 days, red under 1 or when the engine reports it signed out)
 - the engine's Robinhood calls: last good call, counts for the last 15 minutes and the day, reconnects
 - the recorder writing, SPY prints arriving, the engine running, any halts
-- the four launchd jobs
+- the crew's Claude calls
+- the five launchd jobs
 
 Each amber or red row says what to do and gives the exact Terminal command with a Copy button. The panel reads local files only and never shows a token or an account number; it has no buttons that change anything.
+
+**Phone alerts** (`agentdesk/alerts.py`, `python -m agentdesk alerts`, launchd `com.agentdesk.watch`): every 5 minutes the Mac reads the panel and texts `ALERT_IMESSAGE_TO` from `.env` through the Messages app, with the same text as a Mac banner, when a row turns amber or red. Red goes at once and repeats hourly from 07:00 to 21:00 CT while it lasts, at most twice a day; amber goes once it has held for two checks in a row and "fixed" once green has held for two, both only from 07:00 to 21:00 CT, so a row that flickers (one rate limit) stays quiet; a row that only changes its wording sends nothing. Robinhood sign-ins turn amber 3 days before they expire, so that text is the heads-up. On trading days an 08:20 CT text says all green or lists what isn't. If nothing answers on port 8765 for two checks in a row, a red Dashboard alert goes out and the other rows are judged from local files; one slow answer judges nothing. Each install texts "AgentDesk alerts are on"; the first time, macOS asks once whether osascript may control Messages. `python -m agentdesk alerts --test` sends that text by hand.
 
 ## Things to know before real money
 

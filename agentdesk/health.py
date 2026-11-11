@@ -33,8 +33,9 @@ CALL_WINDOW_S = 900             # error counts cover the last 15 minutes
 SILENT_S = 120                  # no good Robinhood call for this long in market hours is red
 PRINT_STALE_S = 60              # the Alpaca feed warns after a minute without SPY prints (feeds/alpaca.py)
 RECORDER_STALE_S = 120          # engine.RECORDER_STALE_SEC: the recorder writes every 10 s in market hours
-JOBS = ("com.agentdesk.paper", "com.agentdesk.review", "com.agentdesk.quant", "com.agentdesk.recorder")
-JOB_LOGS = {"paper": "paper", "review": "review", "quant": "reports", "recorder": "recorder"}
+JOBS = ("com.agentdesk.paper", "com.agentdesk.review", "com.agentdesk.quant", "com.agentdesk.recorder",
+        "com.agentdesk.watch")
+JOB_LOGS = {"paper": "paper", "review": "review", "quant": "reports", "recorder": "recorder", "watch": "alerts"}
 RECORDER_LOG = "~/.agentdesk/recorder/recorder.log"
 LATER = "outside market hours"
 NOW = "now"
@@ -329,7 +330,7 @@ _jobs_cache: tuple[float, dict] | None = None
 
 
 def jobs(runner=None, platform: str | None = None) -> dict:
-    """The four LaunchAgents: loaded, and their last run exited cleanly. Cached 60 s when using launchctl itself."""
+    """The five LaunchAgents: loaded, and their last run exited cleanly. Cached 60 s when using launchctl itself."""
     global _jobs_cache
     name = "Mac jobs"
     if (platform or sys.platform) != "darwin":
@@ -353,7 +354,7 @@ def jobs(runner=None, platform: str | None = None) -> dict:
         if m and int(m.group(1)) != 0:
             failed.append((short, int(m.group(1))))
     if not missing and not failed:
-        out = row(name, OK, "paper, review, quant and recorder loaded; last runs exited cleanly")
+        out = row(name, OK, "paper, review, quant, recorder and watch loaded; last runs exited cleanly")
     else:
         detail = "; ".join([f"{j} not loaded" for j in missing] + [f"{j} last exit {c}" for j, c in failed])
         steps = (["tools/install_recorder.sh"] if "recorder" in missing else []) \

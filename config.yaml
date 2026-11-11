@@ -237,4 +237,13 @@ review:                   # after-hours dashboard: python -m agentdesk review (l
   snapshot_every_sec: 60
   modes: [paper, shadow, live]           # sim runs are not saved
 
+alerts:                   # phone alerts (launchd com.agentdesk.watch, every 5 min): iMessage to ALERT_IMESSAGE_TO in .env
+  enabled: true
+  day_start: "07:00"      # CT; amber and "fixed" texts wait for the day window, red goes at any hour
+  day_end: "21:00"
+  repeat_bad_min: 60      # a row still red is texted again this often, in the day window only
+  morning: true           # 08:20 CT all-clear (or what isn't green) on trading days
+  morning_at: "08:20"
+  state_dir: ~/.agentdesk/alerts
+
 journal_path: ~/.agentdesk/journal.db
