@@ -8,7 +8,10 @@ import http.server
 import json
 import logging
 import subprocess
+import sys
 import threading
+
+import pytest
 from types import SimpleNamespace
 from datetime import date, time
 
@@ -323,3 +326,41 @@ def test_log_never_shows_the_full_number(tmp_path, caplog):
     for m in range(0, 25, 5):
         go(at(10, m))
     assert "0000" in caplog.text and FAKE_TO not in caplog.text
+
+
+# ---------------------------------------------------------------- the CLI command
+def _cfg_file(tmp_path):
+    import yaml
+    from agentdesk.config import ROOT
+    data = yaml.safe_load((ROOT / "config.yaml").read_text())
+    data["alerts"]["state_dir"] = str(tmp_path / "alerts")
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump(data))
+    return p
+
+
+def test_cli_alerts_runs_one_check(tmp_path, monkeypatch):
+    from agentdesk import __main__ as cli
+    seen = {}
+    monkeypatch.setattr(alerts, "check", lambda cfg, now, **kw: seen.update(kw) or [])
+    monkeypatch.setenv("ALERT_IMESSAGE_TO", FAKE_TO)
+    monkeypatch.setattr(sys, "argv", ["agentdesk", "--config", str(_cfg_file(tmp_path)), "alerts"])
+    cli.main()
+    assert seen["to"] == FAKE_TO
+    assert (tmp_path / "alerts" / "alerts.log").exists()
+
+
+def test_cli_alerts_test_exit_code(tmp_path, monkeypatch):
+    from agentdesk import __main__ as cli
+    sent = []
+    monkeypatch.setattr(alerts, "send", lambda text, to, **kw: sent.append((text, to)) or False)
+    monkeypatch.setenv("ALERT_IMESSAGE_TO", FAKE_TO)
+    monkeypatch.setattr(sys, "argv", ["agentdesk", "--config", str(_cfg_file(tmp_path)), "alerts", "--test"])
+    with pytest.raises(SystemExit) as ex:
+        cli.main()
+    assert ex.value.code == 1 and sent == [(alerts.HELLO, FAKE_TO)]
+
+
+def test_tests_never_see_a_real_recipient():
+    import os
+    assert "ALERT_IMESSAGE_TO" not in os.environ          # conftest scrubs it, so no test can text Evan

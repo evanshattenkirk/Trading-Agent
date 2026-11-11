@@ -6,7 +6,7 @@ at session start and AGENTDESK_NO_DOTENV=1 stops config.load_config() from readi
 a fake one with monkeypatch."""
 import os
 
-SECRET_PREFIXES = ("ANTHROPIC_", "ALPACA_", "THETADATA", "MASSIVE")
+SECRET_PREFIXES = ("ANTHROPIC_", "ALPACA_", "THETADATA", "MASSIVE", "ALERT_")   # ALERT_IMESSAGE_TO: no test may text Evan
 
 
 def is_secret_name(name: str) -> bool:

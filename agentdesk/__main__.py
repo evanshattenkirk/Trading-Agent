@@ -193,6 +193,31 @@ def cmd_run(args) -> None:
             timer.cancel()
 
 
+def cmd_alerts(args) -> None:
+    """Phone alerts: one check of the Manager panel (launchd com.agentdesk.watch runs this every 5 min). --test
+    sends the "alerts are on" text now and exits 1 if the iMessage didn't go."""
+    import time as _time
+
+    from . import alerts
+
+    cfg = load_config(args.config)
+    s = alerts.settings(cfg)
+    d = expand(s["state_dir"])
+    d.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(d / "alerts.log")
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger("agentdesk.alerts").addHandler(fh)
+    to = os.environ.get("ALERT_IMESSAGE_TO") or None
+    if args.test:
+        ok = alerts.send(alerts.HELLO, to)
+        print(f"sent to {alerts.mask(to)}" if ok else
+              ("not sent: ALERT_IMESSAGE_TO is not set in .env" if not to else
+               f"not sent to {alerts.mask(to)}: is Messages signed in to iMessage, and was osascript allowed to "
+               "control Messages?"))
+        sys.exit(0 if ok else 1)
+    alerts.check(cfg, _time.time(), to=to)
+
+
 def cmd_review(args) -> None:
     """After-hours dashboard: the last saved session, read-only, whenever the engine isn't running."""
     from .archive import review_cfg
@@ -332,6 +357,10 @@ def main() -> None:
 
     rv = sub.add_parser("review", help="after-hours dashboard: the last saved session, read-only (launchd runs this)")
     rv.set_defaults(fn=cmd_review)
+
+    al = sub.add_parser("alerts", help="text Evan when the Manager panel turns amber/red (launchd runs this every 5 min)")
+    al.add_argument("--test", action="store_true", help="send the 'alerts are on' text now; exit 1 if it didn't go")
+    al.set_defaults(fn=cmd_alerts)
 
     rec = sub.add_parser("record-demo")
     rec.add_argument("--seed", type=int, default=21)
