@@ -330,7 +330,7 @@ _jobs_cache: tuple[float, dict] | None = None
 
 
 def jobs(runner=None, platform: str | None = None) -> dict:
-    """The four LaunchAgents: loaded, and their last run exited cleanly. Cached 60 s when using launchctl itself."""
+    """The five LaunchAgents: loaded, and their last run exited cleanly. Cached 60 s when using launchctl itself."""
     global _jobs_cache
     name = "Mac jobs"
     if (platform or sys.platform) != "darwin":

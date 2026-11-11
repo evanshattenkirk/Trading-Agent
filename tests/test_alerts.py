@@ -74,7 +74,7 @@ def test_red_repeats_hourly_only_in_the_day():
 def test_amber_waits_for_morning():
     texts, st = run({}, rep(sign_in(health.WARN)), at(22, d=date(2026, 11, 9)))
     assert texts == [] and "Engine Robinhood sign-in" not in st.get("rows", {})
-    texts, st = run(st, rep(sign_in(health.WARN)), at(7))
+    texts, st = run(st, rep(sign_in(health.WARN)), at(7))         # second amber check in a row, now in the day
     assert len(texts) == 1 and "🟠 Engine Robinhood sign-in" in texts[0]
     _, st = run({}, rep(sign_in(health.WARN)), at(22, d=date(2026, 11, 9)))
     texts, st = run(st, rep(sign_in(health.OK)), at(6))
@@ -86,7 +86,7 @@ def test_red_then_green_overnight_sends_fixed_at_seven():
     _, st = run({}, rep(sign_in(health.BAD)), at(2))
     texts, st = run(st, rep(sign_in(health.OK)), at(5))
     assert texts == []
-    texts, st = run(st, rep(sign_in(health.OK, "signed in until Fri Nov 20")), at(7))
+    texts, st = run(st, rep(sign_in(health.OK, "signed in until Fri Nov 20")), at(7))     # second green check
     assert len(texts) == 1 and "✅" in texts[0] and "fixed" in texts[0]
     assert "Engine Robinhood sign-in" not in st["rows"]
 
@@ -94,12 +94,16 @@ def test_red_then_green_overnight_sends_fixed_at_seven():
 def test_red_to_amber_is_sent():
     _, st = run({}, rep(sign_in(health.BAD)), at(9))
     texts, st = run(st, rep(sign_in(health.WARN)), at(10))
+    assert texts == []
+    texts, st = run(st, rep(sign_in(health.WARN)), at(10, 5))
     assert len(texts) == 1 and "🟠" in texts[0]
     assert st["rows"]["Engine Robinhood sign-in"]["sent"] == "warn"
 
 
 def test_wording_change_sends_nothing():
     _, st = run({}, rep(sign_in(health.WARN, "2d 20h left")), at(9))
+    texts, st = run(st, rep(sign_in(health.WARN, "2d 20h left")), at(9, 5))
+    assert len(texts) == 1
     assert run(st, rep(sign_in(health.WARN, "2d 19h left")), at(10))[0] == []
 
 
@@ -111,13 +115,15 @@ def test_idle_rows_never_alert():
 def test_missing_row_counts_as_green():
     dash = health.row("Dashboard", health.BAD, "neither the engine nor the review page answers on :8765")
     _, st = run({}, rep(dash, engine()), at(9))
-    texts, st = run(st, rep(engine()), at(10))
+    assert run(st, rep(engine()), at(10))[0] == []
+    texts, st = run(run(st, rep(engine()), at(10))[1], rep(engine()), at(10, 5))
     assert len(texts) == 1 and "✅ Dashboard" in texts[0]
     assert "Dashboard" not in st["rows"]
 
 
 def test_one_message_worst_first():
-    texts, _ = run({}, rep(sign_in(health.WARN), engine(health.BAD, "not running during the session")), at(10))
+    _, st = run({}, rep(sign_in(health.WARN)), at(9, 55))
+    texts, _ = run(st, rep(sign_in(health.WARN), engine(health.BAD, "not running during the session")), at(10))
     assert len(texts) == 1
     assert texts[0].index("🔴") < texts[0].index("🟠")
 
@@ -127,6 +133,50 @@ def test_no_secret_reaches_a_message():
     r["token"] = "eyJ-secret"
     texts, _ = run({}, rep(r), at(10))
     assert texts and all("eyJ-secret" not in t for t in texts)
+
+
+def _day(states, start=(9, 0), end=(15, 0), cfg=NO_MORNING):
+    """Run diff every 5 min from start to end, cycling through `states` for the sign-in row; all texts."""
+    st, out, t, i = {}, [], at(*start), 0
+    while t < at(*end):
+        texts, st = alerts.diff(st, rep(sign_in(states[i % len(states)])), t, cfg)
+        out += texts
+        t, i = t + 300, i + 1
+    return out
+
+
+def test_amber_needs_two_checks_in_a_row():
+    _, st = run({}, rep(sign_in(health.WARN)), at(10))
+    assert run(st, rep(sign_in(health.OK)), at(10, 5))[0] == []
+    texts, st = run(st, rep(sign_in(health.WARN)), at(10, 5))
+    assert len(texts) == 1 and "🟠" in texts[0]
+
+
+def test_fixed_needs_two_green_checks_in_a_row():
+    _, st = run({}, rep(sign_in(health.BAD)), at(10))
+    texts, st = run(st, rep(sign_in(health.OK)), at(10, 5))
+    assert texts == [] and "Engine Robinhood sign-in" in st["rows"]
+    texts, st = run(st, rep(sign_in(health.OK)), at(10, 10))
+    assert len(texts) == 1 and "✅" in texts[0]
+
+
+def test_a_flapping_amber_row_stays_quiet():
+    assert _day([health.WARN, health.OK]) == []                       # one rate limit every 10 minutes all day
+
+
+def test_a_flapping_red_row_texts_at_most_three_times():
+    texts = _day([health.BAD, health.OK])
+    assert 1 <= len(texts) <= 3 and "✅" not in "".join(texts)
+
+
+def test_red_repeats_are_capped_and_resume_next_morning():
+    texts = _day([health.BAD], start=(10, 0), end=(21, 0))
+    assert len(texts) == 3                                            # the first text and two hourly repeats
+    st = {}
+    for t in range(int(at(10)), int(at(21)), 300):
+        _, st = run(st, rep(sign_in(health.BAD)), t)
+    texts, _ = run(st, rep(sign_in(health.BAD)), at(7, d=date(2026, 11, 11)))
+    assert len(texts) == 1 and "still red" in texts[0]
 
 
 # ---------------------------------------------------------------- diff: the morning all-clear
@@ -142,7 +192,8 @@ def test_morning_all_clear_once_on_trading_days():
 
 
 def test_morning_lists_what_is_not_green():
-    _, st = alerts.diff({}, rep(engine(), sign_in(health.WARN)), at(8), CFG)     # the amber goes out at 08:00
+    _, st = alerts.diff({}, rep(engine(), sign_in(health.WARN)), at(7, 55), CFG)
+    _, st = alerts.diff(st, rep(engine(), sign_in(health.WARN)), at(8), CFG)     # the amber goes out at 08:00
     texts, _ = alerts.diff(st, rep(engine(), sign_in(health.WARN)), at(8, 25), CFG)
     assert len(texts) == 1
     assert "not all green" in texts[0] and "Engine Robinhood sign-in (warn)" in texts[0]
@@ -188,6 +239,17 @@ def test_send_passes_handle_and_text_as_arguments():
 def test_send_failure_returns_false():
     assert alerts.send("x", FAKE_TO, runner=Runner(rc=1)) is False
     assert alerts.send("x", FAKE_TO, runner=Runner(raises=subprocess.TimeoutExpired("osascript", 30))) is False
+
+
+def test_a_failed_imessage_logs_why_without_the_number(caplog):
+    class Err(Runner):
+        def __call__(self, args, **kw):
+            r = super().__call__(args, **kw)
+            if args[2] == alerts.IMESSAGE_SCRIPT:
+                r.stderr = f'execution error: Can\'t get participant "{FAKE_TO}". (-1728)'
+            return r
+    assert alerts.send("x", FAKE_TO, runner=Err(rc=1)) is False
+    assert "Can't get participant" in caplog.text and FAKE_TO not in caplog.text and "…0000" in caplog.text
 
 
 def test_no_recipient_shows_banner_only():
@@ -251,8 +313,18 @@ def test_silent_port_waits_two_checks_then_alerts(tmp_path):
     assert not any("Dashboard" in t for t in first)
     second = go(at(10, 5))
     assert any("🔴 Dashboard" in t for t in second)
-    back = go(at(10, 20), fetcher=ok_report)
+    assert not go(at(10, 20), fetcher=ok_report)
+    back = go(at(10, 25), fetcher=ok_report)
     assert any("✅ Dashboard" in t for t in back)
+
+
+def test_one_silent_check_texts_nothing_but_the_hello(tmp_path):
+    def red_local(cfg, now, snap, running):
+        return rep(engine(health.BAD, "not running during the session"))
+    go = checker(tmp_path, fetcher=lambda url: None, local=red_local, sender=Sender(), to=FAKE_TO)
+    assert go(at(10)) == [alerts.HELLO]                       # /api/health was slow once: no false Engine red
+    second = go(at(10, 5))
+    assert any("🔴 Engine" in t for t in second) and any("🔴 Dashboard" in t for t in second)
 
 
 def test_the_health_url_uses_the_server_port(tmp_path):
@@ -288,6 +360,20 @@ def test_bad_health_json_counts_as_silent():
     finally:
         srv.shutdown()
     assert alerts.fetch("http://127.0.0.1:9/api/health", timeout=1) is None
+
+
+def test_fetch_ignores_a_system_proxy(monkeypatch):
+    srv = _serve(json.dumps(ok_report()).encode())
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "_opener", None)       # urlopen caches the proxies it saw first
+    try:
+        assert alerts.fetch(f"http://127.0.0.1:{srv.server_port}/api/health", timeout=2) is not None
+    finally:
+        srv.shutdown()
 
 
 def test_failed_imessage_is_retried_then_dropped(tmp_path, caplog):

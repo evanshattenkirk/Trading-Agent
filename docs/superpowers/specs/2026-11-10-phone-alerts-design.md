@@ -29,18 +29,20 @@ about 9.6 days and re-auth is by hand, so an expiring token is the most common s
 | Change | When it is sent |
 |---|---|
 | A row goes red (`bad`) | at once, any hour |
-| It stays red | again every 60 min (`alerts.repeat_bad_min`), only 07:00-21:00 CT |
-| A row goes amber (`warn`) | 07:00-21:00 CT; one that turns amber overnight is sent at 07:00 if still amber |
+| It stays red | again every 60 min (`alerts.repeat_bad_min`), only 07:00-21:00 CT, at most 2 repeats a day |
+| A row goes amber (`warn`) | once it has been amber on 2 checks in a row (10 min), 07:00-21:00 CT; one that turns amber overnight is sent at 07:00 if still amber |
 | A row goes red -> amber | sent (it changed), same hours as amber |
-| A row that alerted goes green or idle | ✅ once, same hours as amber (held overnight, dropped if it turns bad again) |
+| A row that alerted goes green or idle | ✅ once it has been green on 2 checks in a row, same hours as amber (held overnight, dropped if it turns bad again) |
 | Idle rows (market closed, engine off) | never alert |
 
-All changes found in one check go out as one message, worst first. Rows are keyed by their `name`.
+All changes found in one check go out as one message, worst first. Rows are keyed by their `name`. The two-check
+rules (added after the final review, 2026-11-11) keep a flickering row quiet: "Engine Robinhood calls" turns amber on
+a single rate limit, and without them one rate limit every 20 minutes would send ~36 texts a day.
 
-**Nothing answers on port 8765** (neither the engine nor the review page): the watcher runs `health.report`
-itself on local files (engine not running, no snapshot), so sign-ins, recorder and Mac jobs are still judged, and
-adds a red **Dashboard** row ("neither the engine nor the review page answers on :8765") once it has failed on two
-checks in a row (10 min), so the engine's start-up handoff of the port never alerts.
+**Nothing answers on port 8765** (neither the engine nor the review page): one silent check judges nothing (a slow
+answer or the engine's start-up handoff of the port). From the second silent check in a row (10 min) the watcher runs
+`health.report` itself on local files (engine not running, no snapshot), so sign-ins, recorder and Mac jobs are still
+judged, and adds a red **Dashboard** row ("neither the engine nor the review page answers on :8765").
 
 A message never carries a token, account number or balance. The panel's rows already never hold them; the watcher
 sends only `name`, `detail`, `fix` and `cmd`.

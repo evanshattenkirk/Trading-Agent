@@ -1,8 +1,9 @@
 #!/bin/bash
 # Installs (or updates) the daily paper session as a per-user LaunchAgent (com.agentdesk.paper), the after-hours
-# review page (com.agentdesk.review: the last saved session, read-only, on the same port while the engine is off)
-# and the Friday Quant job (com.agentdesk.quant, tools/quant_week.sh: SIP replay, weekly report, monthly prune;
-# --no-quant leaves it out and removes an installed one).
+# review page (com.agentdesk.review: the last saved session, read-only, on the same port while the engine is off),
+# the Friday Quant job (com.agentdesk.quant, tools/quant_week.sh: SIP replay, weekly report, monthly prune;
+# --no-quant leaves it out and removes an installed one) and the phone alerts (com.agentdesk.watch: every 5 min,
+# texts ALERT_IMESSAGE_TO from .env when the Manager panel turns amber or red).
 #
 # Like the recorder, it deploys a pinned copy of the code and its own venv (~/.agentdesk/paper-app), because
 # macOS blocks background jobs from reading ~/Desktop and edits to the working copy shouldn't change a running
@@ -96,20 +97,22 @@ fi
 # Phone alerts. It only reads the Manager panel, so it loads even while an engine runs. Each install resets the
 # "hello" so the job's first run texts "AgentDesk alerts are on": that run is also when macOS asks, once, whether
 # osascript may control Messages.
-"$APP/.venv/bin/python" - "$HOME/.agentdesk/alerts/state.json" <<'PY'
+"$APP/.venv/bin/python" - "$HOME/.agentdesk/alerts/state.json" <<'PY' || echo "WARNING: could not reset the alerts hello (the watch job still loads)."
 import json, os, sys
 p = sys.argv[1]
 try:
-    st = json.load(open(p))
+    with open(p) as f:
+        st = json.load(f)
 except (OSError, ValueError):
     st = None
 if isinstance(st, dict) and st.pop("hello", None) is not None:
-    tmp = p + ".tmp"
-    json.dump(st, open(tmp, "w"))
-    os.replace(tmp, p)
+    with open(p + ".tmp", "w") as f:
+        json.dump(st, f)
+    os.replace(p + ".tmp", p)
 PY
 load_job "$WATCH" "$WATCH_PLIST"   # WATCH
 echo "Loaded $WATCH: checks the Manager panel every 5 min and texts ALERT_IMESSAGE_TO from .env; log in ~/.agentdesk/alerts/"
-echo "  If macOS asks whether osascript may control Messages, click OK. Then check your phone for 'AgentDesk alerts are on'."
+echo "  If macOS asks whether python3 (or osascript) may control Messages, click OK. Then check your phone for"
+echo "  'AgentDesk alerts are on'. To send it again by hand: cd ~/.agentdesk/paper-app/src && ../.venv/bin/python -m agentdesk alerts --test"
 grep -q '^ALERT_IMESSAGE_TO=.' "$APP/src/.env" 2>/dev/null \
   || echo "WARNING: no ALERT_IMESSAGE_TO in .env, so alerts are Mac banners only. Add it to ~/Trading-Agent/.env and install again."

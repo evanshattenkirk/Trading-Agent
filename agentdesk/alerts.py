@@ -25,6 +25,9 @@ from .config import expand
 DEFAULTS = {"enabled": True, "day_start": "07:00", "day_end": "21:00", "repeat_bad_min": 60, "morning": True,
             "morning_at": "08:20", "state_dir": "~/.agentdesk/alerts"}
 ICON = {health.BAD: "🔴", health.WARN: "🟠"}
+CONFIRM = 2                 # amber, and green after an alert, must hold this many checks in a row (10 min)
+MAX_REPEATS = 2             # "still red" repeats per row per day
+log = logging.getLogger("agentdesk.alerts")
 
 
 # The handle and the text reach osascript as arguments (argv), never inside the script source, so no quote, newline
@@ -57,8 +60,12 @@ def send(text: str, to: str | None, banner: bool = True, runner=subprocess.run) 
         return False
     try:
         r = runner([OSASCRIPT, "-e", IMESSAGE_SCRIPT, to, text], timeout=30, capture_output=True, text=True)
-    except Exception:
+    except Exception as ex:
+        log.warning("alerts: iMessage to %s failed: %s", mask(to), str(ex).replace(to, mask(to)))
         return False
+    if r.returncode != 0:
+        why = (getattr(r, "stderr", "") or "").replace(to, mask(to)).strip()[:300]
+        log.warning("alerts: iMessage to %s failed (osascript exit %s): %s", mask(to), r.returncode, why or "no reason given")
     return r.returncode == 0
 
 
@@ -83,38 +90,52 @@ def _block(r: dict, prefix: str = "") -> str:
 
 
 def diff(prev: dict, report: dict, now: float, cfg) -> tuple[list[str], dict]:
-    """What to text now, and the state to keep. State: rows[name] = {sent: "warn"|"bad", at: ts} for rows whose
-    alert hasn't been answered by a "fixed" text yet; `morning` = the last day the all-clear went. A row missing from
-    the report counts as green. Red goes at once (repeats hourly in the day), amber and fixed wait for the day."""
+    """What to text now, and the state to keep. State: rows[name] = {sent: "warn"|"bad", at, repeats} for rows whose
+    alert hasn't been answered by a "fixed" text yet; streak[name] = [state, checks in a row] (ok and idle count as
+    green); `morning` = the last day the all-clear went. A row missing from the report counts as green.
+
+    Red goes at once, then "still red" hourly in the day, at most MAX_REPEATS a day. Amber goes once it has held
+    CONFIRM checks in a row, in the day. "Fixed" goes once green has held CONFIRM checks in a row, in the day. So a
+    row that flips on every check (one rate limit in 15 minutes) sends one red at most, never a stream."""
     s = settings(cfg)
     state = dict(prev or {})
     sent_rows = {k: dict(v) for k, v in (state.get("rows") or {}).items()}
+    old_streak = dict(state.get("streak") or {})
     day = daytime(now, cfg)
+    today = str(session_date(now))
     rows = {r["name"]: r for r in report.get("checks") or []}
+    streak = {}
     red, amber, fixed = [], [], []
     for name in list(dict.fromkeys([*rows, *sent_rows])):
         r = rows.get(name) or health.row(name, health.OK, "")
-        st, rec = r["state"], sent_rows.get(name)
+        st = r["state"]
+        kind = st if st in (health.BAD, health.WARN) else "green"
+        last = old_streak.get(name) or [None, 0]
+        n = last[1] + 1 if last[0] == kind else 1
+        streak[name] = [kind, n]
+        rec = sent_rows.get(name)
         was = rec["sent"] if rec else None
         if st == health.BAD:
             if was != health.BAD:
                 red.append(_block(r))
-                sent_rows[name] = {"sent": health.BAD, "at": now}
+                sent_rows[name] = {"sent": health.BAD, "at": now, "repeats": 0}
             elif day and now - rec["at"] >= float(s["repeat_bad_min"]) * 60:
-                red.append(_block(r, "still red: "))
-                sent_rows[name] = {"sent": health.BAD, "at": now}
+                repeats = 0 if str(session_date(rec["at"])) != today else int(rec.get("repeats") or 0)
+                if repeats < MAX_REPEATS:
+                    red.append(_block(r, "still red: "))
+                    sent_rows[name] = {"sent": health.BAD, "at": now, "repeats": repeats + 1}
         elif st == health.WARN:
-            if was != health.WARN and day:
+            if was != health.WARN and n >= CONFIRM and day:
                 amber.append(_block(r))
-                sent_rows[name] = {"sent": health.WARN, "at": now}
-        elif was and day:
+                sent_rows[name] = {"sent": health.WARN, "at": now, "repeats": 0}
+        elif was and n >= CONFIRM and day:
             fixed.append(f"✅ {name}: fixed" + (f" ({r['detail']})" if r.get("detail") else ""))
             sent_rows.pop(name)
     texts = []
     if red or amber or fixed:
         texts.append("AgentDesk\n" + "\n\n".join(red + amber + fixed))
     state["rows"] = sent_rows
-    today = str(session_date(now))
+    state["streak"] = streak
     if (s["morning"] and day and health.trading_day(now, cfg) and ct(now).time() >= _hm(s["morning_at"])
             and state.get("morning") != today):
         state["morning"] = today
@@ -131,8 +152,7 @@ def diff(prev: dict, report: dict, now: float, cfg) -> tuple[list[str], dict]:
 # ---------------------------------------------------------------- one run of the job
 HELLO = "AgentDesk alerts are on. You'll get a text here when the Manager panel turns amber or red."
 MAX_TRIES = 3
-SILENT_CHECKS = 2           # the port must be silent on two checks in a row (10 min) before the Dashboard row is red
-log = logging.getLogger("agentdesk.alerts")
+SILENT_CHECKS = 2           # the port must be silent on two checks in a row (10 min) before anything is judged
 
 
 def dashboard_row() -> dict:
@@ -143,8 +163,9 @@ def dashboard_row() -> dict:
 
 def fetch(url: str, timeout: float = 10) -> dict | None:
     """The Manager panel's report, or None when nothing answers or the answer isn't a report."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))    # loopback: never via a system proxy
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with opener.open(url, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
     except Exception:
         return None
@@ -191,16 +212,15 @@ def check(cfg, now: float, *, fetcher=fetch, local=None, sender=send, to: str | 
     rep = fetcher(f"http://127.0.0.1:{cfg['server']['port']}/api/health")
     if rep is None:
         st["unreachable"] = int(st.get("unreachable") or 0) + 1
-        rep = (local or health.report)(cfg, now, None, running=False)
-        rep = {**rep, "checks": list(rep.get("checks") or [])}
-        if st["unreachable"] >= SILENT_CHECKS:
-            rep["checks"].append(dashboard_row())
-        log.info("alerts: nothing answers on :%s (%d checks in a row); judged from local files",
-                 cfg["server"]["port"], st["unreachable"])
+        log.info("alerts: nothing answers on :%s (%d checks in a row)", cfg["server"]["port"], st["unreachable"])
+        if st["unreachable"] >= SILENT_CHECKS:      # one slow answer is not an outage: judge nothing until the second
+            rep = (local or health.report)(cfg, now, None, running=False)
+            rep = {**rep, "checks": [*(rep.get("checks") or []), dashboard_row()]}
     else:
         st["unreachable"] = 0
-    texts, st = diff(st, rep, now, cfg)
-    new += texts
+    if rep is not None:
+        texts, st = diff(st, rep, now, cfg)
+        new += texts
     today = str(session_date(now))
     if not to and st.get("no_to") != today:
         st["no_to"] = today

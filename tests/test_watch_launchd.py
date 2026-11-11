@@ -29,3 +29,10 @@ def test_install_paper_loads_the_watch_job_and_resends_hello():
     running_block_end = s.index("fi", s.index('if [ -n "$RUNNING" ]'))
     assert m.start() > running_block_end          # loaded even while an engine runs: it never touches the engine
     assert s.index("hello") < m.start()           # the hello is reset before the job's first run
+
+
+def test_the_hello_reset_can_never_abort_the_install():
+    s = (TOOLS / "install_paper.sh").read_text()
+    line = next(x for x in s.splitlines() if "state.json" in x and "<<'PY'" in x)
+    assert "|| echo" in line                     # under set -e, a failure here must not stop the watch job loading
+    assert "with open(" in s[s.index(line):s.index("load_job \"$WATCH\"")]
