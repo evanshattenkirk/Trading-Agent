@@ -328,3 +328,12 @@ def test_a_command_is_never_repeated_in_the_fix_text(tmp_path):
     """The panel shows `fix` as prose and `cmd` in a box with a Copy button."""
     r = health.sign_in("x", token(tmp_path / "t.json", OPEN - 10 * DAY), OPEN, ENGINE_SIGN_IN_CMD)
     assert r["cmd"] and r["cmd"] not in r["fix"]
+
+
+def test_watch_job_is_checked():
+    assert "com.agentdesk.watch" in health.JOBS
+    out = {j: LOADED for j in health.JOBS if j != "com.agentdesk.watch"}
+    r = health.jobs(launchctl(out), platform="darwin")
+    assert r["state"] == "bad" and "watch not loaded" in r["detail"] and "install_paper.sh" in r["cmd"]
+    ok = health.jobs(launchctl({j: LOADED for j in health.JOBS}), platform="darwin")
+    assert "watch" in ok["detail"]

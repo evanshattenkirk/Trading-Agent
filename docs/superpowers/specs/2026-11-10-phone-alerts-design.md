@@ -65,18 +65,19 @@ sends only `name`, `detail`, `fix` and `cmd`.
 4. **Recipient**: `ALERT_IMESSAGE_TO` in `~/Trading-Agent/.env`, which Evan types himself (his number in +1...
    form, or his Apple ID email); the installer already copies `.env` into each release. Without it the watcher
    still shows Mac banners and logs one warning a day. It is never printed in full in logs (last 4 characters only).
-5. **Config** (`config.yaml`): `alerts: {enabled: true, interval_sec: 300, day_start: "07:00", day_end: "21:00",
-   repeat_bad_min: 60, morning: true, morning_at: "08:20"}`.
+5. **Config** (`config.yaml`): `alerts: {enabled: true, day_start: "07:00", day_end: "21:00", repeat_bad_min: 60,
+   morning: true, morning_at: "08:20", state_dir: ~/.agentdesk/alerts}`. The interval is the plist's 300 s only.
 6. **`health.JOBS`** gains `com.agentdesk.watch`, so the panel's Mac jobs row goes red if the watcher isn't loaded.
 
 ### macOS permission
 
-The first iMessage sent from the launchd job makes macOS ask once whether `osascript` may control Messages. The
-install step ends by running the job once with `--test` through launchd (`launchctl kickstart`), so the prompt
-shows while Evan is at the Mac, and prints: "Click OK on the Messages permission prompt, then check your phone for
-'AgentDesk alerts are on'." Messages must be signed in to iMessage on the Mac. Texting your own number shows in a
-conversation with yourself; if the phone doesn't buzz for that, Evan can use his Apple ID email as the handle
-instead, which iOS treats as a separate sender.
+The first iMessage sent from the launchd job makes macOS ask once whether `osascript` may control Messages. Each
+install resets the state's `hello`, so the job's first run after the install (at load) texts "AgentDesk alerts are
+on"; that is when the prompt shows, while Evan is at the Mac, and the installer prints: "If macOS asks whether
+osascript may control Messages, click OK. Then check your phone for 'AgentDesk alerts are on'."
+`python -m agentdesk alerts --test` sends the same text by hand. Messages must be signed in to iMessage on the Mac.
+Texting your own number shows in a conversation with yourself; if the phone doesn't buzz for that, Evan can use his
+Apple ID email as the handle instead.
 
 ## Out of scope
 
