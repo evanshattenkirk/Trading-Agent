@@ -10,11 +10,17 @@ account number or balance. The recipient comes from ALERT_IMESSAGE_TO in the Mac
 """
 from __future__ import annotations
 
+import json
+import logging
+import os
 import subprocess
+import urllib.request
 from datetime import time
+from pathlib import Path
 
 from . import health
 from .clock import ct, session_date
+from .config import expand
 
 DEFAULTS = {"enabled": True, "day_start": "07:00", "day_end": "21:00", "repeat_bad_min": 60, "morning": True,
             "morning_at": "08:20", "state_dir": "~/.agentdesk/alerts"}
@@ -120,3 +126,102 @@ def diff(prev: dict, report: dict, now: float, cfg) -> tuple[list[str], dict]:
             eng = rows.get("Engine")
             texts.append(f"AgentDesk {hm}: all green" + (f"; {eng['detail']}" if eng and eng.get("detail") else ""))
     return texts, state
+
+
+# ---------------------------------------------------------------- one run of the job
+HELLO = "AgentDesk alerts are on. You'll get a text here when the Manager panel turns amber or red."
+MAX_TRIES = 3
+SILENT_CHECKS = 2           # the port must be silent on two checks in a row (10 min) before the Dashboard row is red
+log = logging.getLogger("agentdesk.alerts")
+
+
+def dashboard_row() -> dict:
+    return health.row("Dashboard", health.BAD, "neither the engine nor the review page answers on :8765",
+                      "Restart the review page; if the engine should be running, check today's engine log:",
+                      "launchctl kickstart -k gui/$(id -u)/com.agentdesk.review")
+
+
+def fetch(url: str, timeout: float = 10) -> dict | None:
+    """The Manager panel's report, or None when nothing answers or the answer isn't a report."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("checks"), list) else None
+
+
+def state_file(cfg) -> Path:
+    return Path(expand(settings(cfg)["state_dir"])) / "state.json"
+
+
+def _load(path: Path) -> dict:
+    try:
+        st = json.loads(path.read_text())
+        if isinstance(st, dict):
+            return st
+        raise ValueError("not an object")
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as ex:
+        log.warning("alerts: state file %s unreadable (%s); starting fresh", path, ex)
+        return {}
+
+
+def _save(path: Path, st: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(st, indent=1, ensure_ascii=False))
+    os.replace(tmp, path)
+
+
+def check(cfg, now: float, *, fetcher=fetch, local=None, sender=send, to: str | None = None,
+          state_path: Path | None = None) -> list[str]:
+    """One check: read the report, text what changed, retry earlier failed texts, save state. Returns the new texts
+    it sent or tried to send."""
+    if not settings(cfg)["enabled"]:
+        log.info("alerts: off (alerts.enabled: false)")
+        return []
+    path = state_path or state_file(cfg)
+    st = _load(path)
+    new: list[str] = []
+    if "hello" not in st:
+        new.append(HELLO)
+        st["hello"] = now
+    rep = fetcher(f"http://127.0.0.1:{cfg['server']['port']}/api/health")
+    if rep is None:
+        st["unreachable"] = int(st.get("unreachable") or 0) + 1
+        rep = (local or health.report)(cfg, now, None, running=False)
+        rep = {**rep, "checks": list(rep.get("checks") or [])}
+        if st["unreachable"] >= SILENT_CHECKS:
+            rep["checks"].append(dashboard_row())
+        log.info("alerts: nothing answers on :%s (%d checks in a row); judged from local files",
+                 cfg["server"]["port"], st["unreachable"])
+    else:
+        st["unreachable"] = 0
+    texts, st = diff(st, rep, now, cfg)
+    new += texts
+    today = str(session_date(now))
+    if not to and st.get("no_to") != today:
+        st["no_to"] = today
+        log.warning("alerts: ALERT_IMESSAGE_TO is not set in .env; Mac banners only")
+    pending = []
+    for item in st.get("pending") or []:
+        if sender(item["text"], to, banner=False):
+            log.info("alerts: retried text sent to %s", mask(to))
+            continue
+        item = {"text": item["text"], "tries": int(item.get("tries") or 1) + 1}
+        if item["tries"] >= MAX_TRIES:
+            log.warning("alerts: text dropped after %d tries to %s: %s", item["tries"], mask(to),
+                        item["text"].splitlines()[0])
+        else:
+            pending.append(item)
+    for text in new:
+        ok = sender(text, to)
+        log.info("alerts: %s to %s: %s", "sent" if ok else ("banner only" if not to else "FAILED, will retry"),
+                 mask(to), text.replace("\n", " | "))
+        if not ok and to:
+            pending.append({"text": text, "tries": 1})
+    st["pending"] = pending
+    _save(path, st)
+    return new

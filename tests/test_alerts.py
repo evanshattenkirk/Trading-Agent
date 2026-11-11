@@ -4,7 +4,11 @@ morning all-clear. Spec: docs/superpowers/specs/2026-11-10-phone-alerts-design.m
 
 No test here may run the real osascript: every send goes through a fake runner or sender."""
 import copy
+import http.server
+import json
+import logging
 import subprocess
+import threading
 from types import SimpleNamespace
 from datetime import date, time
 
@@ -197,3 +201,125 @@ def test_retry_without_banner():
 
 def test_mask_shows_last_four():
     assert alerts.mask(FAKE_TO) == "…0000" and alerts.mask(None) == "(none)"
+
+
+# ---------------------------------------------------------------- check: one run of the job
+class Sender:
+    def __init__(self, ok=True):
+        self.calls, self.ok = [], ok
+
+    def __call__(self, text, to, banner=True):
+        self.calls.append((text, to, banner))
+        return self.ok
+
+
+def ok_report(*_a, **_k):
+    return rep(engine(), sign_in(health.OK))
+
+
+def idle_local(cfg, now, snap, running):
+    assert snap is None and running is False
+    return rep(engine(health.IDLE, "not running"))
+
+
+def checker(tmp_path, cfg=NO_MORNING, **kw):
+    def go(now, **more):
+        return alerts.check(cfg, now, state_path=tmp_path / "state.json", **{**kw, **more})
+    return go
+
+
+def test_first_run_sends_hello_once(tmp_path):
+    s = Sender()
+    go = checker(tmp_path, fetcher=ok_report, sender=s, to=FAKE_TO)
+    assert go(at(10)) == [alerts.HELLO]
+    assert go(at(10, 5)) == []
+    assert [c[0] for c in s.calls] == [alerts.HELLO]
+
+
+def test_corrupt_state_starts_fresh(tmp_path):
+    (tmp_path / "state.json").write_text("{not json")
+    assert checker(tmp_path, fetcher=ok_report, sender=Sender(), to=FAKE_TO)(at(10)) == [alerts.HELLO]
+    assert json.loads((tmp_path / "state.json").read_text())["hello"]
+
+
+def test_silent_port_waits_two_checks_then_alerts(tmp_path):
+    go = checker(tmp_path, fetcher=lambda url: None, local=idle_local, sender=Sender(), to=FAKE_TO)
+    first = go(at(10))
+    assert not any("Dashboard" in t for t in first)
+    second = go(at(10, 5))
+    assert any("🔴 Dashboard" in t for t in second)
+    back = go(at(10, 20), fetcher=ok_report)
+    assert any("✅ Dashboard" in t for t in back)
+
+
+def test_the_health_url_uses_the_server_port(tmp_path):
+    seen = []
+    checker(tmp_path, fetcher=lambda url: seen.append(url) or ok_report(), sender=Sender(), to=FAKE_TO)(at(10))
+    assert seen == [f"http://127.0.0.1:{CFG['server']['port']}/api/health"]
+
+
+def _serve(body: bytes):
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_bad_health_json_counts_as_silent():
+    for body in (b"<html>", b'{"x": 1}', b"[1, 2]"):
+        srv = _serve(body)
+        try:
+            assert alerts.fetch(f"http://127.0.0.1:{srv.server_port}/api/health") is None
+        finally:
+            srv.shutdown()
+    srv = _serve(json.dumps(ok_report()).encode())
+    try:
+        assert alerts.fetch(f"http://127.0.0.1:{srv.server_port}/api/health")["checks"]
+    finally:
+        srv.shutdown()
+    assert alerts.fetch("http://127.0.0.1:9/api/health", timeout=1) is None
+
+
+def test_failed_imessage_is_retried_then_dropped(tmp_path, caplog):
+    s = Sender(ok=False)
+    go = checker(tmp_path, fetcher=ok_report, sender=s, to=FAKE_TO)
+    go(at(10))
+    st = json.loads((tmp_path / "state.json").read_text())
+    assert st["pending"] == [{"text": alerts.HELLO, "tries": 1}]
+    go(at(10, 5))
+    assert json.loads((tmp_path / "state.json").read_text())["pending"] == [{"text": alerts.HELLO, "tries": 2}]
+    go(at(10, 10))
+    assert json.loads((tmp_path / "state.json").read_text())["pending"] == []
+    go(at(10, 15))
+    assert "dropped" in caplog.text
+    hello_calls = [c for c in s.calls if c[0] == alerts.HELLO]
+    assert len(hello_calls) == 3 and hello_calls[0][2] is True and all(c[2] is False for c in hello_calls[1:])
+
+
+def test_no_recipient_warns_once_a_day_and_queues_nothing(tmp_path, caplog):
+    go = checker(tmp_path, fetcher=ok_report, sender=Sender(ok=False), to=None)
+    go(at(10))
+    go(at(10, 5))
+    assert caplog.text.count("ALERT_IMESSAGE_TO is not set") == 1
+    assert json.loads((tmp_path / "state.json").read_text()).get("pending", []) == []
+
+
+def test_disabled_does_nothing(tmp_path):
+    called = []
+    go = checker(tmp_path, cfg=cfg_with(enabled=False), fetcher=lambda url: called.append(url), sender=Sender())
+    assert go(at(10)) == [] and called == []
+
+
+def test_log_never_shows_the_full_number(tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    go = checker(tmp_path, fetcher=lambda url: rep(sign_in(health.BAD)), sender=Sender(ok=False), to=FAKE_TO)
+    for m in range(0, 25, 5):
+        go(at(10, m))
+    assert "0000" in caplog.text and FAKE_TO not in caplog.text
