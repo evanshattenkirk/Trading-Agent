@@ -4,6 +4,8 @@ morning all-clear. Spec: docs/superpowers/specs/2026-11-10-phone-alerts-design.m
 
 No test here may run the real osascript: every send goes through a fake runner or sender."""
 import copy
+import subprocess
+from types import SimpleNamespace
 from datetime import date, time
 
 from agentdesk import alerts, health
@@ -145,3 +147,53 @@ def test_settings_have_defaults_without_an_alerts_section():
     s = alerts.settings(c)
     assert s["day_start"] == "07:00" and s["day_end"] == "21:00" and s["repeat_bad_min"] == 60
     assert s["morning"] is True and s["morning_at"] == "08:20" and s["enabled"] is True
+
+
+# ---------------------------------------------------------------- send: osascript
+class Runner:
+    """Records every command; returns `rc` for the iMessage call (the banner always succeeds)."""
+
+    def __init__(self, rc=0, raises=None):
+        self.calls, self.rc, self.raises = [], rc, raises
+
+    def __call__(self, args, **kw):
+        self.calls.append(list(args))
+        if args[2] == alerts.IMESSAGE_SCRIPT:
+            if self.raises:
+                raise self.raises
+            return SimpleNamespace(returncode=self.rc, stdout="", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+
+FAKE_TO = "+15550000000"
+
+
+def test_send_passes_handle_and_text_as_arguments():
+    text = 'He said "hi"\nline 2 🔴 & end tell'
+    r = Runner()
+    assert alerts.send(text, FAKE_TO, runner=r) is True
+    assert ["/usr/bin/osascript", "-e", alerts.IMESSAGE_SCRIPT, FAKE_TO, text] in r.calls
+    assert ["/usr/bin/osascript", "-e", alerts.BANNER_SCRIPT, text] in r.calls
+    for script in (alerts.IMESSAGE_SCRIPT, alerts.BANNER_SCRIPT):
+        assert FAKE_TO not in script and "hi" not in script and "on run argv" in script
+
+
+def test_send_failure_returns_false():
+    assert alerts.send("x", FAKE_TO, runner=Runner(rc=1)) is False
+    assert alerts.send("x", FAKE_TO, runner=Runner(raises=subprocess.TimeoutExpired("osascript", 30))) is False
+
+
+def test_no_recipient_shows_banner_only():
+    r = Runner()
+    assert alerts.send("x", None, runner=r) is False
+    assert r.calls == [["/usr/bin/osascript", "-e", alerts.BANNER_SCRIPT, "x"]]
+
+
+def test_retry_without_banner():
+    r = Runner()
+    assert alerts.send("x", FAKE_TO, banner=False, runner=r) is True
+    assert len(r.calls) == 1 and r.calls[0][2] == alerts.IMESSAGE_SCRIPT
+
+
+def test_mask_shows_last_four():
+    assert alerts.mask(FAKE_TO) == "…0000" and alerts.mask(None) == "(none)"

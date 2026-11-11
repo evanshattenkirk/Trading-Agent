@@ -10,6 +10,7 @@ account number or balance. The recipient comes from ALERT_IMESSAGE_TO in the Mac
 """
 from __future__ import annotations
 
+import subprocess
 from datetime import time
 
 from . import health
@@ -18,6 +19,41 @@ from .clock import ct, session_date
 DEFAULTS = {"enabled": True, "day_start": "07:00", "day_end": "21:00", "repeat_bad_min": 60, "morning": True,
             "morning_at": "08:20", "state_dir": "~/.agentdesk/alerts"}
 ICON = {health.BAD: "🔴", health.WARN: "🟠"}
+
+
+# The handle and the text reach osascript as arguments (argv), never inside the script source, so no quote, newline
+# or "end tell" in a message can change what runs.
+IMESSAGE_SCRIPT = """on run argv
+  tell application "Messages"
+    set svc to 1st account whose service type = iMessage
+    send (item 2 of argv) to participant (item 1 of argv) of svc
+  end tell
+end run"""
+BANNER_SCRIPT = """on run argv
+  display notification (item 1 of argv) with title "AgentDesk"
+end run"""
+OSASCRIPT = "/usr/bin/osascript"
+
+
+def mask(to: str | None) -> str:
+    return "…" + to[-4:] if to else "(none)"
+
+
+def send(text: str, to: str | None, banner: bool = True, runner=subprocess.run) -> bool:
+    """Show the Mac banner (unless `banner` is off, as on a retry), then iMessage `to`. True only when the iMessage
+    went (osascript exit 0). No recipient: banner only, False."""
+    if banner:
+        try:
+            runner([OSASCRIPT, "-e", BANNER_SCRIPT, text], timeout=30, capture_output=True, text=True)
+        except Exception:
+            pass
+    if not to:
+        return False
+    try:
+        r = runner([OSASCRIPT, "-e", IMESSAGE_SCRIPT, to, text], timeout=30, capture_output=True, text=True)
+    except Exception:
+        return False
+    return r.returncode == 0
 
 
 def settings(cfg) -> dict:
