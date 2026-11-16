@@ -1,7 +1,6 @@
-# K1: KPI binaries on numbers that leak before the report — design
+# KP1: KPI binaries on numbers that leak before the report — design
 
-Date: 2026-11-16. Thread "Test satellite edge on KPI binaries". Status: **draft for Evan's approval**; nothing is
-built until he approves it.
+Date: 2026-11-16. Thread "Test satellite edge on KPI binaries". Status: **approved by Evan 2026-11-16** (named KP1 because round 5 already used K1 for Kalshi).
 
 ## 1. Intent
 
@@ -12,7 +11,7 @@ chose to test a different source of edge first: **KPIs whose value is mostly pub
 data pins the number, a binary priced far from that number is mispriced, and that's the clearest edge these
 contracts can offer.
 
-K1 is research plus paper observation. No orders, no new engine book, no code in `agentdesk/` until a result passes
+KP1 is research plus paper observation. No orders, no new engine book, no code in `agentdesk/` until a result passes
 and Evan approves a book.
 
 ## 2. Contract facts the design relies on
@@ -45,7 +44,7 @@ approved 2026-10-13).
 | KBMAR | MARA Revenue ($m) | Bitcoins mined x daily BTC price, plus a hosting/other line fitted on past quarters | a few % |
 | KCCOI | COIN Transaction Revenue ($m) | Coinbase Exchange public daily volumes (and total crypto spot volume), the whole quarter known before the report | likely 5-15%; the control case |
 
-Not in K1: HOOD Gold subscribers (no monthly data; trend only), HOOD EPS, MARA hashrate and holdings (MARA's
+Not in KP1: HOOD Gold subscribers (no monthly data; trend only), HOOD EPS, MARA hashrate and holdings (MARA's
 monthly updates appear to have stopped after September 2025; sales since 2026 move holdings), COIN EPS and
 subscription revenue. They can be added later as a separately labelled variant.
 
@@ -55,7 +54,7 @@ subscription revenue. They can be added later as a separately labelled variant.
    edge doesn't hinge on beating analysts; it hinges on the binary price disagreeing with numbers anyone can see.
 2. Target revenue as a stand-in for satellite parking-lot counts (Census store sales + R1's search data, pooled over
    19 retailers). Needs historical revenue consensus (paid FMP tier); R1's failure makes it a weak bet.
-3. Record prices at launch only. No history; slowest. K1 includes this as Stage 2, so it isn't lost.
+3. Record prices at launch only. No history; slowest. KP1 includes this as Stage 2, so it isn't lost.
 
 ## 5. Stage 1: how well does public data pin each KPI? (historical, starts on approval)
 
@@ -134,17 +133,17 @@ to HOOD/MARA. If COIN earns as much as HOOD/MARA, the profit is coming from the 
 from leaked data; the report says so and Evan decides what that means.
 
 **Kill rule:** after 2 full seasons, if the market mid's Brier is at or below the model's on every KPI, stop the
-paper trading and keep only the calibration log. **End date:** after 8 seasons (2 years) with the bar unmet, K1
+paper trading and keep only the calibration log. **End date:** after 8 seasons (2 years) with the bar unmet, KP1
 reports "inconclusive" and stops.
 
 ## 7. Where things go
 
-- `research/k1_kpi_prereg.md`: sections 3, 5 and 6 frozen before any actual KPI value or nowcast is compared.
-- `research/k1_kpi_nowcast.py` (+ tests in `research/tests/`): Stage 1; data in `research/data/k1/`, a copy in
-  `/mnt/project-files/research/k1/`.
-- `research/k1_kpi_quotes.py`: the Stage 2 recorder, read-only, built after launch once a quote source is confirmed;
+- `research/kp1_kpi_prereg.md`: sections 3, 5 and 6 frozen before any actual KPI value or nowcast is compared.
+- `research/kp1_kpi_nowcast.py` (+ tests in `research/tests/`): Stage 1; data in `research/data/kp1/`, a copy in
+  `/mnt/project-files/research/kp1/`.
+- `research/kp1_kpi_quotes.py`: the Stage 2 recorder, read-only, built after launch once a quote source is confirmed;
   a Mac launchd job only with Evan's OK at that time.
-- Results: `research/k1_kpi_nowcast.md`, then one section per earnings season.
+- Results: `research/kp1_kpi_nowcast.md`, then one section per earnings season.
 
 ## 8. Non-goals and anti-goals
 
