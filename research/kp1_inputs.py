@@ -67,3 +67,11 @@ def load_hood_monthly(path=HOOD_MONTHLY) -> list[MonthRow]:
     rows = [MonthRow(month=r["month"], published=date.fromisoformat(r["published"]),
                      **{k: float(r[k]) for k in _NUM}) for r in _rows(path)]
     return sorted(rows, key=lambda m: m.month)
+
+
+if __name__ == "__main__":
+    actuals = load_actuals()
+    load_report_dates()
+    months = load_hood_monthly()
+    print(f"actuals.csv: {sum(len(v) for v in actuals.values())} values over {len(actuals)} company-quarters; "
+          f"hood_monthly.csv: {len(months)} months ({months[0].month} to {months[-1].month})")

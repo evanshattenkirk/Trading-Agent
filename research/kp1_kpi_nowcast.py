@@ -7,6 +7,7 @@ research/kp1_kpi_nowcast_results.json and research/kp1_kpi_nowcast.md.
 from __future__ import annotations
 
 import calendar
+import math
 import csv
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -269,3 +270,228 @@ def load_inputs() -> Inputs:
             coinbase[r["product"]][date.fromisoformat(r["day"])] = (float(r["close"]), float(r["volume"]))
     return Inputs(actuals=load_actuals(ACTUALS), report_dates=load_report_dates(ACTUALS),
                   monthly=load_hood_monthly(HOOD_MONTHLY), mara_blocks=blocks, heights=heights, coinbase=coinbase)
+
+
+# ---------- scoring (prereg section 5) ----------
+
+T4_Q90 = 1.5332062740589436  # 90th percentile of Student-t with 4 df
+SCALES = {("HOOD", "funded_customers"): 1e6, ("HOOD", "revenue"): 1e9, ("HOOD", "arpu"): 1.0,
+          ("MARA", "blocks_won"): 1.0, ("MARA", "bitcoins_mined"): 1e3, ("MARA", "revenue"): 1e6,
+          ("COIN", "transaction_revenue"): 1e6}
+CONTRACTS = {("HOOD", "funded_customers"): "KCHOD", ("HOOD", "revenue"): "KBHOD", ("HOOD", "arpu"): "KDHOD",
+             ("MARA", "blocks_won"): "KCMAR", ("MARA", "bitcoins_mined"): "KFMAR", ("MARA", "revenue"): "KBMAR",
+             ("COIN", "transaction_revenue"): "KCCOI"}
+MIN_ERRORS = 4
+
+
+def strike_interval(scaled: float) -> float:
+    a = abs(scaled)
+    return 0.01 if a < 10 else 0.1 if a < 100 else 1.0 if a < 1000 else 10.0 if a < 10000 else 100.0
+
+
+def t4_cdf(t: float) -> float:
+    return 0.5 + t * (t * t + 6) / (2 * (t * t + 4) ** 1.5)
+
+
+def _mean_sd(errors):
+    m = mean(errors)
+    sd = (sum((e - m) ** 2 for e in errors) / (len(errors) - 1)) ** 0.5
+    return m, max(sd, 1e-4)
+
+
+def prob_at_or_above(k: float, nowcast: float, errors: list[float]) -> float:
+    """P(KPI >= k) from the Student-t (4 df) on the earlier log errors."""
+    m, sd = _mean_sd(errors)
+    return 1 - t4_cdf((math.log(k / nowcast) - m) / sd)
+
+
+def _median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return None if not n else xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def score_kpi(rows, scale: float = 1.0) -> dict:
+    """Walk-forward scoring. rows = [(quarter, actual, model, naive)] in time order; None marks a missing value.
+
+    A quarter is scored once both methods have at least 4 earlier errors and the quarter has an actual and both
+    nowcasts. Strikes (scaled units) centre on the model nowcast; both methods are scored on the same strikes.
+    """
+    hist = {"model": [], "naive": []}
+    quarters = []
+    for q, actual, model, naive in rows:
+        rec = {"quarter": q, "actual": actual, "model": model, "naive": naive, "scored": False}
+        for name, now in (("model", model), ("naive", naive)):
+            rec[f"e_{name}"] = math.log(actual / now) if actual is not None and now is not None else None
+        if (actual is not None and model is not None and naive is not None
+                and len(hist["model"]) >= MIN_ERRORS and len(hist["naive"]) >= MIN_ERRORS):
+            interval = strike_interval(model / scale)
+            centre = round(model / scale / interval) * interval
+            strikes = [centre + d * interval for d in range(-3, 4)]
+            rec.update(scored=True, strikes=strikes, interval=interval)
+            for name, now in (("model", model), ("naive", naive)):
+                rec[f"p_{name}"] = [prob_at_or_above(k * scale, now, hist[name]) for k in strikes]
+                hits = [1.0 if actual / scale >= k else 0.0 for k in strikes]
+                rec[f"brier_{name}"] = mean((p - h) ** 2 for p, h in zip(rec[f"p_{name}"], hits))
+                rec[f"abs_intervals_{name}"] = abs(actual - now) / scale / interval
+            m, sd = _mean_sd(hist["model"])
+            rec["in80"] = abs((rec["e_model"] - m) / sd) <= T4_Q90
+        for name in ("model", "naive"):
+            if rec[f"e_{name}"] is not None:
+                hist[name].append(rec[f"e_{name}"])
+        quarters.append(rec)
+    scored = [r for r in quarters if r["scored"]]
+    out = {"quarters": quarters, "scored": len(scored), "median_abs_err": {"model": None, "naive": None},
+           "median_abs_intervals": {"model": None, "naive": None}, "coverage80": None,
+           "brier": {"model": None, "naive": None}, "passes_gate": False}
+    if scored:
+        for name in ("model", "naive"):
+            out["median_abs_err"][name] = _median([abs(r[f"e_{name}"]) for r in scored])
+            out["median_abs_intervals"][name] = _median([r[f"abs_intervals_{name}"] for r in scored])
+            out["brier"][name] = mean(r[f"brier_{name}"] for r in scored)
+        out["coverage80"] = mean(1.0 if r["in80"] else 0.0 for r in scored)
+        out["passes_gate"] = bool(out["median_abs_err"]["model"] <= 0.5 * out["median_abs_err"]["naive"]
+                                  and 0.60 <= out["coverage80"] <= 0.95)
+    return out
+
+
+# ---------- report ----------
+
+SAMPLES = {"HOOD": (None, "2026Q3"), "MARA": ("2021Q3", "2026Q3"), "COIN": ("2021Q2", "2026Q3")}
+NAMES = {("HOOD", "funded_customers"): "HOOD Funded Customers", ("HOOD", "revenue"): "HOOD Revenue",
+         ("HOOD", "arpu"): "HOOD ARPU", ("MARA", "blocks_won"): "MARA Total Blocks Won",
+         ("MARA", "bitcoins_mined"): "MARA Bitcoins Mined", ("MARA", "revenue"): "MARA Revenue",
+         ("COIN", "transaction_revenue"): "COIN Transaction Revenue"}
+
+
+def _quarter_range(first: str, last: str) -> list[str]:
+    out, q = [], first
+    while q <= last:
+        out.append(q)
+        q = next_q(q)
+    return out
+
+
+def hood_first_quarter(data: Inputs) -> str:
+    """First quarter whose report had at least two of its own monthly releases published before it."""
+    for (co, q), _ in sorted(data.report_dates.items()):
+        if co == "HOOD" and len(_hood_months(data, q)) >= 2:
+            return q
+    raise ValueError("no HOOD quarter with two monthly releases")
+
+
+def run(data: Inputs) -> dict:
+    out = {}
+    for co, (first, last) in SAMPLES.items():
+        first = first or hood_first_quarter(data)
+        qs = _quarter_range(first, last)
+        casts = {q: nowcasts(co, q, data) for q in qs}
+        for kpi in KPIS[co]:
+            rows, dropped = [], []
+            for q in qs:
+                actual = _get(data, co, q, kpi)
+                if actual is None:
+                    dropped.append(q)
+                    continue
+                rows.append((q, actual, *casts[q][kpi]))
+            res = score_kpi(rows, SCALES[(co, kpi)])
+            res.update(company=co, kpi=kpi, contract=CONTRACTS[(co, kpi)], scale=SCALES[(co, kpi)],
+                       sample=[first, last], dropped=dropped)
+            out[f"{co}.{kpi}"] = res
+    return out
+
+
+def _pct(x):
+    return "n/a" if x is None else f"{100 * x:.1f}%"
+
+
+def _num(x, nd=2):
+    return "n/a" if x is None else f"{x:.{nd}f}"
+
+
+def _fmt_val(v, scale):
+    return "—" if v is None else f"{v / scale:,.3f}" if scale >= 1e3 else f"{v:,.1f}"
+
+
+def report_md(results: dict) -> str:
+    passing = [r["contract"] for r in results.values() if r["passes_gate"]]
+    lines = ["# KP1 Stage 1: how well public data pins KPI-binary KPIs — results", "",
+             "Rules: `research/kp1_kpi_prereg.md` (frozen before any data). Inputs: `research/kp1_inputs/` "
+             "(typed from each earnings release, one source URL per row) and `research/data/kp1/` "
+             "(mempool.space MARA Pool blocks and heights, Coinbase Exchange daily candles; `python research/kp1_fetch.py`).",
+             "",
+             f"**Gate passed: {', '.join(passing) if passing else 'none'}.** "
+             "Gate per KPI: model median |log error| at most half the naive baseline's, and the model's 80% interval "
+             "covers 60-95% of scored quarters. Stage 1 proves no edge; it only says whether public data knows "
+             "more than a trend line. COIN transaction revenue is paper-traded in Stage 2 whatever its result.",
+             "",
+             "| Contract | KPI | Scored | Model median abs err | Naive median abs err | Model / naive | "
+             "Model err in strike intervals | 80% coverage | Brier model | Brier naive | Gate |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for r in results.values():
+        mm, nm = r["median_abs_err"]["model"], r["median_abs_err"]["naive"]
+        ratio = "n/a" if mm is None or not nm else f"{mm / nm:.2f}"
+        lines.append(f"| {r['contract']} | {NAMES[(r['company'], r['kpi'])]} | {r['scored']} | {_pct(mm)} | "
+                     f"{_pct(nm)} | {ratio} | {_num(r['median_abs_intervals']['model'], 1)} | "
+                     f"{_pct(r['coverage80'])} | {_num(r['brier']['model'], 3)} | {_num(r['brier']['naive'], 3)} | "
+                     f"{'PASS' if r['passes_gate'] else 'fail'} |")
+    lines += ["", "Abs err = |ln(actual / nowcast)|, so 1.0% is about a 1% miss. Brier is over 7 synthetic strikes "
+              "(the model nowcast rounded to Cboe's strike interval, ±3 intervals) and the scored quarters; lower is "
+              "better. A quarter is scored once both methods have 4 earlier errors.", ""]
+    for r in results.values():
+        lines += [f"## {r['contract']}: {NAMES[(r['company'], r['kpi'])]}", ""]
+        if r["dropped"]:
+            lines += [f"Not printed (dropped): {', '.join(r['dropped'])}.", ""]
+        unit = "scaled by " + (f"{r['scale']:.0e}" if r["scale"] >= 1e3 else "1")
+        lines += [f"| Quarter | Actual ({unit}) | Model | Naive | Model err | Naive err | Scored | In 80% |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for q in r["quarters"]:
+            sc = r["scale"] if r["scale"] >= 1e3 else 1.0
+            lines.append(f"| {q['quarter']} | {_fmt_val(q['actual'], sc)} | {_fmt_val(q['model'], sc)} | "
+                         f"{_fmt_val(q['naive'], sc)} | {_pct(q['e_model'])} | {_pct(q['e_naive'])} | "
+                         f"{'yes' if q['scored'] else ''} | {('yes' if q.get('in80') else 'no') if q['scored'] else ''} |")
+        lines.append("")
+    ns = [r["scored"] for r in results.values()]
+    worse = [r["contract"] for r in results.values()
+             if r["brier"]["model"] is not None and r["brier"]["model"] > r["brier"]["naive"]]
+    close = [r["contract"] for r in results.values() if r["passes_gate"] and r["median_abs_err"]["naive"]
+             and r["median_abs_err"]["model"] / r["median_abs_err"]["naive"] > 0.45]
+    lines += ["## Caveats", "",
+              f"- Small samples: {min(ns)} to {max(ns)} scored quarters per KPI, so a gate result can flip on one or "
+              "two quarters." + (f" {', '.join(close)} passed with a model/naive ratio above 0.45, close to the 0.50 "
+                                 "bar." if close else ""),
+              *([f"- Brier is worse for the model than the naive baseline on {', '.join(worse)} even though its "
+                 "errors are smaller: strikes sit around the model nowcast, so they are the hard calls, and the "
+                 "model's t-distribution is wide (it carries every earlier error, including the noisy first "
+                 "quarters). Brier here grades calibration on near-the-money strikes, not accuracy."] if worse else []),
+              "- HOOD revenue: the prior quarter's rates use only its months 1-2 (frozen rule), so a big month 3 "
+              "skews the next quarter's rates too. The earnings release prints the prior quarter's full volumes; "
+              "using them would be a separately labelled variant.",
+              "- HOOD's quarter-end month is never public before the report; the model sees months 1-2 only.",
+              "- MARA printed blocks won only from Q4 2023, so KCMAR has the shortest history.",
+              "- Reported values are as first printed in each release (no restatements), which is what Cboe settles on.",
+              "- Information rule: a nowcast uses only releases published before its report date; parameters for a "
+              "quarter come only from earlier quarters.", ""]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    import json
+    import shutil
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent
+    results = run(load_inputs())
+    (here / "kp1_kpi_nowcast_results.json").write_text(json.dumps(results, indent=1, default=str))
+    md = report_md(results)
+    (here / "kp1_kpi_nowcast.md").write_text(md)
+    shared = Path("/mnt/project-files/research/kp1")
+    if shared.parent.exists():
+        shared.mkdir(parents=True, exist_ok=True)
+        shutil.copy(here / "kp1_kpi_nowcast.md", shared / "kp1_kpi_nowcast.md")
+    for r in results.values():
+        print(r["contract"], r["scored"], r["median_abs_err"], r["coverage80"], r["passes_gate"])
+
+
+if __name__ == "__main__":
+    main()

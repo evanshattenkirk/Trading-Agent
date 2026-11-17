@@ -1,5 +1,6 @@
 """KP1 nowcasts, naive baselines and walk-forward scoring (rules: research/kp1_kpi_prereg.md)."""
 import math
+import random
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -177,3 +178,107 @@ def test_coin_ratio_is_mean_of_last_four():
     assert math.isclose(model, vol["2025Q2"] * (0.1 + 0.2 + 0.3 + 0.4) / 4)
     r4, r3 = 0.4 * vol["2025Q1"], 0.3 * vol["2024Q4"]
     assert math.isclose(naive, r4 * r4 / r3)
+
+
+# ---------- scoring (Task 5) ----------
+
+def test_strike_interval_tiers():
+    assert N.strike_interval(9.99) == 0.01
+    assert N.strike_interval(10) == 0.1
+    assert N.strike_interval(999) == 1
+    assert N.strike_interval(1000) == 10
+    assert N.strike_interval(12000) == 100
+
+
+def test_t4_cdf_known_values():
+    assert N.t4_cdf(0) == 0.5
+    assert abs(N.t4_cdf(2.132) - 0.95) < 1e-3
+    assert abs(N.t4_cdf(-2.132) - 0.05) < 1e-3
+    assert abs(N.t4_cdf(N.T4_Q90) - 0.90) < 1e-6
+
+
+def test_prob_is_half_at_bias_corrected_centre():
+    errors = [0.01, 0.03, 0.02, 0.04]
+    k = 100.0 * math.exp(0.025)
+    assert abs(N.prob_at_or_above(k, 100.0, errors) - 0.5) < 1e-12
+    assert N.prob_at_or_above(k * 1.2, 100.0, errors) < 0.5
+
+
+def _rows(n, model_err=0.01, naive_err=0.10, wobble=0.005, seed=7):
+    """Synthetic (quarter, actual, model, naive): model error model_err + wobble x N(0,1), naive naive_err x N(0,1)."""
+    rng = random.Random(seed)
+    rows = []
+    for i in range(n):
+        actual = 1000.0 + 10 * i
+        rows.append((f"Q{i}", actual, actual * math.exp(-(model_err + wobble * rng.gauss(0, 1))),
+                     actual * math.exp(-naive_err * rng.gauss(0, 1))))
+    return rows
+
+
+def test_fewer_than_four_errors_not_scored():
+    r4 = N.score_kpi(_rows(4), scale=1)
+    assert r4["scored"] == 0 and r4["passes_gate"] is False and r4["brier"]["model"] is None
+    r5 = N.score_kpi(_rows(5), scale=1)
+    assert r5["scored"] == 1
+    assert [q["scored"] for q in r5["quarters"]] == [False] * 4 + [True]
+
+
+def test_quarter_needs_four_errors_from_both_methods():
+    rows = _rows(8)
+    rows[0] = (rows[0][0], rows[0][1], rows[0][2], None)  # naive missing in the first quarter
+    out = N.score_kpi(rows, scale=1)
+    assert [q["scored"] for q in out["quarters"]] == [False] * 5 + [True] * 3
+
+
+def test_gate_passes_when_much_better_and_calibrated():
+    out = N.score_kpi(_rows(30), scale=1)
+    assert out["median_abs_err"]["model"] < 0.5 * out["median_abs_err"]["naive"]
+    assert 0.60 <= out["coverage80"] <= 0.95
+    assert out["passes_gate"] is True
+
+
+def test_gate_fails_when_no_better_than_half_naive():
+    out = N.score_kpi(_rows(30, model_err=0.0, naive_err=0.012, wobble=0.01), scale=1)
+    assert out["median_abs_err"]["model"] > 0.5 * out["median_abs_err"]["naive"]
+    assert out["passes_gate"] is False
+
+
+def test_gate_fails_on_overconfident_intervals():
+    rows = []
+    for i in range(30):
+        actual = 1000.0
+        e = 0.001 * (i % 2) if i < 15 else 0.05 * (1 if i % 2 else -1)  # calm history, then big misses
+        rows.append((f"Q{i}", actual, actual * math.exp(-e), actual * math.exp(-0.5)))
+    out = N.score_kpi(rows, scale=1)
+    assert out["coverage80"] < 0.60
+    assert out["passes_gate"] is False
+
+
+def test_errors_never_use_the_scored_quarter():
+    rows = _rows(10)
+    a = N.score_kpi(rows, scale=1)["quarters"][6]
+    rows[6] = (rows[6][0], rows[6][1] * 1.5, rows[6][2], rows[6][3])
+    b = N.score_kpi(rows, scale=1)["quarters"][6]
+    assert a["p_model"] == b["p_model"] and a["p_naive"] == b["p_naive"]
+    assert a["strikes"] == b["strikes"]
+
+
+def test_strikes_centre_on_model_nowcast_in_scaled_units():
+    rows = [(f"Q{i}", 2.5e9, 2.5e9 * math.exp(0.01 * ((-1) ** i)), 2.0e9) for i in range(5)]
+    q = N.score_kpi(rows, scale=1e9)["quarters"][4]
+    centre = round(q["model"] / 1e9 / 0.01) * 0.01
+    assert [round(k, 2) for k in q["strikes"]] == [round(centre + d * 0.01, 2) for d in range(-3, 4)]
+
+
+def test_run_lists_unprinted_quarters_as_dropped():
+    actuals = {("MARA", "2024Q1"): {"blocks_won": 368, "bitcoins_mined": 2811, "revenue": 1.0},
+               ("MARA", "2023Q3"): {"bitcoins_mined": 3490, "revenue": 1.0},
+               ("COIN", "2021Q2"): {"transaction_revenue": 1.0},
+               ("HOOD", "2026Q3"): {"funded_customers": 1.0, "revenue": 1.0, "arpu": 1.0}}
+    dates = {("HOOD", "2026Q3"): date(2026, 10, 27)}
+    monthly = [month("2026-07", "2026-08-12"), month("2026-08", "2026-09-10")]
+    out = N.run(inputs(actuals=actuals, dates=dates, monthly=monthly))
+    blocks = out["MARA.blocks_won"]
+    assert "2023Q3" in blocks["dropped"] and "2024Q1" not in blocks["dropped"]
+    assert [q["quarter"] for q in blocks["quarters"]] == ["2024Q1"]
+    assert out["HOOD.funded_customers"]["sample"] == ["2026Q3", "2026Q3"]
