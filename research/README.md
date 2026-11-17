@@ -154,6 +154,15 @@ from the Mac; Google Trends from any session with `pytrends`:
     python research/fetch_retail_trends.py            # research/data/retail/trends.csv
     python research/r1_retail_search.py               # r1_retail_search.md / r1_retail_search_results.json
 
+KP1, KPI binaries on numbers public before the report (rules in kp1_kpi_prereg.md, frozen before any data; spec
+docs/superpowers/specs/2026-11-16-kpi-binaries-public-data-design.md): how closely public data pins seven Cboe KPI
+binary KPIs (HOOD, MARA, COIN) before each report, against a naive baseline. Reported values and Robinhood's monthly
+figures are typed into research/kp1_inputs/ with a source URL per row; on-chain and exchange data are fetched:
+
+    python research/kp1_inputs.py                     # validates research/kp1_inputs/*.csv
+    python research/kp1_fetch.py                      # research/data/kp1/mara_blocks.csv, network_heights.csv, coinbase_daily.csv
+    python research/kp1_kpi_nowcast.py                # kp1_kpi_nowcast.md / kp1_kpi_nowcast_results.json
+
 Book D fill-quality study (spec docs/superpowers/specs/2026-11-09-d-fill-quality-design.md, pass rule fixed
 before any run): each D leg's resting-then-walking limit order replayed on ThetaData tick trades with the NBBO,
 then D re-scored at the measured cost per leg:
