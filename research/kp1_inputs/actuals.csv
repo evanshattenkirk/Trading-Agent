@@ -1,0 +1,234 @@
+company,quarter,report_date,kpi,value,printed,source_url
+HOOD,2022Q2,2022-08-02,funded_customers,22900000,Net Cumulative Funded Accounts were 22.9 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000162/robinhoodexhibit991_63022.htm
+HOOD,2022Q2,2022-08-02,revenue,318000000,Total net revenues $318 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000162/robinhoodexhibit991_63022.htm
+HOOD,2022Q3,2022-11-02,funded_customers,22900000,Net Cumulative Funded Accounts 22.9 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000229/q32022robinhoodexhibit991.htm
+HOOD,2022Q3,2022-11-02,revenue,361000000,Total net revenues $361 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000229/q32022robinhoodexhibit991.htm
+HOOD,2022Q3,2022-11-02,arpu,63,ARPU $63,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000229/q32022robinhoodexhibit991.htm
+HOOD,2022Q3,2022-11-02,net_interest,128000000,Net interest revenues $128 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000229/q32022robinhoodexhibit991.htm
+HOOD,2022Q3,2022-11-02,other_revenues,25000000,Other revenues $25 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000229/q32022robinhoodexhibit991.htm
+HOOD,2022Q3,2022-11-02,rev_options,124000000,$124 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000230/hood-20220930.htm
+HOOD,2022Q3,2022-11-02,rev_crypto,51000000,$51 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000230/hood-20220930.htm
+HOOD,2022Q3,2022-11-02,rev_equities,31000000,$31 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000230/hood-20220930.htm
+HOOD,2022Q3,2022-11-02,rev_other_transaction,2000000,$2 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387922000230/hood-20220930.htm
+HOOD,2022Q4,2023-02-08,funded_customers,23000000,Net Cumulative Funded Accounts 23.0 million,https://www.sec.gov/Archives/edgar/data/1783879/000162828023002760/q42022robinhoodexhibit991.htm
+HOOD,2022Q4,2023-02-08,revenue,380000000,Total net revenues $380 million,https://www.sec.gov/Archives/edgar/data/1783879/000162828023002760/q42022robinhoodexhibit991.htm
+HOOD,2022Q4,2023-02-08,arpu,66,ARPU $66,https://www.sec.gov/Archives/edgar/data/1783879/000162828023002760/q42022robinhoodexhibit991.htm
+HOOD,2022Q4,2023-02-08,net_interest,167000000,Net interest revenues $167 million,https://www.sec.gov/Archives/edgar/data/1783879/000162828023002760/q42022robinhoodexhibit991.htm
+HOOD,2022Q4,2023-02-08,other_revenues,27000000,Other revenues $27 million,https://www.sec.gov/Archives/edgar/data/1783879/000162828023002760/q42022robinhoodexhibit991.htm
+HOOD,2022Q4,2023-02-08,rev_options,124000000,$124 million (FY2022 10-K less nine months 10-Q),https://www.sec.gov/Archives/edgar/data/1783879/000178387923000045/hood-20221231.htm
+HOOD,2022Q4,2023-02-08,rev_crypto,39000000,$39 million (FY2022 10-K less nine months 10-Q),https://www.sec.gov/Archives/edgar/data/1783879/000178387923000045/hood-20221231.htm
+HOOD,2022Q4,2023-02-08,rev_equities,21000000,$21 million (FY2022 10-K less nine months 10-Q),https://www.sec.gov/Archives/edgar/data/1783879/000178387923000045/hood-20221231.htm
+HOOD,2022Q4,2023-02-08,rev_other_transaction,2000000,$2 million (FY2022 10-K less nine months 10-Q),https://www.sec.gov/Archives/edgar/data/1783879/000178387923000045/hood-20221231.htm
+HOOD,2023Q1,2023-05-10,funded_customers,23100000,Net Cumulative Funded Accounts 23.1 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000116/q12023robinhoodexhibit991.htm
+HOOD,2023Q1,2023-05-10,revenue,441000000,Total net revenues $441 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000116/q12023robinhoodexhibit991.htm
+HOOD,2023Q1,2023-05-10,arpu,77,ARPU $77,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000116/q12023robinhoodexhibit991.htm
+HOOD,2023Q1,2023-05-10,net_interest,208000000,Net interest revenues $208 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000116/q12023robinhoodexhibit991.htm
+HOOD,2023Q1,2023-05-10,other_revenues,26000000,Other revenues $26 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000116/q12023robinhoodexhibit991.htm
+HOOD,2023Q1,2023-05-10,rev_options,133000000,$133 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000117/hood-20230331.htm
+HOOD,2023Q1,2023-05-10,rev_crypto,38000000,$38 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000117/hood-20230331.htm
+HOOD,2023Q1,2023-05-10,rev_equities,27000000,$27 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000117/hood-20230331.htm
+HOOD,2023Q1,2023-05-10,rev_other_transaction,9000000,$9 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000117/hood-20230331.htm
+HOOD,2023Q2,2023-08-02,funded_customers,23200000,Net Cumulative Funded Accounts 23.2 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000173/q22023robinhoodexhibit991.htm
+HOOD,2023Q2,2023-08-02,revenue,486000000,Total net revenues $486 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000173/q22023robinhoodexhibit991.htm
+HOOD,2023Q2,2023-08-02,arpu,84,ARPU $84,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000173/q22023robinhoodexhibit991.htm
+HOOD,2023Q2,2023-08-02,net_interest,234000000,Net interest revenues $234 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000173/q22023robinhoodexhibit991.htm
+HOOD,2023Q2,2023-08-02,other_revenues,59000000,Other revenues $59 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000173/q22023robinhoodexhibit991.htm
+HOOD,2023Q2,2023-08-02,rev_options,127000000,$127 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000175/hood-20230630.htm
+HOOD,2023Q2,2023-08-02,rev_crypto,31000000,$31 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000175/hood-20230630.htm
+HOOD,2023Q2,2023-08-02,rev_equities,25000000,$25 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000175/hood-20230630.htm
+HOOD,2023Q2,2023-08-02,rev_other_transaction,10000000,$10 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000175/hood-20230630.htm
+HOOD,2023Q3,2023-11-07,funded_customers,23300000,Net Cumulative Funded Accounts 23.3 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000267/q32023robinhoodexhibit991.htm
+HOOD,2023Q3,2023-11-07,revenue,467000000,Total net revenues $467 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000267/q32023robinhoodexhibit991.htm
+HOOD,2023Q3,2023-11-07,arpu,80,ARPU $80,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000267/q32023robinhoodexhibit991.htm
+HOOD,2023Q3,2023-11-07,net_interest,251000000,Net interest revenues $251 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000267/q32023robinhoodexhibit991.htm
+HOOD,2023Q3,2023-11-07,other_revenues,31000000,Other revenues $31 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000267/q32023robinhoodexhibit991.htm
+HOOD,2023Q3,2023-11-07,rev_options,124000000,$124 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000268/hood-20230930.htm
+HOOD,2023Q3,2023-11-07,rev_crypto,23000000,$23 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000268/hood-20230930.htm
+HOOD,2023Q3,2023-11-07,rev_equities,27000000,$27 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000268/hood-20230930.htm
+HOOD,2023Q3,2023-11-07,rev_other_transaction,11000000,$11 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387923000268/hood-20230930.htm
+HOOD,2023Q4,2024-02-13,funded_customers,23400000,Net Cumulative Funded Accounts 23.4 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,revenue,471000000,Total net revenues $471 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,arpu,81,ARPU $81,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,net_interest,236000000,Net interest revenues $236 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,other_revenues,35000000,Other revenues $35 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,rev_options,121000000,$121 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,rev_crypto,43000000,$43 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,rev_equities,25000000,$25 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2023Q4,2024-02-13,rev_other_transaction,11000000,$11 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000047/q42023robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,funded_customers,23900000,Funded Customers 23.9 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,revenue,618000000,Total net revenues $618 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,arpu,104,ARPU $104,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,net_interest,254000000,Net interest revenues $254 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,other_revenues,35000000,Other revenues $35 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,rev_options,154000000,$154 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,rev_crypto,126000000,$126 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,rev_equities,39000000,$39 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q1,2024-05-08,rev_other_transaction,10000000,transaction-based revenues $329 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000144/q12024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,funded_customers,24200000,Funded Customers 24.2 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,revenue,682000000,Total net revenues $682 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,arpu,113,ARPU $113,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,net_interest,285000000,Net interest revenues $285 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,other_revenues,70000000,Other revenues $70 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,rev_options,182000000,$182 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,rev_crypto,81000000,$81 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,rev_equities,40000000,$40 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q2,2024-08-07,rev_other_transaction,24000000,transaction-based revenues $327 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000231/q22024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,funded_customers,24300000,Funded Customers 24.3 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,revenue,637000000,Total net revenues $637 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,arpu,105,ARPU $105,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,net_interest,274000000,Net interest revenues $274 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,other_revenues,44000000,Other revenues $44 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,rev_options,202000000,$202 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,rev_crypto,61000000,$61 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,rev_equities,37000000,$37 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q3,2024-10-30,rev_other_transaction,19000000,transaction-based revenues $319 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387924000295/q32024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,funded_customers,25200000,Funded Customers 25.2 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,revenue,1014000000,"Total net revenues $1,014 million",https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,arpu,164,ARPU $164,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,net_interest,296000000,Net interest revenues $296 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,other_revenues,46000000,Other revenues $46 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,rev_options,222000000,$222 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,rev_crypto,358000000,$358 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,rev_equities,61000000,$61 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2024Q4,2025-02-12,rev_other_transaction,31000000,transaction-based revenues $672 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000045/q42024robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,funded_customers,25800000,Funded Customers 25.8 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,revenue,927000000,Total net revenues $927 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,arpu,145,ARPU $145,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,net_interest,290000000,Net interest revenues $290 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,other_revenues,54000000,Other revenues $54 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,rev_options,240000000,$240 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,rev_crypto,252000000,$252 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,rev_equities,56000000,$56 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q1,2025-04-30,rev_other_transaction,35000000,transaction-based revenues $583 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000144/q12025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,funded_customers,26500000,Funded Customers 26.5 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,revenue,989000000,Total net revenues $989 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,arpu,151,ARPU $151,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,net_interest,357000000,Net interest revenues $357 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,other_revenues,93000000,Other revenues $93 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,rev_options,265000000,$265 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,rev_crypto,160000000,$160 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,rev_equities,66000000,$66 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q2,2025-07-30,rev_other_transaction,48000000,transaction-based revenues $539 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000250/q22025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,funded_customers,26800000,Funded Customers 26.8 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,revenue,1274000000,"Total net revenues $1,274 million",https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,arpu,191,ARPU $191,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,net_interest,456000000,Net interest revenues $456 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,other_revenues,88000000,Other revenues $88 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,rev_options,304000000,$304 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,rev_crypto,268000000,$268 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,rev_equities,86000000,$86 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q3,2025-11-05,rev_other_transaction,72000000,transaction-based revenues $730 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387925000309/q32025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,funded_customers,27000000,Funded Customers 27.0 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,revenue,1283000000,"Total net revenues $1,283 million",https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,arpu,191,ARPU $191,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,net_interest,411000000,Net interest revenues $411 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,other_revenues,96000000,Other revenues $96 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,rev_options,314000000,$314 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,rev_crypto,221000000,$221 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,rev_equities,94000000,$94 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2025Q4,2026-02-10,rev_other_transaction,147000000,$147 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/q42025robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,funded_customers,27400000,Funded Customers 27.4 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,revenue,1067000000,"Total net revenues $1,067 million",https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,arpu,157,ARPU $157,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,net_interest,359000000,Net interest revenues $359 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,other_revenues,85000000,Other revenues $85 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,rev_options,260000000,$260 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,rev_crypto,134000000,$134 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,rev_equities,82000000,$82 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q1,2026-04-28,rev_other_transaction,147000000,$147 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/q12026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,funded_customers,28400000,Funded Customers 28.4 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,revenue,1308000000,"Total net revenues $1,308 million",https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,arpu,187,ARPU $187,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,net_interest,389000000,Net interest revenues $389 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,other_revenues,143000000,Other revenues $143 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,rev_options,342000000,$342 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,rev_crypto,100000000,$100 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,rev_equities,129000000,$129 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,rev_event_contracts,156000000,$156 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q2,2026-07-29,rev_other_transaction,49000000,transaction-based revenues $776 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000113/q22026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,funded_customers,28700000,Funded Customers 28.7 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,revenue,1424000000,"Total net revenues $1,424 million",https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,arpu,200,ARPU $200,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,net_interest,415000000,Net interest revenues $415 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,other_revenues,142000000,Other revenues $142 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,rev_options,399000000,$399 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,rev_crypto,120000000,$120 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,rev_equities,121000000,$121 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,rev_event_contracts,173000000,$173 million,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+HOOD,2026Q3,2026-10-27,rev_other_transaction,54000000,transaction-based revenues $867 million less the printed lines,https://www.sec.gov/Archives/edgar/data/1783879/000178387926000164/q32026robinhoodexhibit991.htm
+MARA,2021Q3,2021-11-10,bitcoins_mined,1252,"bitcoin produced 1,252",https://ir.mara.com/news-events/press-releases/detail/1264/marathon-digital-holdings-reports-third-quarter-2021-results
+MARA,2021Q3,2021-11-10,revenue,51707483,"Total revenues $51,707,483",https://ir.mara.com/news-events/press-releases/detail/1264/marathon-digital-holdings-reports-third-quarter-2021-results
+MARA,2021Q4,2022-03-01,bitcoins_mined,1098,"bitcoin produced 1,098",https://ir.mara.com/news-events/press-releases/detail/1277/marathon-digital-holdings-reports-fourth-quarter-and-fiscal-year-2021-results
+MARA,2021Q4,2022-03-01,revenue,60281615,"Total revenues $60,281,615",https://ir.mara.com/news-events/press-releases/detail/1277/marathon-digital-holdings-reports-fourth-quarter-and-fiscal-year-2021-results
+MARA,2022Q1,2022-05-04,bitcoins_mined,1259,"bitcoin produced 1,259",https://ir.mara.com/news-events/press-releases/detail/1285/marathon-digital-holdings-reports-first-quarter-2022-results
+MARA,2022Q1,2022-05-04,revenue,51717718,"Total revenues $51,717,718",https://ir.mara.com/news-events/press-releases/detail/1285/marathon-digital-holdings-reports-first-quarter-2022-results
+MARA,2022Q2,2022-08-08,bitcoins_mined,707,bitcoin produced 707,https://ir.mara.com/news-events/press-releases/detail/1292/marathon-digital-holdings-reports-second-quarter-2022-results-along-with-bitcoin-production-and-mining-operation-updates-for-july-2022
+MARA,2022Q2,2022-08-08,revenue,24921816,"Total revenues $24,921,816",https://ir.mara.com/news-events/press-releases/detail/1292/marathon-digital-holdings-reports-second-quarter-2022-results-along-with-bitcoin-production-and-mining-operation-updates-for-july-2022
+MARA,2022Q3,2022-11-08,bitcoins_mined,616,bitcoin produced 616,https://ir.mara.com/news-events/press-releases/detail/1297/marathon-digital-holdings-reports-third-quarter-2022-results
+MARA,2022Q3,2022-11-08,revenue,12690452,"Total revenues $12,690,452",https://ir.mara.com/news-events/press-releases/detail/1297/marathon-digital-holdings-reports-third-quarter-2022-results
+MARA,2022Q4,2023-03-16,bitcoins_mined,1562,"bitcoin produced 1,562",https://ir.mara.com/news-events/press-releases/detail/1306/marathon-digital-holdings-reports-fourth-quarter-and-fiscal-year-2022-results
+MARA,2022Q4,2023-03-16,revenue,28417000,"Total revenues $28,417 thousand",https://ir.mara.com/news-events/press-releases/detail/1306/marathon-digital-holdings-reports-fourth-quarter-and-fiscal-year-2022-results
+MARA,2023Q1,2023-05-10,bitcoins_mined,2195,"bitcoin produced 2,195",https://ir.mara.com/news-events/press-releases/detail/1313/marathon-digital-holdings-reports-first-quarter-2023-results
+MARA,2023Q1,2023-05-10,revenue,51132000,"Total revenues $51,132 thousand",https://ir.mara.com/news-events/press-releases/detail/1313/marathon-digital-holdings-reports-first-quarter-2023-results
+MARA,2023Q2,2023-08-08,bitcoins_mined,2926,"bitcoin produced 2,926",https://ir.mara.com/news-events/press-releases/detail/1323/marathon-digital-holdings-reports-second-quarter-2023-results
+MARA,2023Q2,2023-08-08,revenue,81759000,"Total revenues $81,759 thousand",https://ir.mara.com/news-events/press-releases/detail/1323/marathon-digital-holdings-reports-second-quarter-2023-results
+MARA,2023Q3,2023-11-09,bitcoins_mined,3490,"bitcoin produced 3,490",https://www.sec.gov/Archives/edgar/data/1507605/000149315223040005/ex99-1.htm
+MARA,2023Q3,2023-11-09,revenue,97849000,"Total revenues $97,849 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000149315223040005/ex99-1.htm
+MARA,2023Q4,2024-02-28,blocks_won,562,Number of blocks won 562,https://www.sec.gov/Archives/edgar/data/1507605/000149315224008232/ex99-1.htm
+MARA,2023Q4,2024-02-28,bitcoins_mined,4242,"bitcoin produced 4,242",https://www.sec.gov/Archives/edgar/data/1507605/000149315224008232/ex99-1.htm
+MARA,2023Q4,2024-02-28,revenue,156768000,"Total revenues $156,768 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000149315224008232/ex99-1.htm
+MARA,2024Q1,2024-05-09,blocks_won,368,Number of blocks won 368,https://www.sec.gov/Archives/edgar/data/1507605/000149315224018490/ex99-1.htm
+MARA,2024Q1,2024-05-09,bitcoins_mined,2811,"bitcoin produced 2,811",https://www.sec.gov/Archives/edgar/data/1507605/000149315224018490/ex99-1.htm
+MARA,2024Q1,2024-05-09,revenue,165198000,"Total revenues $165,198 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000149315224018490/ex99-1.htm
+MARA,2024Q2,2024-08-01,blocks_won,457,Number of blocks won 457,https://www.sec.gov/Archives/edgar/data/1507605/000149315224029930/ex99-1.htm
+MARA,2024Q2,2024-08-01,bitcoins_mined,2058,"bitcoin produced 2,058",https://www.sec.gov/Archives/edgar/data/1507605/000149315224029930/ex99-1.htm
+MARA,2024Q2,2024-08-01,revenue,145139000,"Total revenues $145,139 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000149315224029930/ex99-1.htm
+MARA,2024Q3,2024-11-12,blocks_won,604,Number of blocks won 604,https://www.sec.gov/Archives/edgar/data/1507605/000149315224044817/ex99-1.htm
+MARA,2024Q3,2024-11-12,bitcoins_mined,2070,"bitcoin produced 2,070",https://www.sec.gov/Archives/edgar/data/1507605/000149315224044817/ex99-1.htm
+MARA,2024Q3,2024-11-12,revenue,131647000,"Total revenues $131,647 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000149315224044817/ex99-1.htm
+MARA,2024Q4,2025-02-26,blocks_won,703,Number of blocks won 703,https://www.sec.gov/Archives/edgar/data/1507605/000149315225008402/ex99-1.htm
+MARA,2024Q4,2025-02-26,bitcoins_mined,2492,"bitcoin produced 2,492",https://www.sec.gov/Archives/edgar/data/1507605/000149315225008402/ex99-1.htm
+MARA,2024Q4,2025-02-26,revenue,214394000,"Total revenues $214,394 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000149315225008402/ex99-1.htm
+MARA,2025Q1,2025-05-09,blocks_won,666,Number of blocks won 666,https://www.sec.gov/Archives/edgar/data/1507605/000164117225009348/ex99-1.htm
+MARA,2025Q1,2025-05-09,bitcoins_mined,2286,"bitcoin produced 2,286",https://www.sec.gov/Archives/edgar/data/1507605/000164117225009348/ex99-1.htm
+MARA,2025Q1,2025-05-09,revenue,213884000,"Total revenues $213,884 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000164117225009348/ex99-1.htm
+MARA,2025Q2,2025-07-29,blocks_won,694,Number of blocks won 694,https://www.sec.gov/Archives/edgar/data/1507605/000150760525000016/q225shareholderletter.htm
+MARA,2025Q2,2025-07-29,bitcoins_mined,2358,"bitcoin produced 2,358",https://www.sec.gov/Archives/edgar/data/1507605/000150760525000016/q225shareholderletter.htm
+MARA,2025Q2,2025-07-29,revenue,238485000,"Total revenues $238,485 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000150760525000016/q225shareholderletter.htm
+MARA,2025Q3,2025-11-04,blocks_won,633,Number of blocks won 633,https://www.sec.gov/Archives/edgar/data/1507605/000150760525000026/q325shareholderletter.htm
+MARA,2025Q3,2025-11-04,bitcoins_mined,2144,"bitcoin produced 2,144",https://www.sec.gov/Archives/edgar/data/1507605/000150760525000026/q325shareholderletter.htm
+MARA,2025Q3,2025-11-04,revenue,252410000,"Total revenues $252,410 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000150760525000026/q325shareholderletter.htm
+MARA,2025Q4,2026-02-26,blocks_won,595,Number of blocks won 595,https://www.sec.gov/Archives/edgar/data/1507605/000150760526000004/q425shareholderletter.htm
+MARA,2025Q4,2026-02-26,bitcoins_mined,2011,"bitcoin produced 2,011",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000004/q425shareholderletter.htm
+MARA,2025Q4,2026-02-26,revenue,202314000,"Total revenues $202,314 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000004/q425shareholderletter.htm
+MARA,2026Q1,2026-05-11,blocks_won,653,Number of blocks won 653,https://www.sec.gov/Archives/edgar/data/1507605/000150760526000014/q126shareholderletter.htm
+MARA,2026Q1,2026-05-11,bitcoins_mined,2247,"bitcoin produced 2,247",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000014/q126shareholderletter.htm
+MARA,2026Q1,2026-05-11,revenue,174614000,"Total revenues $174,614 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000014/q126shareholderletter.htm
+MARA,2026Q2,2026-08-06,blocks_won,700,Number of blocks won 700,https://www.sec.gov/Archives/edgar/data/1507605/000150760526000020/q226shareholderletter.htm
+MARA,2026Q2,2026-08-06,bitcoins_mined,2422,"bitcoin produced 2,422",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000020/q226shareholderletter.htm
+MARA,2026Q2,2026-08-06,revenue,174881000,"Total revenues $174,881 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000020/q226shareholderletter.htm
+MARA,2026Q3,2026-11-09,blocks_won,644,Number of blocks won 644,https://www.sec.gov/Archives/edgar/data/1507605/000150760526000026/q326shareholderletter.htm
+MARA,2026Q3,2026-11-09,bitcoins_mined,2247,"bitcoin produced 2,247",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000026/q326shareholderletter.htm
+MARA,2026Q3,2026-11-09,revenue,164233000,"Total revenues $164,233 thousand",https://www.sec.gov/Archives/edgar/data/1507605/000150760526000026/q326shareholderletter.htm
+COIN,2021Q2,2021-08-10,transaction_revenue,1930400000,"Total transaction revenue $1,930.4 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978821000024/coinbaseq221shareholderl.htm
+COIN,2021Q3,2021-11-09,transaction_revenue,1089700000,"Total transaction revenue $1,089.7 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978821000069/secq3202111_81020ampst.htm
+COIN,2021Q4,2022-02-24,transaction_revenue,2276600000,"Total transaction revenue $2,276.6 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978822000029/shareholderletterfye2021.htm
+COIN,2022Q1,2022-05-10,transaction_revenue,1013000000,"Total transaction revenue $1,013.0 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978822000047/finalsecversionq120225-1.htm
+COIN,2022Q2,2022-08-09,transaction_revenue,655200000,Total transaction revenue $655.2 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978822000083/q2shareholderletter.htm
+COIN,2022Q3,2022-11-03,transaction_revenue,365900000,Total transaction revenue $365.9 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978822000115/a20221103shareholderlett.htm
+COIN,2022Q4,2023-02-21,transaction_revenue,322100000,Total transaction revenue $322.1 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978823000029/q4shareholderletter2022.htm
+COIN,2023Q1,2023-05-04,transaction_revenue,374700000,Total transaction revenue $374.7 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978823000071/q123shareholderletter.htm
+COIN,2023Q2,2023-08-03,transaction_revenue,327100000,Total transaction revenue $327.1 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978823000105/coinbaseq223shareholderl.htm
+COIN,2023Q3,2023-11-02,transaction_revenue,288600000,Total transaction revenue $288.6 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978823000112/secshareholderletterq320.htm
+COIN,2023Q4,2024-02-15,transaction_revenue,529300000,Total transaction revenue $529.3 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978824000019/shareholderletterq42023.htm
+COIN,2024Q1,2024-05-02,transaction_revenue,1076700000,"Total transaction revenue $1,076.7 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978824000087/secshareholderletterq120.htm
+COIN,2024Q2,2024-08-01,transaction_revenue,780900000,Total transaction revenue $780.9 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978824000148/q224shareholderletter.htm
+COIN,2024Q3,2024-10-30,transaction_revenue,572500000,Total transaction revenue $572.5 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978824000186/q324shareholderletter.htm
+COIN,2024Q4,2025-02-13,transaction_revenue,1556000000,"Total transaction revenue $1,556.0 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978825000021/q424shareholderletter.htm
+COIN,2025Q1,2025-05-08,transaction_revenue,1262200000,"Total transaction revenue $1,262.2 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978825000088/q125shareholderletter.htm
+COIN,2025Q2,2025-07-31,transaction_revenue,764300000,Total transaction revenue $764.3 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978825000153/q225shareholderletter.htm
+COIN,2025Q3,2025-10-30,transaction_revenue,1046300000,"Total transaction revenue $1,046.3 million",https://www.sec.gov/Archives/edgar/data/1679788/000167978825000207/q325shareholderletter.htm
+COIN,2025Q4,2026-02-12,transaction_revenue,982700000,Total transaction revenue $982.7 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978826000011/q425shareholderletter.htm
+COIN,2026Q1,2026-05-07,transaction_revenue,755800000,Total transaction revenue $755.8 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978826000053/q126earningsdeck-finalse.htm
+COIN,2026Q2,2026-07-30,transaction_revenue,599200000,Total transaction revenue $599.2 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978826000087/q226earningsdeck_sec.htm
+COIN,2026Q3,2026-10-29,transaction_revenue,590200000,Total transaction revenue $590.2 million,https://www.sec.gov/Archives/edgar/data/1679788/000167978826000121/q326earningsdeck_vsec.htm
