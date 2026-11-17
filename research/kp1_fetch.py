@@ -22,7 +22,7 @@ SHARED = Path("/mnt/project-files/research/kp1")
 MEMPOOL = "https://mempool.space/api/v1/mining"
 POOL_BLOCKS = f"{MEMPOOL}/pool/marapool/blocks"
 COINBASE = "https://api.exchange.coinbase.com/products"
-FIRST_HEIGHT = 685000  # May 2021, before MARA's 2021Q3 sample start
+FIRST_HEIGHT = 677222  # last block before 2021Q2: the 2021Q3 naive baseline needs all of 2021Q2
 PRODUCTS = ("BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD", "LTC-USD", "ADA-USD", "LINK-USD",
             "AVAX-USD", "USDT-USD")
 WINDOW_DAYS = 300  # Coinbase returns at most 300 candles a call
@@ -56,6 +56,7 @@ def fetch_mara_blocks(get) -> list[tuple[int, int, int]]:
     """
     seen: dict[int, tuple[int, int, int]] = {}
     url = POOL_BLOCKS
+    last_low = float("inf")
     while True:
         page = get(url)
         if not page:
@@ -64,8 +65,9 @@ def fetch_mara_blocks(get) -> list[tuple[int, int, int]]:
             if b["height"] >= FIRST_HEIGHT:
                 seen[b["height"]] = (b["height"], int(b["timestamp"]), int(b["extras"]["reward"]))
         low = min(b["height"] for b in page)
-        if low < FIRST_HEIGHT:
+        if low < FIRST_HEIGHT or low >= last_low:
             break
+        last_low = low
         url = f"{POOL_BLOCKS}/{low}"
     return sorted(seen.values())
 

@@ -23,7 +23,7 @@ def test_mara_paging_stops_and_dedupes():
     pages = {
         POOL: [_block(700002, 30, 7), _block(700001, 20, 6)],
         f"{POOL}/700001": [_block(700001, 20, 6), _block(690000, 10, 5)],
-        f"{POOL}/690000": [_block(684999, 5, 4), _block(684000, 4, 3)],
+        f"{POOL}/690000": [_block(F.FIRST_HEIGHT - 1, 5, 4), _block(F.FIRST_HEIGHT - 1000, 4, 3)],
     }
     calls = []
 
@@ -69,3 +69,20 @@ def test_coinbase_windows_and_missing_days():
     assert len(calls) == 2  # 366 days -> two 300-day windows
     assert all("granularity=86400" in c and "/products/BTC-USD/candles" in c for c in calls)
     assert F.usd_volume(got) == {date(2024, 1, 1): 15.0, date(2024, 1, 3): 20.0, date(2024, 12, 1): 6.0}
+
+
+def test_mara_fetch_covers_all_of_2021q2():
+    # the naive baseline for 2021Q3 needs MARA Pool's full 2021Q2 share; 677222 is the last block before 2021Q2
+    assert F.FIRST_HEIGHT <= 677222
+
+
+def test_mara_paging_stops_if_a_page_does_not_go_lower():
+    page = [_block(700002, 30, 7), _block(700001, 20, 6)]
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        return page
+
+    assert len(F.fetch_mara_blocks(get)) == 2
+    assert len(calls) == 2

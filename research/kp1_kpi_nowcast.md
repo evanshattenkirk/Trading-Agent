@@ -6,13 +6,13 @@ Rules: `research/kp1_kpi_prereg.md` (frozen before any data). Inputs: `research/
 
 | Contract | KPI | Scored | Model median abs err | Naive median abs err | Model / naive | Model err in strike intervals | 80% coverage | Brier model | Brier naive | Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| KCHOD | HOOD Funded Customers | 12 | 0.4% | 1.0% | 0.42 | 1.0 | 75.0% | 0.142 | 0.238 | PASS |
-| KBHOD | HOOD Revenue | 12 | 9.5% | 19.0% | 0.50 | 11.3 | 83.3% | 0.249 | 0.491 | PASS |
-| KDHOD | HOOD ARPU | 12 | 9.6% | 19.5% | 0.49 | 18.2 | 83.3% | 0.254 | 0.484 | PASS |
-| KCMAR | MARA Total Blocks Won | 7 | 0.1% | 5.2% | 0.02 | 0.7 | 85.7% | 0.103 | 0.272 | PASS |
-| KFMAR | MARA Bitcoins Mined | 16 | 1.3% | 21.8% | 0.06 | 2.8 | 93.8% | 0.279 | 0.258 | PASS |
-| KBMAR | MARA Revenue | 16 | 2.7% | 20.5% | 0.13 | 5.6 | 93.8% | 0.272 | 0.279 | PASS |
-| KCCOI | COIN Transaction Revenue | 16 | 12.7% | 29.0% | 0.44 | 74.6 | 93.8% | 0.331 | 0.273 | PASS |
+| KCHOD | HOOD Funded Customers | 12 | 0.4% | 1.0% | 0.42390 | 1.0 | 75.0% | 0.156 | 0.220 | PASS |
+| KBHOD | HOOD Revenue | 12 | 9.5% | 19.0% | 0.49996 | 11.3 | 83.3% | 0.249 | 0.491 | PASS |
+| KDHOD | HOOD ARPU | 12 | 9.6% | 19.5% | 0.49152 | 18.2 | 83.3% | 0.254 | 0.484 | PASS |
+| KCMAR | MARA Total Blocks Won | 7 | 0.1% | 5.2% | 0.01922 | 0.7 | 85.7% | 0.103 | 0.272 | PASS |
+| KFMAR | MARA Bitcoins Mined | 16 | 1.3% | 21.8% | 0.05930 | 2.8 | 93.8% | 0.279 | 0.257 | PASS |
+| KBMAR | MARA Revenue | 16 | 2.7% | 20.5% | 0.13286 | 5.6 | 93.8% | 0.272 | 0.279 | PASS |
+| KCCOI | COIN Transaction Revenue | 16 | 12.7% | 29.0% | 0.43901 | 74.6 | 93.8% | 0.331 | 0.273 | PASS |
 
 Abs err = |ln(actual / nowcast)|, so 1.0% is about a 1% miss. Brier is over 7 synthetic strikes (the model nowcast rounded to Cboe's strike interval, ±3 intervals) and the scored quarters; lower is better. A quarter is scored once both methods have 4 earlier errors.
 
@@ -105,7 +105,7 @@ Not printed (dropped): 2021Q3, 2021Q4, 2022Q1, 2022Q2, 2022Q3, 2022Q4, 2023Q1, 2
 
 | Quarter | Actual (scaled by 1e+03) | Model | Naive | Model err | Naive err | Scored | In 80% |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2021Q3 | 1.252 | — | 0.327 | n/a | 134.4% |  |  |
+| 2021Q3 | 1.252 | — | 0.486 | n/a | 94.6% |  |  |
 | 2021Q4 | 1.098 | 1.223 | 1.254 | -10.8% | -13.3% |  |  |
 | 2022Q1 | 1.259 | 1.172 | 1.196 | 7.1% | 5.2% |  |  |
 | 2022Q2 | 0.707 | 0.672 | 1.239 | 5.0% | -56.1% |  |  |
@@ -180,12 +180,22 @@ Not printed (dropped): 2021Q3, 2021Q4, 2022Q1, 2022Q2, 2022Q3, 2022Q4, 2023Q1, 2
 | 2026Q2 | 599.200 | 530.068 | 581.290 | 12.3% | 3.0% | yes | yes |
 | 2026Q3 | 590.200 | 517.309 | 475.047 | 13.2% | 21.7% | yes | yes |
 
+## Interpretations of the prereg
+
+Where the frozen text left a choice, these readings were used. Each was re-run under the literal alternative in review; none changes a gate result.
+
+- HOOD sample start: 2022Q3's report had only the August 2022 release, which also printed July; July is taken from it, so 2022Q3 counts as having two months. Literal reading: start at 2022Q4 (gate-neutral).
+- Scored quarters: a quarter is scored once both model and naive have 4 earlier errors, so both are compared on the same quarters. Literal reading: each method on its own 4-error start (gate-neutral).
+- HOOD net interest: 2022 releases printed no cash sweep, so the 2022Q4 base ratio uses margin only for both quarters. Literal reading: margin + sweep with a zero sweep in 2022Q3 (that quarter is unscored; KBHOD/KDHOD coverage 75% instead of 83%, still passing).
+- Synthetic strikes centre on the model nowcast, and the naive baseline is scored on the same strikes.
+
 ## Caveats
 
-- Small samples: 7 to 16 scored quarters per KPI, so a gate result can flip on one or two quarters. KBHOD, KDHOD passed with a model/naive ratio above 0.45, close to the 0.50 bar.
-- Brier is worse for the model than the naive baseline on KFMAR, KCCOI even though its errors are smaller: strikes sit around the model nowcast, so they are the hard calls, and the model's t-distribution is wide (it carries every earlier error, including the noisy first quarters). Brier here grades calibration on near-the-money strikes, not accuracy.
+- Small samples: 7 to 16 scored quarters per KPI, so a gate result can flip on one or two quarters. Model/naive ratio close to the 0.50 bar: KBHOD (0.49996), KDHOD (0.49152).
+- Coverage at the edge of the 60-95% band for KCMAR, KFMAR, KBMAR, KCCOI: one more covered quarter (or one fewer) would fail the gate.
+- Brier is worse for the model than the naive baseline on KFMAR, KCCOI although its errors are smaller. Both are scored on the same strikes; the model's t-distribution is shifted by the mean of its earlier errors, which a few large early misses (MARA 2023Q1, COIN 2022) pull away from zero. Brier here grades calibration on near-the-money strikes, not accuracy.
 - HOOD revenue: the prior quarter's rates use only its months 1-2 (frozen rule), so a big month 3 skews the next quarter's rates too. The earnings release prints the prior quarter's full volumes; using them would be a separately labelled variant.
 - HOOD's quarter-end month is never public before the report; the model sees months 1-2 only.
 - MARA printed blocks won only from Q4 2023, so KCMAR has the shortest history.
-- Reported values are as first printed in each release (no restatements), which is what Cboe settles on.
+- KPI values are as first printed in each quarter's release (no restatements), which is what Cboe settles on. HOOD's revenue split by line for 2022Q3-2023Q3 comes from the 10-Q/10-K (model inputs only).
 - Information rule: a nowcast uses only releases published before its report date; parameters for a quarter come only from earlier quarters.

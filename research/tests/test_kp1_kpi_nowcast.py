@@ -282,3 +282,24 @@ def test_run_lists_unprinted_quarters_as_dropped():
     assert "2023Q3" in blocks["dropped"] and "2024Q1" not in blocks["dropped"]
     assert [q["quarter"] for q in blocks["quarters"]] == ["2024Q1"]
     assert out["HOOD.funded_customers"]["sample"] == ["2026Q3", "2026Q3"]
+
+
+def test_actual_exactly_on_a_strike_counts_as_at_or_above():
+    rows = [(f"Q{i}", 23.4e6, 23.4e6 * math.exp(0.002 * ((-1) ** i)), 23.0e6) for i in range(6)]
+    q = N.score_kpi(rows, scale=1e6)["quarters"][5]
+    assert 23.4 in q["strikes"]  # exact grid value, no 23.400000000000002
+    i = q["strikes"].index(23.4)
+    hits = [1.0 if 23.4 >= k else 0.0 for k in q["strikes"]]
+    assert hits[i] == 1.0
+    assert math.isclose(q["brier_model"], sum((p - h) ** 2 for p, h in zip(q["p_model"], hits)) / 7)
+
+
+def test_report_prints_ratio_precisely_and_flags_coverage_edges():
+    res = {"X.y": {"contract": "KXXX", "company": "HOOD", "kpi": "revenue", "scored": 16, "scale": 1e9,
+                   "median_abs_err": {"model": 0.0949609, "naive": 0.1899357}, "median_abs_intervals":
+                   {"model": 1.0, "naive": 2.0}, "coverage80": 15 / 16, "brier": {"model": 0.2, "naive": 0.3},
+                   "passes_gate": True, "dropped": [], "quarters": [], "sample": ["2022Q4", "2026Q3"]}}
+    md = N.report_md(res)
+    assert "0.49996" in md
+    assert "one more covered quarter" in md
+    assert "Interpretations of the prereg" in md

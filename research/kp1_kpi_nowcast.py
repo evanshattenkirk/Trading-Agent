@@ -149,7 +149,7 @@ def _hood(q: str, data: Inputs) -> dict:
     fc_model = None
     if cur and prior_fc is not None:
         last = cur[-1]
-        before = next((m.funded_customers for m in cur if m.month < last.month), None) if len(cur) > 1 else None
+        before = cur[-2].funded_customers if len(cur) > 1 else None
         if before is None:
             before = prior_fc if last.month == months_of(q)[0] else None
         if before is not None:
@@ -326,8 +326,9 @@ def score_kpi(rows, scale: float = 1.0) -> dict:
         if (actual is not None and model is not None and naive is not None
                 and len(hist["model"]) >= MIN_ERRORS and len(hist["naive"]) >= MIN_ERRORS):
             interval = strike_interval(model / scale)
-            centre = round(model / scale / interval) * interval
-            strikes = [centre + d * interval for d in range(-3, 4)]
+            c = round(model / scale / interval)
+            # integer steps, rounded, so an actual printed on the strike grid compares exactly
+            strikes = [round((c + d) * interval, 10) for d in range(-3, 4)]
             rec.update(scored=True, strikes=strikes, interval=interval)
             for name, now in (("model", model), ("naive", naive)):
                 rec[f"p_{name}"] = [prob_at_or_above(k * scale, now, hist[name]) for k in strikes]
@@ -430,7 +431,7 @@ def report_md(results: dict) -> str:
              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in results.values():
         mm, nm = r["median_abs_err"]["model"], r["median_abs_err"]["naive"]
-        ratio = "n/a" if mm is None or not nm else f"{mm / nm:.2f}"
+        ratio = "n/a" if mm is None or not nm else f"{mm / nm:.5f}"
         lines.append(f"| {r['contract']} | {NAMES[(r['company'], r['kpi'])]} | {r['scored']} | {_pct(mm)} | "
                      f"{_pct(nm)} | {ratio} | {_num(r['median_abs_intervals']['model'], 1)} | "
                      f"{_pct(r['coverage80'])} | {_num(r['brier']['model'], 3)} | {_num(r['brier']['naive'], 3)} | "
@@ -451,25 +452,42 @@ def report_md(results: dict) -> str:
                          f"{_fmt_val(q['naive'], sc)} | {_pct(q['e_model'])} | {_pct(q['e_naive'])} | "
                          f"{'yes' if q['scored'] else ''} | {('yes' if q.get('in80') else 'no') if q['scored'] else ''} |")
         lines.append("")
+    lines += ["## Interpretations of the prereg", "",
+              "Where the frozen text left a choice, these readings were used. Each was re-run under the literal "
+              "alternative in review; none changes a gate result.", "",
+              "- HOOD sample start: 2022Q3's report had only the August 2022 release, which also printed July; July is "
+              "taken from it, so 2022Q3 counts as having two months. Literal reading: start at 2022Q4 (gate-neutral).",
+              "- Scored quarters: a quarter is scored once both model and naive have 4 earlier errors, so both are "
+              "compared on the same quarters. Literal reading: each method on its own 4-error start (gate-neutral).",
+              "- HOOD net interest: 2022 releases printed no cash sweep, so the 2022Q4 base ratio uses margin only "
+              "for both quarters. Literal reading: margin + sweep with a zero sweep in 2022Q3 (that quarter is "
+              "unscored; KBHOD/KDHOD coverage 75% instead of 83%, still passing).",
+              "- Synthetic strikes centre on the model nowcast, and the naive baseline is scored on the same strikes.",
+              ""]
     ns = [r["scored"] for r in results.values()]
     worse = [r["contract"] for r in results.values()
              if r["brier"]["model"] is not None and r["brier"]["model"] > r["brier"]["naive"]]
-    close = [r["contract"] for r in results.values() if r["passes_gate"] and r["median_abs_err"]["naive"]
+    close = [f"{r['contract']} ({r['median_abs_err']['model'] / r['median_abs_err']['naive']:.5f})"
+             for r in results.values() if r["passes_gate"] and r["median_abs_err"]["naive"]
              and r["median_abs_err"]["model"] / r["median_abs_err"]["naive"] > 0.45]
+    edge = [r["contract"] for r in results.values() if r["passes_gate"] and r["scored"]
+            and (r["coverage80"] + 1 / r["scored"] > 0.95 or r["coverage80"] - 1 / r["scored"] < 0.60)]
     lines += ["## Caveats", "",
               f"- Small samples: {min(ns)} to {max(ns)} scored quarters per KPI, so a gate result can flip on one or "
-              "two quarters." + (f" {', '.join(close)} passed with a model/naive ratio above 0.45, close to the 0.50 "
-                                 "bar." if close else ""),
-              *([f"- Brier is worse for the model than the naive baseline on {', '.join(worse)} even though its "
-                 "errors are smaller: strikes sit around the model nowcast, so they are the hard calls, and the "
-                 "model's t-distribution is wide (it carries every earlier error, including the noisy first "
-                 "quarters). Brier here grades calibration on near-the-money strikes, not accuracy."] if worse else []),
+              "two quarters." + (f" Model/naive ratio close to the 0.50 bar: {', '.join(close)}." if close else ""),
+              *([f"- Coverage at the edge of the 60-95% band for {', '.join(edge)}: one more covered quarter (or one "
+                 "fewer) would fail the gate."] if edge else []),
+              *([f"- Brier is worse for the model than the naive baseline on {', '.join(worse)} although its "
+                 "errors are smaller. Both are scored on the same strikes; the model's t-distribution is shifted by "
+                 "the mean of its earlier errors, which a few large early misses (MARA 2023Q1, COIN 2022) pull away "
+                 "from zero. Brier here grades calibration on near-the-money strikes, not accuracy."] if worse else []),
               "- HOOD revenue: the prior quarter's rates use only its months 1-2 (frozen rule), so a big month 3 "
               "skews the next quarter's rates too. The earnings release prints the prior quarter's full volumes; "
               "using them would be a separately labelled variant.",
               "- HOOD's quarter-end month is never public before the report; the model sees months 1-2 only.",
               "- MARA printed blocks won only from Q4 2023, so KCMAR has the shortest history.",
-              "- Reported values are as first printed in each release (no restatements), which is what Cboe settles on.",
+              "- KPI values are as first printed in each quarter's release (no restatements), which is what Cboe "
+              "settles on. HOOD's revenue split by line for 2022Q3-2023Q3 comes from the 10-Q/10-K (model inputs only).",
               "- Information rule: a nowcast uses only releases published before its report date; parameters for a "
               "quarter come only from earlier quarters.", ""]
     return "\n".join(lines)
