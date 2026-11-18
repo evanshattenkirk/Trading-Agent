@@ -146,6 +146,17 @@ to cash settlement. XSP quotes from the ThetaData session; the SPX close from FR
         --w-trades research/data/round5/w/trades.parquet --spy data/thetadata/spy_0dte \
         --vix research/data/vix_cboe.csv                                  # research/data/round5/wx/wx_results.json
 
+Round 6, prediction markets PM1-PM5 (rules in round6_prereg.md, frozen before any script; results in round6.md).
+Kalshi's public API, Coinbase's public BTC-USD candles, the Cleveland Fed nowcast file and round 5's XSP quotes
+(`ROUND6_XSP` overrides their folder):
+
+    for s in events nowcast; do .venv/bin/python research/round6_fetch.py $s; done
+    for s in KXCPI KXINX KXNASDAQ100 KXBTCD KXBTC; do .venv/bin/python research/round6_fetch.py markets $s; done
+    .venv/bin/python research/round6_fetch.py coinbase && .venv/bin/python research/round6.py btc-wanted
+    for s in KXCPI KXBTCD KXBTC KXINX KXNASDAQ100; do .venv/bin/python research/round6_fetch.py candles $s; done
+    .venv/bin/python research/round6.py report                                # research/round6_results.json
+    .venv/bin/python research/round6_posthoc.py                               # research/round6_posthoc.json
+
 R1, retailer search interest before earnings (rules in r1_retail_search_prereg.md, frozen before any data): a free
 test of the consumer-demand idea behind satellite parking-lot counts. SEC report times and Alpaca daily closes come
 from the Mac; Google Trends from any session with `pytrends`:
