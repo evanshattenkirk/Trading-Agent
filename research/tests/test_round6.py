@@ -135,3 +135,45 @@ def test_choose_k_caps_sample():
     k = f6.choose_k(evs, 1500)
     kept = [e for e in evs if f6.event_hash(e) % k == 0]
     assert len(kept) <= 1500 and (k == 1 or len([e for e in evs if f6.event_hash(e) % (k - 1) == 0]) > 1500)
+
+
+# ------------------------------------------------------------------ PM6 (round6_maker_prereg.md)
+import round6_maker as mk  # noqa: E402
+
+
+def _order(**kw):
+    return {"event": "E", "ticker": "T", "e": 1000, "close": 1900, "bid": 0.40, "ask": 0.45, "payout": 1,
+            "modal": True} | kw
+
+
+def test_fill_through_needs_a_trade_below_the_bid_inside_the_window():
+    o = _order()
+    tr = [{"ts": 1000, "p": 0.30, "taker": "no"},          # at E: not after it
+          {"ts": 1100, "p": 0.40, "taker": "no"},          # at the bid: queue unknown
+          {"ts": 1950, "p": 0.10, "taker": "no"}]          # after the close
+    assert mk.fill(o, tr, "through") is None
+    tr.append({"ts": 1500, "p": 0.39, "taker": "yes"})
+    assert mk.fill(o, sorted(tr, key=lambda t: t["ts"]), "through")["ts"] == 1500
+
+
+def test_fill_touch_needs_a_yes_seller_at_or_below_the_bid():
+    o = _order()
+    assert mk.fill(o, [{"ts": 1100, "p": 0.40, "taker": "yes"}], "touch") is None
+    assert mk.fill(o, [{"ts": 1100, "p": 0.40, "taker": "no"}], "touch")["ts"] == 1100
+
+
+def test_norm_trades_reads_dollar_prices_and_times():
+    raw = [{"yes_price_dollars": "0.0600", "created_time": "2026-11-17T21:59:29.594962Z", "taker_side": "yes"},
+           {"yes_price": 45, "created_time": "2024-08-01T00:00:00Z", "taker_side": "no"}]
+    t = mk.norm_trades(raw)
+    assert [x["p"] for x in t] == [0.45, 0.06] and t[0]["taker"] == "no"
+
+
+def test_summary_counts_unfilled_orders_as_zero_pnl():
+    rows = [_order(filled=True, ret=1.5, pnl_cents=60.0, p=0.40, event="a", close=1),
+            _order(filled=False, ret=None, pnl_cents=0.0, p=0.40, event="b", close=2),
+            _order(filled=True, ret=-1.0, pnl_cents=-40.0, p=0.40, event="c", close=3),
+            _order(filled=True, ret=1.5, pnl_cents=60.0, p=0.40, event="d", close=4)]
+    s = mk.summary(rows)
+    assert s["orders"] == 4 and s["fill_rate"] == 0.75
+    assert s["pnl_per_order_cents"] == 20.0 and s["events"] == 3
