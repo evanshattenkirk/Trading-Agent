@@ -17,6 +17,7 @@ Bar: t ≥ 2.58 and a positive mean in both halves.
 | PM3 | Bitcoin hourly above/below vs a 6-hour realized-vol model | 989 hours, 2024-12 to 2026-11 | −15.8% | −2.51 | **FAIL** |
 | PM4 | Bitcoin hourly range: buy the modal bracket 15 min before | 1,470 hours, 2024-06 to 2026-11 | −4.0% | −1.38 | **FAIL** |
 | PM5 | CPI m/m brackets vs the Cleveland Fed nowcast, edge ≥ 3¢ | 31 releases, 2021-12 to 2026-11 | −24.0% | −1.33 | **FAIL** |
+| PM6 | PM4's bracket as a resting bid, filled from the trade tape (follow-up) | 1,194 filled of 1,467 hours | −5.3% | −1.40 | **FAIL** |
 
 PM1's confirmation sample (Nasdaq-100, same rule) is also negative: −13.3%, t −3.25 (898 days).
 
@@ -35,10 +36,28 @@ straddle is rich). It is the other way round at noon: the modal bracket wins 43%
 Bitcoin −16.1%). Both sides lose because the bracket's spread is about 4¢ on the indices and 7¢ on Bitcoin, plus
 up to 1.75¢ fee.
 
-**The one positive pattern is being the maker.** Bought at the bid with no fee, PM4's modal Bitcoin bracket makes
+**The one positive pattern was being the maker, and real fills remove it (PM6 below).** Bought at the bid with no fee, PM4's modal Bitcoin bracket makes
 +18.3% a contract (t 4.93, both halves positive), and round 5's K1 favourites made +2.8%. Candles can't tell whether
 a resting bid would have filled; a bid tends to fill when the price is moving against it. That needs its own test
 with fills from the trade tape (below).
+
+## PM6: the maker row with real fills (FAIL)
+
+Evan picked the maker test after the five above. Rules frozen in `round6_maker_prereg.md` before any trade-tape row
+was pulled; script `round6_maker.py`, results `round6_maker_results.json`. Same 1,486 hours and modal bracket as
+PM4; at 15 minutes before the close, a YES bid rests at the best bid until the close. It counts as filled only if
+Kalshi's trade tape (every trade, public) prints below the bid after it was posted. No fee (the series charges
+takers only).
+
+| | Orders | Filled | Mean per filled contract | t | P&L per order posted |
+|---|---|---|---|---|---|
+| PM6, trade-through fills | 1,467 | 81% | −5.3% | −1.40 | −1.75¢ |
+
+**FAIL** (halves −14.2% and +3.7%). The +18.3% maker row came from assuming every bid fills. In practice the bids
+that don't fill (19%) are the ones whose bracket was about to win, and the ones that fill late are losers: fills in
+the last five minutes lose 31.0% (t −3.29), fills in the first five minutes make +3.2% (t 0.67). This is the same
+adverse selection book D's fill study found on SPY options. Reported only: fill at the touch (front of queue)
+−2.2%; posted 45 minutes before −3.6%; the neighbouring brackets −26.6% (t −5.83); a 0.0175 maker fee −6.2%.
 
 ## Sensitivities (reported, never selected)
 
